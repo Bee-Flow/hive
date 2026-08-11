@@ -346,7 +346,7 @@ function buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId }) {
   window.beeflowApp = {
     call: function(route, body, opts){
       var method = (opts && opts.method) || "POST";
-      var path = "/app/" + String(route || "").replace(/^\/+/, "");
+      var path = "/app/" + String(route || "").replace(/^\\/+/, "");
       if (method === "GET") return getJson(path);
       return postJson(path, body);
     }

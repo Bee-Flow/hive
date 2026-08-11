@@ -4,8 +4,8 @@
  * Shield renders one of these so the mental model is immediately clear.
  */
 
-import React from 'react';
 import { Eye } from 'lucide-react';
+import React from 'react';
 
 export default function WhatTheUserSees({ title = 'What the end user sees', children }) {
     return (

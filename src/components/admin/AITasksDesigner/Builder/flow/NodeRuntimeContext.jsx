@@ -15,6 +15,17 @@ import { createContext, useContext } from 'react';
  *   - onOpenLayer     : (layerKey) => void — drill into an inline flowlet
  *   - layerSummaries  : Record<layerKey, string> — AI/human one-liners,
  *                       so a call_layer node can show what the flowlet does
+ *   - highlightedStepId : stepId|null — briefly ringed (e.g. after the user
+ *                       clicks a validation issue to jump to its node)
+ *   - onDetachNode    : (stepId) => void — unwire a step but keep it on canvas
+ *   - attachedIds     : Set<stepId> — nodes touched by at least one edge, so
+ *                       the Disconnect affordance is hidden on loose cards
+ *   - onToggleInline  : (nodeId, layerKey) => void — expand/collapse a
+ *                       call_layer node's flowlet in place on this canvas
+ *   - inlineExpanded  : Set<nodeId> — which call_layer nodes are expanded
+ *   - layerRefCounts  : Record<layerKey, number> — how many call sites a
+ *                       flowlet has, so an expanded container can warn that
+ *                       editing it changes every one of them
  *
  * Defaults give read-only inspector contexts (executions drawer) sane
  * behaviour without provider wiring.
@@ -29,6 +40,13 @@ export const NodeRuntimeContext = createContext({
     runTotal: null,
     onOpenLayer: null,
     layerSummaries: {},
+    highlightedStepId: null,
+    onDetachNode: null,
+    attachedIds: new Set(),
+    onToggleInline: null,
+    inlineExpanded: new Set(),
+    layerRefCounts: {},
+    undeletableIds: new Set(),
 });
 
 export function useNodeRuntime() {

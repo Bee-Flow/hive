@@ -141,7 +141,7 @@ const ConsumerUsageSection = () => {
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                        {t('settings.usage_monitoring') || 'Usage & Monitoring'}
+                        {t('settings.usage_monitoring', 'Usage & Monitoring')}
                     </h2>
                     <p className="text-sm text-[var(--text-muted)] mt-1">
                         Track your AI usage and spend

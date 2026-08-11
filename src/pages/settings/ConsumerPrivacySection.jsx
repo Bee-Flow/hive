@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Shield, Globe, Search, Save, Check, ScanEye } from 'lucide-react';
+import { Shield, Globe, Search, Save, Check, ScanEye, Eye } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import PiiCategoryGrid from '../../components/privacy/PiiCategoryGrid';
 import PiiActionPicker from '../../components/privacy/PiiActionPicker';
+import PiiSensitivityPicker from '../../components/privacy/PiiSensitivityPicker';
 import { piiCategoriesLocalized } from '../../config/piiCategories';
 
 /**
@@ -18,25 +19,35 @@ import { piiCategoriesLocalized } from '../../config/piiCategories';
 const ConsumerPrivacySection = () => {
     const { t } = useTranslation();
     // Full canonical category list, localised. We surface every category
-    // here regardless of which detector is active server-side:
-    //   - Azure AI Language covers all of them when configured
-    //   - the GLiNER guard-service covers ~16 of them
-    //   - the in-process Transformers.js filter covers 8
+    // here regardless of detector coverage: the on-server PII Guard
+    // (GLiNER + regex tier) is the single backend and covers most of them.
     // Unchecked categories are filtered server-side, so listing all of
     // them is safe — at worst a checked-but-unsupported category yields
-    // zero hits with whichever detector is active.
+    // zero hits.
     const PII_CATEGORIES = useMemo(() => piiCategoriesLocalized(t), [t]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    // Whether the values shown are the secure defaults in force rather than a
+    // saved choice (BFSF-289) — the panel labels them so "on" isn't mistaken
+    // for something the user configured.
+    const [implicitDefault, setImplicitDefault] = useState(false);
+    // null = still probing. Tells the user whether PII detection can actually
+    // run; without it "shield on, guard not installed" looked identical to
+    // "shield on and working" while detection silently failed open.
+    const [guardStatus, setGuardStatus] = useState(null);
     const [config, setConfig] = useState({
-        enabled: false,
+        // Secure by default — mirrors server/core/userShieldDefaults.js.
+        enabled: true,
         euModeEnabled: false,
         disableSearchOnUpload: false,
-        piiDetectionEnabled: false,
+        piiDetectionEnabled: true,
         piiDetectionCategories: [],
         piiDetectionConfidenceThreshold: 0.7,
         piiDetectionAction: 'tokenize',
+        // Fail closed by default: if detection is unavailable, don't send
+        // unmasked text to the AI (BFSF-269).
+        piiFailureMode: 'fail_closed',
         showRawPayload: false,
     });
 
@@ -45,8 +56,9 @@ const ConsumerPrivacySection = () => {
             try {
                 const res = await authFetch(`${API_BASE}/api/org-privacy-shield/user/me`);
                 if (res.ok) {
-                    const data = await res.json();
+                    const { implicitDefault: isImplicit, ...data } = await res.json();
                     setConfig(prev => ({ ...prev, ...data }));
+                    setImplicitDefault(!!isImplicit);
                 }
             } catch (e) {
                 console.error('[ConsumerPrivacy] fetch error:', e);
@@ -54,7 +66,16 @@ const ConsumerPrivacySection = () => {
                 setLoading(false);
             }
         };
+        const fetchGuardStatus = async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/org-privacy-shield/user/guard-status`);
+                if (res.ok) setGuardStatus(await res.json());
+            } catch (e) {
+                console.error('[ConsumerPrivacy] guard-status error:', e);
+            }
+        };
         fetchConfig();
+        fetchGuardStatus();
     }, []);
 
     const handleSave = async () => {
@@ -68,6 +89,7 @@ const ConsumerPrivacySection = () => {
             });
             if (res.ok) {
                 setSaved(true);
+                setImplicitDefault(false); // now an explicit, stored choice
                 setTimeout(() => setSaved(false), 3000);
             }
         } catch (e) {
@@ -94,7 +116,7 @@ const ConsumerPrivacySection = () => {
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                        {t('settings.privacy_shield') || 'Privacy Shield'}
+                        {t('settings.privacy_shield', 'Privacy Shield')}
                     </h2>
                     <p className="text-sm text-[var(--text-muted)] mt-1">
                         Control data privacy and model routing for your account
@@ -117,6 +139,22 @@ const ConsumerPrivacySection = () => {
                 </button>
             </div>
 
+            {/* Guard availability — an enabled shield with no guard service
+                detects nothing, and used to say so nowhere at all. */}
+            {config.enabled && guardStatus && !(guardStatus.configured && guardStatus.reachable) && (
+                <div className="flex items-start gap-3 p-4 rounded-2xl border" style={{ borderColor: 'rgba(217,119,6,0.35)', background: 'rgba(217,119,6,0.08)' }}>
+                    <ScanEye className="w-5 h-5 shrink-0 mt-0.5" style={{ color: 'rgb(180,83,9)' }} />
+                    <div>
+                        <p className="text-sm font-semibold" style={{ color: 'rgb(146,64,14)' }}>
+                            {t('privacy.guard_status_unavailable', 'Personal-data check unavailable')}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'rgb(146,64,14)' }}>
+                            {t('privacy.guard_status_unavailable_desc', 'The service that scans for personal data is not set up on this server. Your settings are saved, but nothing is being checked. Ask your administrator to switch it on.')}
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Master toggle + reveal */}
             <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
                 <div className="flex items-center justify-between p-5">
@@ -125,9 +163,18 @@ const ConsumerPrivacySection = () => {
                             <Shield className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                            <p className="text-sm font-semibold text-[var(--text-primary)]">Enable Privacy Shield</p>
+                            <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold text-[var(--text-primary)]">Enable Privacy Shield</p>
+                                {implicitDefault && config.enabled && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: 'rgba(16,185,129,0.12)', color: 'rgb(4,120,87)' }}>
+                                        {t('privacy.implicit_default_badge', 'On by default')}
+                                    </span>
+                                )}
+                            </div>
                             <p className="text-xs text-[var(--text-muted)]">
-                                Activate privacy controls for your account
+                                {implicitDefault && config.enabled
+                                    ? t('privacy.implicit_default_note', 'These settings are already in force with the secure defaults. Save to make them your own.')
+                                    : 'Activate privacy controls for your account'}
                             </p>
                         </div>
                     </div>
@@ -199,9 +246,9 @@ const ConsumerPrivacySection = () => {
                                     <ScanEye className="w-4 h-4 text-emerald-500" />
                                 </div>
                                 <div>
-                                    <p className="text-sm font-medium text-[var(--text-primary)]">PII Detection</p>
+                                    <p className="text-sm font-medium text-[var(--text-primary)]">Look for personal data</p>
                                     <p className="text-xs text-[var(--text-muted)]">
-                                        Scan messages for personal data — names, emails, phone numbers and secrets — and tokenise or block them before they reach the AI
+                                        Check your messages for personal details — names, email addresses, phone numbers, passwords — and hide them from the AI, or stop the message altogether
                                     </p>
                                 </div>
                             </div>
@@ -222,30 +269,18 @@ const ConsumerPrivacySection = () => {
             {/* PII configuration — only when both Shield + PII are on */}
             {config.enabled && config.piiDetectionEnabled && (
                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-4">
-                    {/* Confidence threshold */}
-                    <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                        <div className="flex items-center justify-between mb-2">
-                            <label className="text-xs font-medium text-muted">Confidence Threshold</label>
-                            <span className="text-xs font-mono" style={{ color: 'var(--text-primary)' }}>
-                                {Math.round((config.piiDetectionConfidenceThreshold || 0.7) * 100)}%
-                            </span>
-                        </div>
-                        <input
-                            type="range"
-                            min="0.1" max="1" step="0.05"
+                    {/* Detection sensitivity — three named levels; the raw
+                        threshold slider lives behind the picker's advanced fold. */}
+                    <div>
+                        <PiiSensitivityPicker
                             value={config.piiDetectionConfidenceThreshold || 0.7}
-                            onChange={e => update('piiDetectionConfidenceThreshold', parseFloat(e.target.value))}
-                            className="w-full"
+                            onChange={v => update('piiDetectionConfidenceThreshold', v)}
                         />
-                        <div className="flex justify-between text-[10px] text-muted mt-1">
-                            <span>Detect more (10%)</span>
-                            <span>Detect less (100%)</span>
-                        </div>
                         {config.piiDetectionConfidenceThreshold >= 0.85 && (
                             <div className="mt-3 flex items-start gap-2 text-[11px] px-3 py-2 rounded-lg" style={{ background: 'rgba(234, 179, 8, 0.10)', color: '#92400e', border: '1px solid rgba(234, 179, 8, 0.30)' }}>
                                 <span>⚠️</span>
                                 <span className="leading-relaxed">
-                                    At this threshold most detections will be filtered out. Emails, phone numbers and IBANs may silently slip through. Recommended: 70%.
+                                    At this level some personal data can slip through. Email addresses, phone numbers and bank account numbers are still recognised by their exact shape, but names and addresses depend on the detector.
                                 </span>
                             </div>
                         )}
@@ -256,6 +291,9 @@ const ConsumerPrivacySection = () => {
                         value={config.piiDetectionAction}
                         onChange={v => update('piiDetectionAction', v)}
                     />
+
+                    {/* Failure policy is not exposed in the UI — it stays at its
+                        safe server-side default (fail_closed) via config.piiFailureMode. */}
 
                     {/* Transparency toggle (only when tokenizing) */}
                     {config.piiDetectionAction === 'tokenize' && (
@@ -268,11 +306,12 @@ const ConsumerPrivacySection = () => {
                                     className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
                                 />
                                 <span className="flex-1">
-                                    <span className="text-xs font-medium block" style={{ color: 'var(--text-primary)' }}>
-                                        🔍 Show raw payload &amp; token mapping
+                                    <span className="text-xs font-medium flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                                        <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                                        Show me what was sent to the AI
                                     </span>
                                     <span className="text-[10px] block mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                                        Adds a transparency section to the &ldquo;How I got this answer&rdquo; panel showing your original message, the tokenised text sent to the AI, and the placeholder → value mapping. Visible only to you in your own conversation.
+                                        Adds a section to the &ldquo;How I got this answer&rdquo; panel showing your original message, the version that went to the AI, and which placeholder stood for which value. Only you can see it, in your own conversation.
                                     </span>
                                 </span>
                             </label>
@@ -295,10 +334,10 @@ const ConsumerPrivacySection = () => {
                     <div>
                         <p className="text-sm font-medium text-[var(--text-primary)] mb-1">About Privacy Shield</p>
                         <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                            Privacy Shield gives you control over how your data is processed. When EU Data Residency
-                            is enabled, all AI model requests are routed exclusively through European data centers.
-                            PII Detection scans your messages locally and replaces sensitive values with placeholders
-                            (or blocks the message) before it reaches the model.
+                            Privacy Shield gives you control over what happens to your data. With EU data residency on,
+                            every request to an AI model goes through European data centres only. The personal-data
+                            check reads your messages on this server and swaps sensitive details for placeholders
+                            — or stops the message — before it reaches the AI.
                         </p>
                     </div>
                 </div>

@@ -1,6 +1,6 @@
 import {
     ArrowLeft, Power, Eye, Play, Stethoscope, ChevronDown,
-    Mail, Clock, Webhook, MousePointer2, Sparkles, Check, Loader2, AlertTriangle, Bot,
+    Mail, Clock, Webhook, MousePointer2, Sparkles, Check, Loader2, AlertTriangle, Bot, ClipboardList,
     Undo2, Redo2, Layers, Trash2, Upload, MessageSquare, Box, FolderOpen,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
@@ -15,9 +15,9 @@ import { IconPicker } from './flow/stepIcons';
  *   back arrow • trigger icon avatar • inline-editable title • saving pill
  *   • status badge • action cluster (Diagnose / Dry-run / Pause-Activate)
  *
- * The Build / Settings / Run history tabs sit inline in this header row (a
- * compact segmented control) so the builder gets one less bar above the
- * canvas. Caller passes `tab` + `onTabChange` so the active tab is owned by
+ * The Editor / Settings / Run history / Version history views sit inline in
+ * this header row (a compact menu) so the builder gets one less bar above the
+ * canvas. Caller passes `tab` + `onTabChange` so the active view is owned by
  * BuilderShell — easier to coordinate with floating panels and Focus mode.
  *
  * The Diagnose button gets a `ref` exposed via `diagnoseAnchorRef` so the
@@ -35,6 +35,7 @@ export default function BuilderHeader({
     triggerKind,
     isActive,
     isDraft,
+    canActivate = true,
     statusLabel,
     statusBadgeClass,
     canDiagnose,
@@ -109,7 +110,10 @@ export default function BuilderHeader({
         else if (e.key === 'Escape') { setDraft(displayTitle); setEditing(false); }
     };
 
-    const layerInUse = (scope?.refCount || 0) > 0;
+    // An empty flowlet stays deletable however many call steps point at it —
+    // there is nothing in it to lose, and the palette creates one WITH a call
+    // step, which made every fresh flowlet un-deletable (BFSF-340).
+    const layerInUse = (scope?.refCount || 0) > 0 && !scope?.empty;
 
     return (
         <div className={flush ? 'bg-[var(--bg-secondary)]/40' : 'border-b border-[var(--border-default)] bg-[var(--bg-primary)]'}>
@@ -185,8 +189,10 @@ export default function BuilderHeader({
                             onClick={layerInUse ? undefined : onDeleteLayer}
                             disabled={layerInUse}
                             title={layerInUse
-                                ? `Used by ${scope.refCount} step${scope.refCount === 1 ? '' : 's'}`
-                                : 'Delete this flowlet'}
+                                ? `Used by ${scope.refCount} step${scope.refCount === 1 ? '' : 's'} — remove those first`
+                                : ((scope?.refCount || 0) > 0
+                                    ? `Delete this empty flowlet (and the ${scope.refCount} “Call flowlet” step${scope.refCount === 1 ? '' : 's'} that use${scope.refCount === 1 ? 's' : ''} it)`
+                                    : 'Delete this flowlet')}
                             aria-label="Delete flowlet"
                             className="p-1.5 rounded-lg text-[var(--text-tertiary)] hover:text-red-600 hover:bg-[var(--bg-secondary)] transition disabled:opacity-40 disabled:hover:text-[var(--text-tertiary)] disabled:hover:bg-transparent flex-shrink-0"
                         >
@@ -282,8 +288,10 @@ export default function BuilderHeader({
                                 ) : (
                                     <button
                                         onClick={onActivate}
-                                        disabled={busy || isDraft}
-                                        title={isDraft ? 'Finalise the draft via the chat first' : 'Activate'}
+                                        disabled={busy || !canActivate}
+                                        title={canActivate
+                                            ? (isDraft ? 'Activate — finalises this draft and goes live' : 'Activate')
+                                            : 'Add a trigger and at least one step first'}
                                         className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-[var(--accent)] text-white hover:opacity-90 transition disabled:opacity-50"
                                     >
                                         <Power size={14} /> Activate
@@ -458,16 +466,26 @@ function RunFlowMenu({ busy, onDryRun, onRunLive }) {
 }
 
 /**
- * View switcher (Build / Settings / Run history). Office hides secondary
- * surfaces behind a menu rather than spending bar width on always-visible
- * tabs — this shows the current view as one compact button and reveals the
- * others on click, so Settings / Run history stay one click away without
+ * View switcher (Editor / Settings / Run history / Version history). Office
+ * hides secondary surfaces behind a menu rather than spending bar width on
+ * always-visible tabs — this shows the current view as one compact button and
+ * reveals the others on click, so the rest stay one click away without
  * crowding the ribbon's command strip.
+ *
+ * Note the id/label split on the first entry: the label reads "Editor"
+ * alongside Settings and Run history, but the id stays `build` — it is the
+ * persisted `initialTab` value and is threaded through half a dozen call
+ * sites (BFSF-343).
+ *
+ * Version history is its own view rather than a section at the bottom of
+ * Settings: buried there it was hard to find and hard to read, and it kept
+ * Settings from growing into what it is for (BFSF-344/341/342).
  */
 const VIEWS = [
-    { id: 'build', label: 'Build' },
+    { id: 'build', label: 'Editor' },
     { id: 'settings', label: 'Settings' },
     { id: 'history', label: 'Run history' },
+    { id: 'versions', label: 'Version history' },
 ];
 function ViewMenu({ tab, onTabChange }) {
     const [open, setOpen] = useState(false);
@@ -554,6 +572,7 @@ function SavingPill({ state }) {
 function pickTriggerIcon(kind) {
     if (kind === 'schedule') return Clock;
     if (kind === 'webhook') return Webhook;
+    if (kind === 'form') return ClipboardList;
     if (kind === 'manual') return MousePointer2;
     if (kind === 'app_event') return Mail; // today: only Gmail
     if (kind === 'agent_call') return Bot;

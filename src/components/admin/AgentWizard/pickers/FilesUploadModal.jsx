@@ -86,7 +86,7 @@ function KbList({ kbs, linkedIds, onToggle, onCreate, t }) {
     );
 }
 
-export default function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowledgeBaseIdsChange, strictKnowledge, onStrictKnowledgeChange, includeSourceReferences, onIncludeSourceReferencesChange, allKbs, onToggleKbLink, onCreateKb, onClose }) {
+export default function FilesUploadModal({ t, agent, agentName, knowledgeBaseIds, onKnowledgeBaseIdsChange, strictKnowledge, onStrictKnowledgeChange, includeSourceReferences, onIncludeSourceReferencesChange, allKbs, onToggleKbLink, onCreateKb, onClose }) {
     // Primary KB = the auto-created KB at wizard/commit time, or the first linked KB.
     const initialKbId = agent?.config?.wizard?.primaryKbId || knowledgeBaseIds?.[0] || null;
     const [kbId, setKbId] = useState(initialKbId);
@@ -104,12 +104,15 @@ export default function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowled
 
     const ensureKB = useCallback(async () => {
         if (kbId) return kbId;
-        // Lazily create one if commit didn't (older agents, KB feature was disabled, etc.).
+        // Lazily create one if commit didn't (older agents, KB feature was
+        // disabled, unsaved drafts — BFSF-270). Prefer the LIVE typed name over
+        // the stale agent shell so a draft doesn't mint a KB called "Untitled".
+        const kbName = agentName || agent?.name || 'Knowledge';
         try {
             const res = await authFetch(`${API_BASE}/api/kb`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: agent?.name || 'Knowledge', description: `Auto-generated for agent "${agent?.name}"` }),
+                body: JSON.stringify({ name: kbName, description: `Auto-generated for agent "${kbName}"` }),
             });
             if (!res.ok) throw new Error(await res.text());
             const created = await res.json();
@@ -121,7 +124,7 @@ export default function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowled
             setError(err.message);
             return null;
         }
-    }, [kbId, agent?.name, agent?.id, knowledgeBaseIds, onKnowledgeBaseIdsChange]);
+    }, [kbId, agentName, agent?.name, agent?.id, knowledgeBaseIds, onKnowledgeBaseIdsChange]);
 
     const loadDocs = useCallback(async (id) => {
         if (!id) return;
@@ -186,6 +189,14 @@ export default function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowled
                     <div>
                         <div className="text-sm font-semibold text-[var(--text-primary)]">{t('agent_wizard.files.title')}</div>
                         <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.files.subtitle')}</div>
+                        {/* BFSF-270: for unsaved drafts, say WHERE files go —
+                            the assignee's "there should be a message" — while
+                            keeping the flow fully functional. */}
+                        {!agent?.id && (
+                            <div className="text-xs text-[var(--text-tertiary)] mt-1">
+                                {t('agent_wizard.files.draft_notice', 'Files are stored in a knowledge base right away — save the agent to keep them linked.')}
+                            </div>
+                        )}
                     </div>
                     <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={18} /></button>
                 </div>
@@ -211,7 +222,7 @@ export default function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowled
                     {Array.isArray(allKbs) && (
                         <div>
                             <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">
-                                {t('agent_wizard.knowledge.kbs') || 'Knowledge bases'} ({allKbs.length})
+                                {t('agent_wizard.knowledge.kbs', 'Knowledge bases')} ({allKbs.length})
                             </div>
                             <KbList
                                 t={t}

@@ -1,7 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import RichTextEditor from '../editor/react/RichTextEditor.jsx';
-import { shouldUseNewEditor } from '../editor/react/useNewEditor.js';
-import { preprocessMermaidContent } from '../pages/notebooks/MermaidExtension';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
 import {
@@ -80,15 +78,18 @@ export default function WorkspaceNotebook({
     const [notebookId, setNotebookId] = useState(existingNotebookId || null);
     const creatingNotebookRef = useRef(false);
 
-    // Sync when parent passes a different existing notebook ID (e.g. conversation switch)
+    // Sync when the parent passes a different notebook id (e.g. conversation
+    // switch). The `existingNotebookId &&` guard meant switching to a
+    // conversation that has NO linked notebook kept the previous one's id — so
+    // the next image upload and "Open in full notebook" pointed at another
+    // conversation's document. Clearing is a legitimate transition.
     useEffect(() => {
-        if (existingNotebookId && existingNotebookId !== notebookId) {
-            setNotebookId(existingNotebookId);
-        }
-    }, [existingNotebookId]);
+        setNotebookId(existingNotebookId || null);
+    }, [existingNotebookId, conversationId]);
 
-    // Stable initial content (preprocessed for mermaid diagrams)
-    const [initialContent] = useState(() => preprocessMermaidContent(content || '') || '');
+    // Stable initial content. Mermaid needs no pre-pass — the editor's parsers
+    // handle ```mermaid fences and legacy mermaid divs natively.
+    const [initialContent] = useState(() => content || '');
     const prevContentRef = useRef(content);
 
     // Export state
@@ -154,7 +155,7 @@ export default function WorkspaceNotebook({
             if (typeof handle.setMarkdownContent === 'function') {
                 handle.setMarkdownContent(content || '');
             } else {
-                editor.commands.setContent(preprocessMermaidContent(content || ''), { emitUpdate: false });
+                editor.commands.setContent(content || '', { emitUpdate: false });
             }
             prevContentRef.current = content; // only after a successful apply
         };
@@ -332,10 +333,29 @@ export default function WorkspaceNotebook({
         return () => document.removeEventListener('mousedown', handleClick);
     }, [exportMenuOpen]);
 
-    // Cleanup
+    /**
+     * Flush the debounced save.
+     *
+     * This panel rolls its own 1.2 s debounce and simply cleared it on unmount,
+     * so closing it (or navigating away) within 1.2 s of the last keystroke
+     * dropped that text. It uses neither useDocumentAutosave nor
+     * BeeEditor.flush(), which is why it missed the fix the other two surfaces
+     * got. Refs keep the cleanup free of stale closures.
+     */
+    const flushSaveRef = useRef(null);
     useEffect(() => {
-        return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-    }, []);
+        flushSaveRef.current = () => {
+            if (!saveTimerRef.current) return;
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+            // Pull the very latest content from the editor, not the last value
+            // the debounce happened to capture.
+            const md = editorRef.current?.flush?.() != null ? getMarkdown() : prevContentRef.current;
+            if (md != null && md !== '') onSave?.(md);
+        };
+    }, [getMarkdown, onSave]);
+
+    useEffect(() => () => { flushSaveRef.current?.(); }, []);
 
     return (
         <div className="flex flex-col h-full" style={{ background: 'var(--bg-primary)' }}>
@@ -418,9 +438,9 @@ export default function WorkspaceNotebook({
                         <div className="w-px h-4 mx-1" style={{ background: 'var(--border-subtle)' }} />
                     )}
 
-                    {/* Close */}
+                    {/* Close — flush first; closing is not unmounting everywhere. */}
                     <button
-                        onClick={onClose}
+                        onClick={() => { flushSaveRef.current?.(); onClose?.(); }}
                         className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)]"
                         style={{ color: 'var(--text-tertiary)' }}
                         title={t('notebooks.close')}
@@ -433,7 +453,6 @@ export default function WorkspaceNotebook({
             {/* ── TipTap Editor ── */}
             <div className="flex-1 min-h-0 overflow-hidden">
                 <RichTextEditor
-                    engine={shouldUseNewEditor(user, 'notebooks') ? 'bf' : 'tiptap'}
                     ref={editorRef}
                     content={initialContent}
                     onChange={handleEditorChange}

@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Save, RotateCcw, ChevronRight } from 'lucide-react';
-import { NOTIFICATION_DEFAULTS, VALID_LEVELS, LEVEL_LABELS, CHANNEL_OPTIONS, normalizeChannels } from './notificationDefaults';
-import VersionHistoryPanel from './VersionHistoryPanel';
+import ChannelPills from './ChannelPills';
+import { NOTIFICATION_DEFAULTS, VALID_LEVELS, LEVEL_LABELS, normalizeChannels } from './notificationDefaults';
 import WebhookPanel from './WebhookPanel';
 import scopedStorage from '../../../../utils/scopedStorage';
+import { controlSurfaceClass, fieldLabelClass, inputClass, textareaClass } from './flow/settings/formStyles';
 
 /**
  * Automation-level settings. Per-step settings live in StepInspector;
@@ -12,14 +13,16 @@ import scopedStorage from '../../../../utils/scopedStorage';
  *   - Title (read-only echo of the inline-rename)
  *   - Description
  *   - Manual trigger payload template (JSON string)
- *   - Version history (diff + restore) and inbound webhook management
+ *   - Inbound webhook management
+ *
+ * Version history moved OUT to its own top-level view (BFSF-344).
  *
  * Future: retry policy, runner concurrency hints, alert thresholds.
  *
  * Mirrors the chrome of flow/SettingsForm.jsx (form rows + Save/Reset
  * footer) so the visual language stays consistent.
  */
-export default function SettingsTab({ automation, onSave, onRestored }) {
+export default function SettingsTab({ automation, onSave }) {
     const initial = useMemo(() => ({
         title: automation?.title || '',
         description: automation?.description || '',
@@ -42,9 +45,23 @@ export default function SettingsTab({ automation, onSave, onRestored }) {
         return next;
     });
 
-    useEffect(() => { setDraft(initial); }, [initial]);
-
     const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
+
+    // Re-seed the draft from the automation only when it's SAFE to:
+    //   - the automation id changed (the user switched to a different one), OR
+    //   - the user has no unsaved edits (so we can pick up an external update
+    //     — e.g. the AI builder mutating the automation — without clobbering).
+    // Without this guard, any prop-identity change (a 5s active-runs poll, an
+    // SSE refresh) fired setDraft(initial) and wiped the user's in-progress
+    // Settings edits mid-typing.
+    const lastIdRef = useRef(automation?.id);
+    const dirtyRef = useRef(dirty);
+    dirtyRef.current = dirty;
+    useEffect(() => {
+        const idChanged = automation?.id !== lastIdRef.current;
+        lastIdRef.current = automation?.id;
+        if (idChanged || !dirtyRef.current) setDraft(initial);
+    }, [initial, automation?.id]);
     // Real automation title used in the notification previews so users see
     // the actual subject line, not a literal "<title>" placeholder.
     const notifyTitle = automation?.title?.trim() || 'this automation';
@@ -91,7 +108,7 @@ export default function SettingsTab({ automation, onSave, onRestored }) {
                             type="text"
                             value={draft.title}
                             onChange={(e) => setDraft(d => ({ ...d, title: e.target.value }))}
-                            className={input()}
+                            className={inputClass()}
                         />
                     </Row>
                     <Row label="Description" hint="Optional. Shown to admins reviewing this automation.">
@@ -99,7 +116,7 @@ export default function SettingsTab({ automation, onSave, onRestored }) {
                             rows={3}
                             value={draft.description}
                             onChange={(e) => setDraft(d => ({ ...d, description: e.target.value }))}
-                            className={textarea()}
+                            className={textareaClass()}
                         />
                         <div className="text-[10px] text-[var(--text-tertiary)] text-right mt-0.5">
                             {(draft.description || '').length} characters
@@ -150,21 +167,20 @@ export default function SettingsTab({ automation, onSave, onRestored }) {
                                 value={draft.triggerPayload}
                                 onChange={(e) => setDraft(d => ({ ...d, triggerPayload: e.target.value }))}
                                 spellCheck={false}
-                                className={textarea() + ' font-mono text-xs'}
+                                className={textareaClass() + ' font-mono text-xs'}
                                 placeholder='{"messageId": "abc", "from": "test@example.com", ...}'
                             />
                         </Row>
                     </Advanced>
 
+                    {/* Version history used to sit here, below everything else.
+                        It is its own view now (BFSF-344) — buried at the foot
+                        of a scroll it was both hard to find and short of the
+                        room it needs. */}
                     {automation?.id && (
-                        <>
-                            <div className="border-t border-[var(--border-default)] pt-5">
-                                <VersionHistoryPanel automation={automation} onRestored={onRestored} />
-                            </div>
-                            <div className="border-t border-[var(--border-default)] pt-5">
-                                <WebhookPanel automation={automation} />
-                            </div>
-                        </>
+                        <div className="border-t border-[var(--border-default)] pt-5">
+                            <WebhookPanel automation={automation} />
+                        </div>
                     )}
                 </div>
             </div>
@@ -200,18 +216,11 @@ export default function SettingsTab({ automation, onSave, onRestored }) {
 function Row({ label, hint, children }) {
     return (
         <div>
-            <div className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)] mb-1">{label}</div>
+            <div className={`${fieldLabelClass()} mb-1`}>{label}</div>
             {children}
             {hint && <div className="text-[11px] text-[var(--text-tertiary)] mt-1 leading-snug">{hint}</div>}
         </div>
     );
-}
-
-function input() {
-    return 'w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]';
-}
-function textarea() {
-    return 'w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] resize-y';
 }
 
 function prettyJson(value) {
@@ -296,7 +305,7 @@ function NotificationRow({ label, preview, value, onChange }) {
                         value={value.level}
                         disabled={!enabled}
                         onChange={(e) => onChange({ ...value, level: e.target.value })}
-                        className="bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-1.5 py-0.5 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-40"
+                        className={controlSurfaceClass('px-1.5 py-0.5 text-xs disabled:opacity-40')}
                     >
                         {VALID_LEVELS.map(l => (
                             <option key={l} value={l}>{LEVEL_LABELS[l] || l}</option>
@@ -304,30 +313,12 @@ function NotificationRow({ label, preview, value, onChange }) {
                     </select>
                 </label>
             </div>
-            <div className={`flex items-center flex-wrap gap-1.5 px-2 pb-2 pt-0.5 ${enabled ? '' : 'opacity-40 pointer-events-none'}`}>
-                <span className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)] mr-0.5">Send to</span>
-                {CHANNEL_OPTIONS.map((opt) => {
-                    const active = opt.always || channels.includes(opt.key);
-                    const locked = opt.always || opt.comingSoon;
-                    return (
-                        <button
-                            key={opt.key}
-                            type="button"
-                            disabled={locked}
-                            aria-pressed={active}
-                            onClick={() => { if (!locked) toggleChannel(opt.key); }}
-                            title={opt.comingSoon ? 'Coming soon' : opt.always ? 'Always on' : ''}
-                            className={`text-[11px] px-2 py-0.5 rounded-full border transition ${
-                                active
-                                    ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--text-primary)]'
-                                    : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
-                            } ${opt.comingSoon ? 'opacity-50 cursor-not-allowed' : opt.always ? 'cursor-default' : ''}`}
-                        >
-                            {opt.label}{opt.comingSoon ? ' · soon' : ''}
-                        </button>
-                    );
-                })}
-            </div>
+            <ChannelPills
+                channels={channels}
+                onToggle={toggleChannel}
+                disabled={!enabled}
+                className="px-2 pb-2 pt-0.5"
+            />
         </div>
     );
 }

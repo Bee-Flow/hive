@@ -224,11 +224,21 @@ const AgentDesignerPanel = ({
 
             let savedAgent = agent;
             if (agent) {
-                await authFetch(`${API_BASE}/agents/${agent.id}`, {
+                const res = await authFetch(`${API_BASE}/agents/${agent.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
+                if (!res.ok) {
+                    // BFSF-271: surface permission rejections instead of
+                    // silently pretending the save worked (matches the
+                    // delete handler's error idiom in this legacy panel).
+                    const data = await res.json().catch(() => ({}));
+                    alert(data.code === 'agent_not_editable'
+                        ? t('agent_studio.read_only_banner', "Read-only — you don't have permission to edit this agent.")
+                        : (data.error || 'Failed to save agent'));
+                    return;
+                }
             } else {
                 const res = await authFetch(`${API_BASE}/agents`, {
                     method: 'POST',

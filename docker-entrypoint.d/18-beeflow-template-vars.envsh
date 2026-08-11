@@ -1,0 +1,90 @@
+#!/bin/sh
+# Make nginx.conf.template render no matter how the stack file was written.
+#
+# WHY THIS EXISTS
+# The stock entrypoint (20-envsubst-on-templates.sh) substitutes ONLY the
+# variables NAMED in NGINX_ENVSUBST_FILTER. Every self-host stack file pins that
+# filter, and Portainer/compose stacks keep the file they were deployed with — so
+# adding a ${VAR} to the template silently breaks every EXISTING deployment the
+# moment it pulls a newer image: the variable is not in their filter, the literal
+# text lands in default.conf, and nginx refuses to start:
+#     [emerg] host not found in resolver "${NGINX_RESOLVER}"
+#     [emerg] unknown "ANALYTICS_ORIGIN" variable
+# The frontend then crash-loops with no way to fix it other than editing the
+# stack file, which is exactly what the customer cannot be expected to do.
+#
+# So the image no longer trusts the stack file for this. It reads the ${VAR}
+# names straight out of the templates, gives each one a working default when the
+# stack did not set it, and ADDS all of them to the filter (whatever the operator
+# put there is kept). A new template variable therefore needs no compose/manifest
+# change anywhere, ever.
+#
+# `.envsh` (not `.sh`) so docker-entrypoint.sh SOURCES it: the exports have to
+# survive into 20-envsubst-on-templates.sh. Numbered 18 so it runs after
+# 15-local-resolvers.envsh (whose $NGINX_LOCAL_RESOLVERS we fall back to) and
+# before 20. Sourced into a `set -e` shell — every command here must succeed.
+
+bf_log() {
+    if [ -z "${NGINX_ENTRYPOINT_QUIET_LOGS:-}" ]; then
+        echo "18-beeflow-template-vars.envsh: $*"
+    fi
+    return 0
+}
+
+bf_template_dir="${NGINX_ENVSUBST_TEMPLATE_DIR:-/etc/nginx/templates}"
+
+# Every ${UPPERCASE} name the templates actually use. nginx's own runtime
+# variables ($host, $uri, $backend, $http_upgrade, ...) are lowercase and
+# unbraced, so they can never match — which is what makes it safe to hand this
+# whole list to envsubst.
+bf_vars="$(
+    find "$bf_template_dir" -follow -type f -name '*.template' -exec cat {} + 2>/dev/null |
+        grep -oE '\$\{[A-Z][A-Z0-9_]*\}' |
+        tr -d '${}' |
+        sort -u
+)" || bf_vars=""
+
+bf_filter="${NGINX_ENVSUBST_FILTER:-}"
+
+for bf_v in $bf_vars; do
+    eval "bf_cur=\${$bf_v-}"
+    # Empty counts as unset: an operator who leaves NGINX_RESOLVER blank in the
+    # Portainer UI would otherwise get `resolver ;`, which is the same crash by
+    # another name.
+    if [ -z "$bf_cur" ]; then
+        case "$bf_v" in
+            # Docker's embedded DNS (the image ENV default). Kubernetes has no
+            # 127.0.0.11 — CoreDNS has its own ClusterIP — so prefer what
+            # 15-local-resolvers.envsh read from /etc/resolv.conf when the value
+            # was explicitly blanked. That script is opt-in
+            # (NGINX_ENTRYPOINT_LOCAL_RESOLVERS), so the variable is usually
+            # empty and we land on Docker's DNS.
+            NGINX_RESOLVER) bf_default="${NGINX_LOCAL_RESOLVERS:-127.0.0.11}" ;;
+            # The backend service name/port used by every shipped stack file.
+            SERVER_HOST)    bf_default="server" ;;
+            SERVER_PORT)    bf_default="3001" ;;
+            # Anything else is an additive knob (e.g. ANALYTICS_ORIGIN, an extra
+            # CSP source): empty is the correct, safe rendering.
+            *)              bf_default="" ;;
+        esac
+        eval "$bf_v=\$bf_default"
+        export "$bf_v"
+        if [ -n "$bf_default" ]; then
+            bf_log "$bf_v is not set, defaulting to $bf_default"
+        fi
+    fi
+    # Append rather than replace: an operator's filter may be a full regex
+    # (^(FOO|BAR)$), and alternation composes with anything.
+    case "|$bf_filter|" in
+        *"|$bf_v|"*) ;;
+        *) bf_filter="${bf_filter:+$bf_filter|}$bf_v" ;;
+    esac
+done
+
+if [ "$bf_filter" != "${NGINX_ENVSUBST_FILTER:-}" ]; then
+    bf_log "using NGINX_ENVSUBST_FILTER=$bf_filter"
+fi
+export NGINX_ENVSUBST_FILTER="$bf_filter"
+
+unset bf_template_dir bf_vars bf_v bf_cur bf_default bf_filter
+unset -f bf_log 2>/dev/null || true

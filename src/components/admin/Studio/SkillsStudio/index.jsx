@@ -1,8 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, Trash2, X, Users, Lock } from 'lucide-react';
+import { Plus, Trash2, X, Users, Lock, AppWindow } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import useTranslation from '../../../../hooks/useTranslation';
 import { SKILL_EMOJI_ICONS as ICONS } from '../../../../constants/icons';
+import { useIntegrationStatus } from '../../../../hooks/useIntegrationStatus';
+import AppsPicker from '../../AgentWizard/pickers/AppsPicker';
+import { INTEGRATION_CATALOG } from '../../AgentDesigner/integrations';
+import { filterAvailableIntegrations } from '../../AgentDesigner/integrationAvailability';
 
 const INSTRUCTION_LIMIT = 4000;
 
@@ -11,6 +15,7 @@ const TABS = [
     { id: 'workflow',     label: 'Workflow',     hint: 'Step-by-step process to follow.',                placeholder: 'e.g.\n1. Read the transcript\n2. Extract action items\n3. List decisions made\n4. Output in structured format...' },
     { id: 'rules',        label: 'Rules',        hint: "Tone, format rules, dos and don'ts.",            placeholder: 'e.g.\n- Always use bullet points\n- Keep summaries under 300 words\n- Highlight action items in bold...' },
     { id: 'examples',     label: 'Examples',     hint: 'Example outputs or input/output pairs.',         placeholder: 'e.g. Input: "Meeting transcript..."\nOutput: "## Summary\n..."' },
+    { id: 'apps',         label: 'Apps',         hint: 'Tools of these apps become available to the AI only while this skill is active.' },
 ];
 
 export default function SkillsStudio({ user, initialSkillId = null, onNavigate, hasPermission = () => true }) {
@@ -83,6 +88,7 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
                     isShared: false,
                     dynamicActivation: false,
                     sharedGroups: [],
+                    enabledIntegrations: [],
                 }),
             });
             if (!res.ok) throw new Error(await res.text());
@@ -252,7 +258,9 @@ function SkillEditor({ t, skill, orgGroups, user, onRefreshList, canDelete = fal
     const [isShared, setIsShared] = useState(!!skill.isShared);
     const [dynamicActivation, setDynamicActivation] = useState(!!skill.dynamicActivation);
     const [sharedGroups, setSharedGroups] = useState(Array.isArray(skill.sharedGroups) ? skill.sharedGroups : []);
+    const [enabledIntegrations, setEnabledIntegrations] = useState(Array.isArray(skill.enabledIntegrations) ? skill.enabledIntegrations : []);
     const [showIconPicker, setShowIconPicker] = useState(false);
+    const [showAppsPicker, setShowAppsPicker] = useState(false);
     const [activeTab, setActiveTab] = useState('instructions');
     // savingState is LOCAL — no parent re-renders when it changes
     const [savingState, setSavingState] = useState('idle');
@@ -260,11 +268,15 @@ function SkillEditor({ t, skill, orgGroups, user, onRefreshList, canDelete = fal
     const effectiveOrgId = user?.organizationId || null;
     const orgFilteredGroups = orgGroups.filter(g => !effectiveOrgId || g.organizationId === effectiveOrgId);
 
+    // Org/credential-gated app catalog — same filter the agent builder uses.
+    const { integrationStatus } = useIntegrationStatus();
+    const availableApps = filterAvailableIntegrations(INTEGRATION_CATALOG, integrationStatus);
+
     // stateRef holds the latest field values for the debounced/immediate flush.
     // We update it manually in every setter so it's always in sync — no useEffect lag.
     const stateRef = useRef({
         name, description, instructions, workflow, rules, examples,
-        icon, isShared, dynamicActivation, sharedGroups,
+        icon, isShared, dynamicActivation, sharedGroups, enabledIntegrations,
     });
 
     const saveTimer = useRef(null);
@@ -347,6 +359,14 @@ function SkillEditor({ t, skill, orgGroups, user, onRefreshList, canDelete = fal
         setSharedGroups(prev => {
             const next = prev.includes(gid) ? prev.filter(x => x !== gid) : [...prev, gid];
             stateRef.current.sharedGroups = next;
+            return next;
+        });
+        queue(true);
+    };
+    const toggleApp = (appId) => {
+        setEnabledIntegrations(prev => {
+            const next = prev.includes(appId) ? prev.filter(x => x !== appId) : [...prev, appId];
+            stateRef.current.enabledIntegrations = next;
             return next;
         });
         queue(true);
@@ -448,6 +468,11 @@ function SkillEditor({ t, skill, orgGroups, user, onRefreshList, canDelete = fal
                             }`}
                     >
                         {tab.label}
+                        {tab.id === 'apps' && enabledIntegrations.length > 0 && (
+                            <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]">
+                                {enabledIntegrations.length}
+                            </span>
+                        )}
                     </button>
                 ))}
             </div>
@@ -467,20 +492,66 @@ function SkillEditor({ t, skill, orgGroups, user, onRefreshList, canDelete = fal
                         </span>
                     )}
                 </div>
-                <textarea
-                    value={tabFieldValue(activeTab)}
-                    onChange={e => updateTabField(activeTab, e.target.value)}
-                    onBlur={flushNow}
-                    placeholder={currentTab.placeholder}
-                    className="w-full min-h-[200px] text-[13px] leading-relaxed rounded-xl border-[1.5px] p-3.5 resize-y outline-none transition-colors focus:border-[var(--accent-primary)]"
-                    style={{
-                        color: 'var(--text-primary)',
-                        background: 'var(--bg-tertiary)',
-                        borderColor: 'var(--border-subtle)',
-                        fontFamily: 'inherit',
-                    }}
-                />
+                {activeTab === 'apps' ? (
+                    <div>
+                        {enabledIntegrations.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-4">
+                                {enabledIntegrations.map(appId => {
+                                    const item = INTEGRATION_CATALOG.find(a => a.id === appId);
+                                    return (
+                                        <span
+                                            key={appId}
+                                            className="flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 rounded-full border-[1.5px] text-[13px]"
+                                            style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}
+                                        >
+                                            {item?.iconSvg && <span className="w-4 h-4 flex items-center justify-center">{item.iconSvg}</span>}
+                                            {item?.label || appId}
+                                            <button
+                                                onClick={() => toggleApp(appId)}
+                                                title={t('agent_wizard.apps.disable', 'Disable')}
+                                                className="p-0.5 rounded-full text-[var(--text-tertiary)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                                            >
+                                                <X size={13} />
+                                            </button>
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        <button
+                            onClick={() => setShowAppsPicker(true)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-full border-[1.5px] text-[13px] font-medium transition-all border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
+                        >
+                            <AppWindow size={14} />
+                            {t('agent_wizard.builder.browse_apps', 'Browse apps')}
+                        </button>
+                    </div>
+                ) : (
+                    <textarea
+                        value={tabFieldValue(activeTab)}
+                        onChange={e => updateTabField(activeTab, e.target.value)}
+                        onBlur={flushNow}
+                        placeholder={currentTab.placeholder}
+                        className="w-full min-h-[200px] text-[13px] leading-relaxed rounded-xl border-[1.5px] p-3.5 resize-y outline-none transition-colors focus:border-[var(--accent-primary)]"
+                        style={{
+                            color: 'var(--text-primary)',
+                            background: 'var(--bg-tertiary)',
+                            borderColor: 'var(--border-subtle)',
+                            fontFamily: 'inherit',
+                        }}
+                    />
+                )}
             </div>
+
+            {showAppsPicker && (
+                <AppsPicker
+                    t={t}
+                    items={availableApps}
+                    enabled={enabledIntegrations}
+                    onClose={() => setShowAppsPicker(false)}
+                    onToggle={toggleApp}
+                />
+            )}
 
             {/* Group sharing (only when shared and org has groups) */}
             {isShared && orgFilteredGroups.length > 0 && (

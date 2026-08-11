@@ -1,14 +1,18 @@
 /**
- * RichTextEditor — thin switch between the new BeeEditor and the legacy
- * TipTap NotebookEditor, chosen by the `engine` prop ('bf' | 'tiptap'). Both
- * editors share the identical props + ref API, so call sites swap with one prop.
+ * RichTextEditor — mounts BeeEditor, the in-house editor engine.
  *
- * The new engine is wrapped in an error boundary: if a transform/render throws on
+ * This used to switch between BeeEditor and a legacy TipTap editor via an
+ * `engine` prop. BeeEditor had been the default on every surface for a while and
+ * the TipTap path was a kill-switch nobody set; because the import was static,
+ * every user downloaded the whole TipTap tree to run code that never executed.
+ * Both are gone. The `engine` prop is accepted and ignored so any stale caller
+ * keeps working.
+ *
+ * The editor is wrapped in an error boundary: if a transform/render throws on
  * malformed content, the user keeps their last-saved work and gets a retry action
  * instead of an unmounted (blank) editor.
  */
 import React, { forwardRef } from 'react';
-import NotebookEditor from '../../pages/notebooks/NotebookEditor';
 import BeeEditor from './BeeEditor.jsx';
 import useTranslation from '../../hooks/useTranslation';
 
@@ -56,21 +60,19 @@ class EditorErrorBoundary extends React.Component {
   }
 }
 
-const RichTextEditor = forwardRef(function RichTextEditor({ engine, ...props }, ref) {
+// `engine` is destructured purely to keep it off the DOM-bound prop spread.
+const RichTextEditor = forwardRef(function RichTextEditor({ engine: _engine, ...props }, ref) {
   const { t } = useTranslation();
-  if (engine === 'bf') {
-    const labels = {
-      title: t('notebooks.editor_error_title', 'The editor ran into a problem'),
-      body: t('notebooks.editor_error_body', 'Your last saved version is safe. Try reloading the editor.'),
-      retry: t('notebooks.editor_error_retry', 'Reload editor'),
-    };
-    return (
-      <EditorErrorBoundary labels={labels}>
-        <BeeEditor ref={ref} {...props} />
-      </EditorErrorBoundary>
-    );
-  }
-  return <NotebookEditor ref={ref} {...props} />;
+  const labels = {
+    title: t('notebooks.editor_error_title', 'The editor ran into a problem'),
+    body: t('notebooks.editor_error_body', 'Your last saved version is safe. Try reloading the editor.'),
+    retry: t('notebooks.editor_error_retry', 'Reload editor'),
+  };
+  return (
+    <EditorErrorBoundary labels={labels}>
+      <BeeEditor ref={ref} {...props} />
+    </EditorErrorBoundary>
+  );
 });
 
 export default RichTextEditor;

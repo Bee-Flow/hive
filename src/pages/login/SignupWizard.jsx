@@ -7,6 +7,8 @@ import SignupStepOrg from './SignupStepOrg';
 import SignupStepAuth from './SignupStepAuth';
 import SignupStepPrivacy from './SignupStepPrivacy';
 import SignupStepAccount from './SignupStepAccount';
+import PlanGrid from '../../components/billing/PlanGrid';
+import { validateStep } from './signupValidation';
 
 /**
  * SignupWizard — full-page onboarding wizard for new web signups.
@@ -20,10 +22,14 @@ import SignupStepAccount from './SignupStepAccount';
  * Step path is derived from the chosen account type rather than hardcoded
  * numbers, so flow-specific skips (consumer single login-method, existing-org,
  * invite) are just shorter arrays:
- *   new org   : welcome → type → auth → privacy → account
- *   consumer  : welcome → type → [auth] → account
+ *   new org   : welcome → type → [plan] → auth → privacy → account
+ *   consumer  : welcome → type → [plan] → [auth] → privacy → account
  *   existing  : welcome → type → account
  *   invite    : account
+ *
+ * Organisation and personal signups walk the SAME path — only the plan list and
+ * the org-details fields differ. The plan step is omitted when no plans are
+ * published, and for `existing`/`invite`, which inherit the org's subscription.
  * The account step owns its own primary action (Create account / Continue with
  * provider), which auto-logs in on success — so there's no trailing "done"
  * screen to flash; the review summary lives at the top of the account step.
@@ -38,6 +44,7 @@ const SignupWizard = ({
     error, setError,
     handleSignup, resetSignup,
     availableLocales = [], locale, setLocale,
+    availablePlans = [], selectedPlanId = null,
     inputClass, inputClassSimple, labelClass,
 }) => {
     const { t } = useTranslation();
@@ -47,15 +54,21 @@ const SignupWizard = ({
     const steps = useMemo(() => {
         if (isInvite) return ['account'];
         const type = signupData.signupType;
+        // Joining an existing organisation inherits that org's subscription, so
+        // there is nothing for the new member to choose.
+        const plan = (type !== 'existing' && availablePlans.length > 0) ? ['plan'] : [];
         if (type === 'consumer') {
+            // Personal accounts get the same Privacy Shield step as org
+            // founders. Without it a new account silently started unprotected
+            // and the user was never told the feature existed (BFSF-289).
             return consumerLoginMethods.length === 1
-                ? ['welcome', 'type', 'account']
-                : ['welcome', 'type', 'auth', 'account'];
+                ? ['welcome', 'type', ...plan, 'privacy', 'account']
+                : ['welcome', 'type', ...plan, 'auth', 'privacy', 'account'];
         }
         if (type === 'existing') return ['welcome', 'type', 'account'];
         // 'new' organisation (default)
-        return ['welcome', 'type', 'auth', 'privacy', 'account'];
-    }, [isInvite, signupData.signupType, consumerLoginMethods.length]);
+        return ['welcome', 'type', ...plan, 'auth', 'privacy', 'account'];
+    }, [isInvite, signupData.signupType, consumerLoginMethods.length, availablePlans.length]);
 
     // Keep stepIdx in range when the path shrinks (e.g. user switches from a
     // new org to a consumer account on the 'type' step).
@@ -72,24 +85,22 @@ const SignupWizard = ({
         }
     }, [signupData.signupType, consumerLoginMethods]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Personal accounts default to tokenising rather than blocking: a private
+    // user wants their message answered with their data protected, not
+    // rejected. Keyed on signupType alone so it fires once when the user picks
+    // "personal" and never overrides a choice they make on the privacy step.
+    useEffect(() => {
+        if (signupData.signupType === 'consumer') {
+            setSignupData(p => (p.piiAction === 'block' ? { ...p, piiAction: 'tokenize' } : p));
+        }
+    }, [signupData.signupType]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const idx = Math.min(stepIdx, steps.length - 1);
     const step = steps[idx];
 
-    const canAdvance = () => {
-        if (step === 'welcome') return true;
-        if (step === 'type') {
-            const type = signupData.signupType;
-            if (type === 'new') return !!(signupData.newOrgName && signupData.orgKvk && signupData.orgVat);
-            if (type === 'existing') return !!signupData.organizationId;
-            return true; // consumer
-        }
-        if (step === 'auth') return !!signupData.authMethod;
-        // Privacy: an enabled shield with no categories selected detects nothing.
-        if (step === 'privacy' && signupData.shieldEnabled !== false) {
-            return (signupData.piiCategories || []).length > 0;
-        }
-        return true; // privacy (shield off) / account
-    };
+    // Single source of truth, shared with LoginPage.handleSignup — the two used
+    // to disagree about which fields were mandatory.
+    const canAdvance = () => validateStep(step, signupData, { locale }).ok;
 
     const next = () => {
         if (!canAdvance()) return;
@@ -109,6 +120,7 @@ const SignupWizard = ({
             case 'type': return signupData.signupType === 'new'
                 ? t('signup.step_org', 'Organisation details')
                 : t('signup.step_type', 'Choose your account');
+            case 'plan': return t('signup.step_plan', 'Choose your plan');
             case 'auth': return t('signup.step_auth', 'Sign-in method');
             case 'privacy': return t('signup.step_privacy', 'Privacy Shield');
             case 'account': return t('signup.step_account', 'Your account');
@@ -183,10 +195,20 @@ const SignupWizard = ({
                     {/* Step body */}
                     {step === 'welcome' && (
                         <div className="space-y-4">
+                            {/* BFSF-276: the account type is only chosen on the NEXT
+                                step ('type'), so on a first pass signupType is still
+                                unset here. Falling through to the org copy told every
+                                personal-account signer-up they were "setting up an
+                                organisation" one screen before they were offered the
+                                choice (BFSF-276). Stay account-type-agnostic until the
+                                user has actually picked; the specific lines still show
+                                when they navigate back to this step. */}
                             <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
                                 {signupData.signupType === 'consumer'
                                     ? t('signup.wizard_welcome_consumer', "Let's create your personal Bee Flow account in a few quick steps.")
-                                    : t('signup.wizard_welcome_org', "Let's set up your organisation on Bee Flow in a few quick steps.")}
+                                    : signupData.signupType
+                                        ? t('signup.wizard_welcome_org', "Let's set up your organisation on Bee Flow in a few quick steps.")
+                                        : t('signup.wizard_welcome_neutral', "Let's set up your account on Bee Flow in a few quick steps.")}
                             </p>
                             <div className="rounded-xl border p-4 text-sm" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)' }}>
                                 <p style={{ color: 'var(--text-secondary)' }}>
@@ -206,6 +228,31 @@ const SignupWizard = ({
                             allowOrgSignups={allowOrgSignups}
                             allowConsumerSignups={allowConsumerSignups}
                         />
+                    )}
+
+                    {step === 'plan' && (
+                        <div className="space-y-4">
+                            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                                {signupData.signupType === 'consumer'
+                                    ? t('signup.plan_intro_consumer', 'Pick the plan that fits you. You can change or cancel it later from your billing settings.')
+                                    : t('signup.plan_intro_org', 'Pick a plan for your organisation. You can change it later, and seats are billed as you invite people.')}
+                            </p>
+                            <PlanGrid
+                                plans={availablePlans}
+                                variant="compact"
+                                selectedPlanId={selectedPlanId}
+                                onSelect={(plan) => setSignupData(p => ({
+                                    ...p,
+                                    selectedPlanId: p.selectedPlanId === plan.id ? null : plan.id,
+                                }))}
+                                ctaLabelFor={(plan) => (selectedPlanId === plan.id
+                                    ? t('signup.plan_selected', 'Selected')
+                                    : t('signup.plan_select', 'Select'))}
+                            />
+                            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                                {t('signup.plan_skip_hint', 'Not sure yet? Continue without choosing — you will start on the free plan and can upgrade any time.')}
+                            </p>
+                        </div>
                     )}
 
                     {step === 'auth' && (

@@ -1,6 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, Check, ChevronDown } from 'lucide-react';
-import scopedStorage from '../../utils/scopedStorage';
+import { X } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import SettingsDropdown from './settings/SettingsDropdown';
+import { TTS_MODELS, TTS_VOICES, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from '../../constants/elevenLabsOptions';
+import useOutsideDismiss from '../../hooks/useOutsideDismiss';
+import { mediaGenSettingsStore } from '../../utils/mediaGenSettingsStore';
+
+const ACCENT = '#4285f4';
 
 // ─── Constants ──────────────────────────────────────────────────
 const ASPECT_RATIOS = [
@@ -16,28 +21,6 @@ const IMAGE_MODELS = [
     { label: 'Pro Image (Quality)', value: 'gemini-3-pro-image-preview' },
 ];
 
-const TTS_MODELS = [
-    { label: 'Flash v2.5 (Fast)', value: 'eleven_flash_v2_5' },
-    { label: 'v3 (Highest Quality)', value: 'eleven_v3' },
-    { label: 'Multilingual v2', value: 'eleven_multilingual_v2' },
-];
-
-const TTS_VOICES = [
-    { label: 'George (Default)', value: 'JBFqnCBsd6RMkjVDRZzb' },
-    { label: 'Rachel', value: '21m00Tcm4TlvDq8ikWAM' },
-    { label: 'Drew', value: '29vD33N1CtxCmqQRPOHJ' },
-    { label: 'Clyde', value: '2EiwWnXFnvU5JabPnv8n' },
-    { label: 'Paul', value: '5Q0t7uMcjvnagumLfvZi' },
-    { label: 'Domi', value: 'AZnzlk1XvdvUeBnXmlld' },
-    { label: 'Bella', value: 'EXAVITQu4vr4xnSDxMaL' },
-    { label: 'Antoni', value: 'ErXwobaYiN019PkySvjV' },
-    { label: 'Elli', value: 'MF3mGyEYCl7XYWbV9V6O' },
-    { label: 'Josh', value: 'TxGEqnHWrfWFTfGW9XjX' },
-    { label: 'Arnold', value: 'VR6AewLTigWG4xSOukaG' },
-    { label: 'Adam', value: 'pNInz6obpgDQGcFmaJgB' },
-    { label: 'Sam', value: 'yoZ06aMxZJJ28mfd3POQ' },
-];
-
 const TABS = [
     { id: 'image', label: 'Image', icon: '🖼️' },
     { id: 'elevenlabs', label: 'Music & TTS', icon: '🎵' },
@@ -45,22 +28,11 @@ const TABS = [
 ];
 
 // ─── Storage ────────────────────────────────────────────────────
-const STORAGE_KEY = 'nanoBananaSettings';
-
-function loadSettings() {
-    const s = scopedStorage.getJSON(STORAGE_KEY, null);
-    if (s) return s;
-    // Migrate from the older imageGenSettings key (same user scope).
-    const old = scopedStorage.getJSON('imageGenSettings', null);
-    if (old) return { image: old };
-    return {};
-}
-
-function saveSettings(settings) {
-    scopedStorage.setJSON(STORAGE_KEY, settings);
-    // Keep writing imageGenSettings for the legacy useChatEngine payload path.
-    if (settings.image) scopedStorage.setJSON('imageGenSettings', settings.image);
-}
+// Kept as named exports for existing callers (e.g. the appearance studio's
+// IconsEditor); both delegate to the shared media-gen settings store, which
+// handles the legacy imageGenSettings migration/mirroring.
+const loadSettings = mediaGenSettingsStore.getAll;
+const saveSettings = mediaGenSettingsStore.saveAll;
 
 // ─── Reusable UI Components ─────────────────────────────────────
 
@@ -78,7 +50,7 @@ const SliderControl = ({ label, value, min, max, step, defaultVal, unit, onChang
             value={value ?? defaultVal}
             onChange={e => onChange(parseFloat(e.target.value))}
             className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-blue-500"
-            style={{ background: `linear-gradient(to right, #4285f4 ${((value ?? defaultVal) - min) / (max - min) * 100}%, var(--border-subtle) ${((value ?? defaultVal) - min) / (max - min) * 100}%)` }}
+            style={{ background: `linear-gradient(to right, ${ACCENT} ${((value ?? defaultVal) - min) / (max - min) * 100}%, var(--border-subtle) ${((value ?? defaultVal) - min) / (max - min) * 100}%)` }}
         />
         <div className="flex justify-between text-[9px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
             <span>{min}{unit || ''}</span>
@@ -96,7 +68,7 @@ const ToggleControl = ({ label, description, value, onChange }) => (
         <button
             onClick={() => onChange(!value)}
             className="w-8 h-[18px] rounded-full transition-all relative flex-shrink-0"
-            style={{ background: value ? '#4285f4' : 'var(--border-subtle)' }}
+            style={{ background: value ? ACCENT : 'var(--border-subtle)' }}
         >
             <div className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all shadow-sm"
                  style={{ left: value ? '15px' : '2px' }} />
@@ -115,7 +87,7 @@ const PillSelect = ({ label, options, value, onChange }) => (
                     className="px-2.5 py-1 rounded-md text-[10px] font-medium transition-all"
                     style={{
                         background: value === opt.value ? 'rgba(66, 133, 244, 0.15)' : 'var(--bg-tertiary)',
-                        color: value === opt.value ? '#4285f4' : 'var(--text-tertiary)',
+                        color: value === opt.value ? ACCENT : 'var(--text-tertiary)',
                         border: `1px solid ${value === opt.value ? 'rgba(66, 133, 244, 0.3)' : 'var(--border-subtle)'}`,
                     }}
                 >
@@ -126,49 +98,6 @@ const PillSelect = ({ label, options, value, onChange }) => (
         </div>
     </div>
 );
-
-const DropdownSelect = ({ label, options, value, onChange }) => {
-    const [open, setOpen] = useState(false);
-    const ref = useRef(null);
-    const selected = options.find(o => o.value === value) || options[0];
-
-    useEffect(() => {
-        if (!open) return;
-        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, [open]);
-
-    return (
-        <div ref={ref} className="relative">
-            <label className="block text-[11px] font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{label}</label>
-            <button
-                onClick={() => setOpen(!open)}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-[11px] font-medium transition-all"
-                style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
-            >
-                <span>{selected.label}</span>
-                <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
-            </button>
-            {open && (
-                <div className="absolute top-full left-0 right-0 mt-1 rounded-lg border shadow-xl z-50 max-h-40 overflow-y-auto"
-                     style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
-                    {options.map(opt => (
-                        <button
-                            key={opt.value}
-                            onClick={() => { onChange(opt.value); setOpen(false); }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-left transition-colors hover:bg-[var(--bg-tertiary)]"
-                            style={{ color: value === opt.value ? '#4285f4' : 'var(--text-secondary)' }}
-                        >
-                            {value === opt.value ? <Check className="w-3 h-3 text-blue-500 flex-shrink-0" /> : <div className="w-3 h-3" />}
-                            {opt.label}
-                        </button>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
 
 // ─── Tab Content Components ─────────────────────────────────────
 
@@ -182,7 +111,7 @@ const ImageTab = ({ settings, onUpdate }) => {
                 Ask AI to generate an image. These settings apply automatically.
             </p>
             <PillSelect label="Aspect Ratio" options={ASPECT_RATIOS} value={s.aspectRatio || '1:1'} onChange={v => update('aspectRatio', v)} />
-            <DropdownSelect label="Model" options={IMAGE_MODELS} value={s.model || 'gemini-3.1-flash-image-preview'} onChange={v => update('model', v)} />
+            <SettingsDropdown label="Model" options={IMAGE_MODELS} value={s.model || 'gemini-3.1-flash-image-preview'} onChange={v => update('model', v)} accentColor={ACCENT} />
         </div>
     );
 };
@@ -208,8 +137,8 @@ const ElevenLabsTab = ({ settings, onUpdate }) => {
             <div className="pt-1 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                 <span className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>🗣️ TEXT-TO-SPEECH</span>
             </div>
-            <DropdownSelect label="Voice" options={TTS_VOICES} value={s.ttsVoice || 'JBFqnCBsd6RMkjVDRZzb'} onChange={v => update('ttsVoice', v)} />
-            <DropdownSelect label="TTS Model" options={TTS_MODELS} value={s.ttsModel || 'eleven_flash_v2_5'} onChange={v => update('ttsModel', v)} />
+            <SettingsDropdown label="Voice" options={TTS_VOICES} value={s.ttsVoice || DEFAULT_TTS_VOICE} onChange={v => update('ttsVoice', v)} accentColor={ACCENT} />
+            <SettingsDropdown label="TTS Model" options={TTS_MODELS} value={s.ttsModel || DEFAULT_TTS_MODEL} onChange={v => update('ttsModel', v)} accentColor={ACCENT} />
         </div>
     );
 };
@@ -231,22 +160,12 @@ const SfxTab = ({ settings, onUpdate }) => {
 
 // ─── Main Component ─────────────────────────────────────────────
 
-const NanoBananaSettings = ({ isOpen, onClose, anchorRef, settings, onSettingsChange }) => {
+const NanoBananaSettings = ({ isOpen, onClose, settings, onSettingsChange }) => {
     const panelRef = useRef(null);
     const [activeTab, setActiveTab] = useState('image');
 
-    // Close on outside click
-    useEffect(() => {
-        if (!isOpen) return;
-        const handler = (e) => {
-            if (panelRef.current && !panelRef.current.contains(e.target) &&
-                anchorRef?.current && !anchorRef.current.contains(e.target)) {
-                onClose();
-            }
-        };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, [isOpen, onClose, anchorRef]);
+    // Close on outside click / Escape
+    useOutsideDismiss(panelRef, onClose, { enabled: isOpen });
 
     if (!isOpen) return null;
 
@@ -281,7 +200,7 @@ const NanoBananaSettings = ({ isOpen, onClose, anchorRef, settings, onSettingsCh
                         onClick={() => setActiveTab(tab.id)}
                         className="flex-1 flex items-center justify-center gap-1 py-2 text-[10px] font-medium transition-all relative"
                         style={{
-                            color: activeTab === tab.id ? '#4285f4' : 'var(--text-muted)',
+                            color: activeTab === tab.id ? ACCENT : 'var(--text-muted)',
                             background: activeTab === tab.id ? 'rgba(66,133,244,0.05)' : 'transparent',
                         }}
                     >

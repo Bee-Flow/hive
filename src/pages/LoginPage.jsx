@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { AlertCircle, Globe, MailCheck, CheckCircle } from 'lucide-react';
 import { API_BASE, authFetch, setSessionToken } from '../utils/helpers';
@@ -13,6 +13,8 @@ const isEmbedded = (() => {
 
 import LoginForm from './login/LoginForm';
 import SignupWizard from './login/SignupWizard';
+import { validateSubmit } from './login/signupValidation';
+import { plansFor } from '../components/billing/planModel';
 import MfaLoginStep from './login/MfaLoginStep';
 import ForgotPasswordStep from './login/ForgotPasswordStep';
 import ResetPasswordStep from './login/ResetPasswordStep';
@@ -73,13 +75,53 @@ const LoginPage = ({ onLogin }) => {
         return false;
     });
     const [signupOrgs, setSignupOrgs] = useState([]);
-    const [signupData, setSignupData] = useState({
-        username: '', password: '', confirmPassword: '', firstName: '', lastName: '', email: '',
-        signupType: 'new', organizationId: '',
-        newOrgName: '', orgTagline: '', orgDescription: '', orgAddress: '', orgEmail: '', orgPhone: '', orgWebsite: '', orgKvk: '', orgVat: '', orgAllowSignup: false,
-        authMethod: '', shieldEnabled: true, piiCategories: DEFAULT_PII_CATEGORIES, piiAction: 'block', euModeEnabled: false,
-        consentAccepted: false,
+    const [publicPlans, setPublicPlans] = useState([]);
+    const [signupData, setSignupData] = useState(() => {
+        // A ?plan=<id> deep link (from the pricing page) preselects that plan.
+        // It is validated against the fetched plan list below and dropped if it
+        // does not match — an unknown id must not reach checkout.
+        const params = new URLSearchParams(window.location.search);
+        const type = params.get('type') === 'consumer' ? 'consumer' : 'new';
+        return {
+            username: '', password: '', confirmPassword: '', firstName: '', lastName: '', email: '',
+            signupType: type, organizationId: '',
+            newOrgName: '', orgTagline: '', orgDescription: '', orgAddress: '', orgEmail: '', orgPhone: '', orgWebsite: '', orgKvk: '', orgVat: '', orgCountry: '', orgAllowSignup: false,
+            authMethod: '', shieldEnabled: true, piiCategories: DEFAULT_PII_CATEGORIES, piiAction: 'block', euModeEnabled: false,
+            consentAccepted: false,
+            selectedPlanId: params.get('plan') || null,
+        };
     });
+
+    // Plans offered during signup, filtered to the chosen account type. Public
+    // endpoint — it must work before the user has an account.
+    useEffect(() => {
+        if (!signupMode) return undefined;
+        const ac = new AbortController();
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/billing/public-plans`, { signal: ac.signal });
+                if (!res.ok) return;
+                const data = await res.json();
+                setPublicPlans(Array.isArray(data?.plans) ? data.plans : []);
+            } catch { /* plan step is optional — signup proceeds without it */ }
+        })();
+        return () => ac.abort();
+    }, [signupMode]);
+
+    const availablePlans = useMemo(
+        () => plansFor(publicPlans, signupData.signupType === 'consumer' ? 'consumer' : 'organization'),
+        [publicPlans, signupData.signupType],
+    );
+
+    // A ?plan= id only counts once it matches a plan this account type can buy.
+    // Derived rather than written back into state: switching between an
+    // organisation and a personal account changes the eligible list, and storing
+    // the filtered value would fight that on every toggle.
+    const selectedPlanId = useMemo(() => {
+        const id = signupData.selectedPlanId;
+        if (!id) return null;
+        return availablePlans.some(p => p.id === id) ? id : null;
+    }, [availablePlans, signupData.selectedPlanId]);
 
     useEffect(() => {
         const checkSetup = async () => {
@@ -371,13 +413,10 @@ const LoginPage = ({ onLogin }) => {
             setError(t('login.passwords_no_match'));
             return;
         }
-        if (signupData.password.length < 4) {
-            setError('Password must be at least 4 characters');
-            return;
-        }
-        if (!signupData.username) {
-            setError('Username is required');
-            return;
+        // Same rules the wizard's Next button uses — see signupValidation.js.
+        {
+            const v = validateSubmit(signupData, { locale, isInvite: !!inviteInfo, t });
+            if (!v.ok) { setError(v.error); return; }
         }
         // Clickwrap consent is Cloud-only; self-hosted signup skips the gate.
         if (deploymentMode !== 'self-hosted' && !signupData.consentAccepted) {
@@ -397,6 +436,9 @@ const LoginPage = ({ onLogin }) => {
                 // The chosen interface language drives the language of this
                 // account's transactional emails (verification, welcome).
                 locale,
+                // Carried through signup so the app can send the user straight
+                // to checkout after first login. Null means the default plan.
+                selectedPlanId,
             };
 
             if (signupData.signupType === 'new') {
@@ -421,8 +463,17 @@ const LoginPage = ({ onLogin }) => {
                 };
             } else if (signupData.signupType === 'existing') {
                 body.organizationId = signupData.organizationId;
+            } else if (signupData.signupType === 'consumer') {
+                // Personal account — no org fields, but the privacy step's
+                // choices are written to this user's own Privacy Shield so a
+                // new account starts protected (BFSF-289).
+                body.privacyShield = {
+                    enabled: signupData.shieldEnabled !== false,
+                    piiDetectionCategories: signupData.piiCategories || [],
+                    piiDetectionAction: signupData.piiAction || 'tokenize',
+                    euModeEnabled: signupData.euModeEnabled,
+                };
             }
-            // signupType === 'consumer' → no org fields sent
 
             // Attach invite token if present
             if (inviteToken) {
@@ -695,6 +746,7 @@ const LoginPage = ({ onLogin }) => {
                 error={error} setError={setError}
                 handleSignup={handleSignup} resetSignup={resetSignup}
                 availableLocales={availableLocales} locale={locale} setLocale={setLocale}
+                availablePlans={availablePlans} selectedPlanId={selectedPlanId}
                 inputClass={inputClass} inputClassSimple={inputClassSimple} labelClass={labelClass}
             />
         );

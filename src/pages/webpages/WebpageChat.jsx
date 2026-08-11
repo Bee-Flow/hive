@@ -5,6 +5,7 @@ import InputArea from '../../components/InputArea';
 import WebpageDiffCard from '../../components/WebpageDiffCard';
 import WebpagePlanCard from '../../components/WebpagePlanCard';
 import WebpageChatModePicker from '../../components/WebpageChatModePicker';
+import { MessageErrorBoundary } from '../../components/ErrorBoundary';
 
 const QUICK_STARTS = [
     'Landing page for a bakery — hero, menu grid, contact form.',
@@ -158,24 +159,28 @@ export default function WebpageChat({
                         />
                         {msg.webpagePlan && (
                             <div className="mt-1 ml-1">
-                                <WebpagePlanCard
-                                    plan={msg.webpagePlan.plan}
-                                    planId={msg.webpagePlan.planId}
-                                    status={msg.webpagePlan.status || 'pending'}
-                                    onApprove={onPlanApprove}
-                                    onReject={onPlanReject}
-                                />
+                                <MessageErrorBoundary msg={msg}>
+                                    <WebpagePlanCard
+                                        plan={msg.webpagePlan.plan}
+                                        planId={msg.webpagePlan.planId}
+                                        status={msg.webpagePlan.status || 'pending'}
+                                        onApprove={onPlanApprove}
+                                        onReject={onPlanReject}
+                                    />
+                                </MessageErrorBoundary>
                             </div>
                         )}
                         {Array.isArray(msg.webpageEdits) && msg.webpageEdits.length > 0 && (
                             <div className="mt-1 ml-1">
-                                {msg.webpageEdits.map((edit, ei) => (
-                                    <WebpageDiffCard
-                                        key={`${idx}-${ei}-${edit.file}`}
-                                        file={edit.file}
-                                        diff={edit.diff}
-                                    />
-                                ))}
+                                <MessageErrorBoundary msg={msg}>
+                                    {msg.webpageEdits.map((edit, ei) => (
+                                        <WebpageDiffCard
+                                            key={`${idx}-${ei}-${edit.file}`}
+                                            file={edit.file}
+                                            diff={edit.diff}
+                                        />
+                                    ))}
+                                </MessageErrorBoundary>
                             </div>
                         )}
                     </div>

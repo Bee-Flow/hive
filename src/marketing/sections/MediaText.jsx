@@ -1,6 +1,7 @@
 import React from 'react';
 import Button from '../components/Button';
 import EditableText from '../components/EditableText';
+import FramedMedia from '../components/FramedMedia';
 import SectionFrame from '../components/SectionFrame';
 import { inlineTextStyle } from './textStyle';
 
@@ -51,32 +52,54 @@ export default function MediaText({ data }) {
         backgroundVariant !== 'default' ? `cms-bg--${backgroundVariant}` : '',
     ].filter(Boolean).join(' ');
 
+    // A block with no image renders TEXT-ONLY on the published site.
+    //
+    // Every branch of renderMedia() draws something — a framed skeleton or an
+    // "Add an image in the panel" box — so an author who writes a Media+Text
+    // without art was publishing a placeholder to the public internet with no
+    // warning. Features and Steps already guard on `src`; this brings
+    // Media+Text in line.
+    //
+    // The editor keeps the placeholder: that is where it belongs, because it
+    // is the affordance telling you an image can go here.
+    const hasMedia = typeof media?.src === 'string' && media.src.trim() !== '';
+    const showMedia = hasMedia || isEditable();
+
     const innerClass = [
         'media-text-block-inner',
         `media-text-block-inner--position-${mediaPosition}`,
         `media-text-block-inner--size-${mediaSize}`,
-    ].join(' ');
+        showMedia ? '' : 'media-text-block-inner--no-media',
+    ].filter(Boolean).join(' ');
 
     return (
         <SectionFrame id="media-text" name="Media + Text" enabled={data.enabled}>
             <section className={sectionClass}>
                 <div className="container">
                     <div className={innerClass}>
-                        <div className="media-text-block-media">
-                            {renderMedia(media, heading)}
-                        </div>
+                        {showMedia ? (
+                            <div className="media-text-block-media">
+                                {renderMedia(media, heading)}
+                            </div>
+                        ) : null}
 
                         <div className="media-text-block-text">
-                            <EditableText
-                                path="media-text.heading"
-                                as="h2"
-                                multiline
-                                placeholder="Heading"
-                                className="headline-md media-text-block-heading"
-                                style={headingStyle}
-                            >
-                                {heading}
-                            </EditableText>
+                            {/* Same rule as the media column: the published
+                                site never renders an empty <h2> (a nameless
+                                heading in the outline); the editor keeps the
+                                placeholder as the affordance. */}
+                            {(heading || isEditable()) ? (
+                                <EditableText
+                                    path="media-text.heading"
+                                    as="h2"
+                                    multiline
+                                    placeholder="Heading"
+                                    className="headline-md media-text-block-heading"
+                                    style={headingStyle}
+                                >
+                                    {heading}
+                                </EditableText>
+                            ) : null}
 
                             {subheading != null ? (
                                 <EditableText
@@ -178,6 +201,16 @@ function renderMedia(media, heading) {
 
     // 'image', 'gif', or anything legacy/unknown — all render as <img>.
     // GIFs and animated WebPs animate inside <img> with no extra work.
+
+    // Opt-in premium frame: when `frame` is 'hairline' or 'browser' the
+    // image renders through FramedMedia (hairline border + radius + glow,
+    // light/dark pair via srcDark, skeleton when src is empty). Absent /
+    // '' / 'none' keeps the legacy bare <img> so stored pages render
+    // byte-identically.
+    const frame = media?.frame;
+    if (frame === 'hairline' || frame === 'browser') {
+        return <FramedMedia media={{ ...media, kind: 'image' }} />;
+    }
     if (!src) {
         return (
             <div className="media-text-block-media-placeholder">
@@ -185,5 +218,21 @@ function renderMedia(media, heading) {
             </div>
         );
     }
-    return <img src={src} alt={alt} />;
+    // Unframed legacy path: same dimension attributes as FramedMedia, plus
+    // lazy loading it never had — this element sits mid-page, never above
+    // the fold.
+    const dims = media?.width > 0 && media?.height > 0
+        ? { width: Math.round(media.width), height: Math.round(media.height) }
+        : {};
+    return <img src={src} alt={alt} {...dims} loading="lazy" />;
+}
+
+/**
+ * True inside the CMS editor's preview iframe (?preview), where placeholders
+ * are an affordance rather than a defect. Same one-liner the Content section
+ * uses — kept local so a marketing section never imports admin code.
+ */
+function isEditable() {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).has('preview');
 }

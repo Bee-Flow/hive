@@ -80,7 +80,7 @@ export default function VersionSwitcher({
                                     <button
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); onSetLive(v.id); }}
-                                        className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity
+                                        className="shrink-0 opacity-40 group-hover:opacity-100 focus:opacity-100 transition-opacity
                                             text-[9px] font-medium px-1.5 py-0.5 rounded-full border border-[var(--border-default)]
                                             text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:border-[var(--accent-primary)]/60"
                                         title="Make this version the live one"

@@ -3,7 +3,10 @@ import Button from '../components/Button';
 import AppIcon from '../../components/AppIcon';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
+import FramedMedia from '../components/FramedMedia';
 import { inlineTextStyle } from './textStyle';
+
+const HERO_VARIANTS = ['classic', 'panel', 'split', 'video'];
 
 export default function Hero({ data }) {
     if (!data?.enabled) return null;
@@ -61,101 +64,154 @@ export default function Hero({ data }) {
     // 'default' produces no extra class (page bg shows through); the
     // others map to the shared .cms-bg--* utilities in marketing.css.
     const bgVariant = data.backgroundVariant || 'default';
-    const sectionClass = ['hero', bgVariant !== 'default' ? `cms-bg--${bgVariant}` : '']
-        .filter(Boolean).join(' ');
+
+    // Layout variant — absent/unknown renders the legacy centered layout,
+    // so stored hero blocks are untouched. 'video' is 'panel' with the
+    // media slot forced to a looping video.
+    const variant = HERO_VARIANTS.includes(data.variant) ? data.variant : 'classic';
+    const media = data.media || {};
+    const hasMedia = typeof media.src === 'string' && media.src.trim() !== '';
+    const panelMedia = variant === 'video' ? { ...media, kind: 'video' } : media;
+    // Legacy chat mockup remains the fallback visual whenever no real
+    // media is set (classic always used it; panel/video fall back too so
+    // an un-filled slot still shows something alive).
+    const showLegacyMockup = showMockup && bubbles.length > 0 && !hasMedia;
+
+    const sectionClass = [
+        'hero',
+        variant !== 'classic' ? `hero--${variant}` : '',
+        bgVariant !== 'default' ? `cms-bg--${bgVariant}` : '',
+    ].filter(Boolean).join(' ');
+
+    // Copy column — identical markup (and EditableText paths) across all
+    // variants; only the wrapper layout changes.
+    const copy = (
+        <div className="hero-content">
+            {showBadge ? (
+                <div style={badgeAlign ? { textAlign: badgeAlign } : undefined}>
+                    <div className="hero-badge reveal" style={badgeTextStyle}>
+                        {badge.icon ? <AppIcon name={badge.icon} className="w-4 h-4" /> : null}
+                        <EditableText path="hero.badge.text" placeholder="Badge text">
+                            {badge.text || ''}
+                        </EditableText>
+                    </div>
+                </div>
+            ) : null}
+            {/* Display scale — the page must open louder than any section
+                title. The old inline clamp capped the hero at 40px, BELOW
+                .headline-lg; .headline-display runs 56–80px (typography.
+                displaySize caps it). titleStyle.fontSize still wins. */}
+            <h1
+                className="headline-display reveal reveal-delay-1"
+                style={{
+                    hyphens: 'none',
+                    overflowWrap: 'break-word',
+                    textWrap: 'balance',
+                    ...titleStyle,
+                }}
+            >
+                {titleParts.map((part, i) => (
+                    <EditableText
+                        key={i}
+                        path={`hero.titleParts.${i}.text`}
+                        placeholder="…"
+                        multiline
+                        className={part.gradient ? 'gradient-text' : ''}
+                    >
+                        {part.text || ''}
+                    </EditableText>
+                ))}
+            </h1>
+            {showLead ? (
+                <EditableText
+                    path="hero.lead"
+                    as="p"
+                    multiline
+                    placeholder="Lead paragraph"
+                    className="hero-lead body-lg reveal reveal-delay-2"
+                    style={leadStyle}
+                >
+                    {data.lead || ''}
+                </EditableText>
+            ) : null}
+            {(showPrimary || showSecondary) ? (
+                <div className="hero-ctas reveal reveal-delay-3">
+                    {showPrimary ? (
+                        <Button variant={primary.style || 'primary'} href={primaryHref} {...newTabProps(primaryNewTab)}>
+                            <EditableText path="hero.primaryCta.label" placeholder="Primary action">
+                                {primary.label || 'Get started'}
+                            </EditableText>
+                        </Button>
+                    ) : null}
+                    {showSecondary ? (
+                        <Button variant={second.style || 'secondary'} href={secondaryHref} {...newTabProps(secondaryNewTab)}>
+                            <EditableText path="hero.secondaryCta.label" placeholder="Secondary action">
+                                {second.label || 'Learn more'}
+                            </EditableText>
+                        </Button>
+                    ) : null}
+                </div>
+            ) : null}
+        </div>
+    );
+
+    // Legacy chat-bubble mockup — fallback visual when no media is set.
+    const legacyMockup = showLegacyMockup ? (
+        <div className="hero-mockup reveal reveal-delay-4">
+            <div className="mockup-header">
+                <span className="mockup-dot" /><span className="mockup-dot" /><span className="mockup-dot" />
+            </div>
+            <div className="mockup-body">
+                {bubbles.map((b, i) => (
+                    <div
+                        key={i}
+                        className={`chat-bubble chat-bubble--${b.role === 'user' ? 'user' : 'ai'}`}
+                        style={{ animationDelay: `${0.5 + i * 0.4}s` }}
+                    >
+                        <EditableText
+                            path={`hero.mockup.chatBubbles.${i}.text`}
+                            multiline
+                            placeholder="Bubble text"
+                        >
+                            {b.text || ''}
+                        </EditableText>
+                    </div>
+                ))}
+            </div>
+        </div>
+    ) : null;
+
+    // The hero visual, by precedence: real media (FramedMedia) → legacy
+    // chat mockup → skeleton frame (panel/video only, so an unfilled slot
+    // still reads as a deliberate product panel).
+    // `priority`: the hero visual is the page's LCP candidate — it must be
+    // queued immediately (eager + fetchpriority=high), not after layout the
+    // way FramedMedia's default lazy loading works everywhere else.
+    const visual = hasMedia
+        ? <FramedMedia media={panelMedia} fadeMask={variant !== 'split'} className="reveal reveal-delay-4" priority />
+        : legacyMockup || ((variant === 'panel' || variant === 'video')
+            ? <FramedMedia media={panelMedia} fadeMask className="reveal reveal-delay-4" priority />
+            : null);
 
     return (
         <SectionFrame id="hero" name="Hero" enabled={data.enabled}>
             <section className={sectionClass} id="hero">
                 <div className="container">
-                    <div className="hero-content">
-                        {showBadge ? (
-                            <div style={badgeAlign ? { textAlign: badgeAlign } : undefined}>
-                                <div className="hero-badge reveal" style={badgeTextStyle}>
-                                    {badge.icon ? <AppIcon name={badge.icon} className="w-4 h-4" /> : null}
-                                    <EditableText path="hero.badge.text" placeholder="Badge text">
-                                        {badge.text || ''}
-                                    </EditableText>
-                                </div>
-                            </div>
-                        ) : null}
-                        <h1
-                            className="headline-xl reveal reveal-delay-1"
-                            style={{
-                                fontSize: 'clamp(1.5rem, 4vw, 2.5rem)',
-                                hyphens: 'none',
-                                overflowWrap: 'break-word',
-                                wordBreak: 'break-word',
-                                ...titleStyle,
-                            }}
-                        >
-                            {titleParts.map((part, i) => (
-                                <EditableText
-                                    key={i}
-                                    path={`hero.titleParts.${i}.text`}
-                                    placeholder="…"
-                                    multiline
-                                    className={part.gradient ? 'gradient-text' : ''}
-                                >
-                                    {part.text || ''}
-                                </EditableText>
-                            ))}
-                        </h1>
-                        {showLead ? (
-                            <EditableText
-                                path="hero.lead"
-                                as="p"
-                                multiline
-                                placeholder="Lead paragraph"
-                                className="hero-lead body-lg reveal reveal-delay-2"
-                                style={leadStyle}
-                            >
-                                {data.lead || ''}
-                            </EditableText>
-                        ) : null}
-                        {(showPrimary || showSecondary) ? (
-                            <div className="hero-ctas reveal reveal-delay-3">
-                                {showPrimary ? (
-                                    <Button variant={primary.style || 'primary'} href={primaryHref} {...newTabProps(primaryNewTab)}>
-                                        <EditableText path="hero.primaryCta.label" placeholder="Primary action">
-                                            {primary.label || 'Get started'}
-                                        </EditableText>
-                                    </Button>
-                                ) : null}
-                                {showSecondary ? (
-                                    <Button variant={second.style || 'secondary'} href={secondaryHref} {...newTabProps(secondaryNewTab)}>
-                                        <EditableText path="hero.secondaryCta.label" placeholder="Secondary action">
-                                            {second.label || 'Learn more'}
-                                        </EditableText>
-                                    </Button>
-                                ) : null}
-                            </div>
-                        ) : null}
-                    </div>
-                    {(showMockup && bubbles.length) ? (
-                        <div className="hero-mockup reveal reveal-delay-4">
-                            <div className="mockup-header">
-                                <span className="mockup-dot" /><span className="mockup-dot" /><span className="mockup-dot" />
-                            </div>
-                            <div className="mockup-body">
-                                {bubbles.map((b, i) => (
-                                    <div
-                                        key={i}
-                                        className={`chat-bubble chat-bubble--${b.role === 'user' ? 'user' : 'ai'}`}
-                                        style={{ animationDelay: `${0.5 + i * 0.4}s` }}
-                                    >
-                                        <EditableText
-                                            path={`hero.mockup.chatBubbles.${i}.text`}
-                                            multiline
-                                            placeholder="Bubble text"
-                                        >
-                                            {b.text || ''}
-                                        </EditableText>
-                                    </div>
-                                ))}
-                            </div>
+                    {variant === 'split' ? (
+                        <div className="hero-inner">
+                            {copy}
+                            <div className="hero-split-media">{visual}</div>
                         </div>
-                    ) : null}
+                    ) : (
+                        <>
+                            {copy}
+                            {visual ? (
+                                (variant === 'panel' || variant === 'video')
+                                    ? <div className="hero-panel">{visual}</div>
+                                    : visual
+                            ) : null}
+                        </>
+                    )}
                 </div>
             </section>
         </SectionFrame>

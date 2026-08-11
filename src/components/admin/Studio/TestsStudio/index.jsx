@@ -99,7 +99,7 @@ export default function TestsStudio({ user }) {
         const res = await authFetch(`${API_BASE}/api/tests/suites`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: t('tests_studio.untitled') || 'Untitled Test Suite' }),
+            body: JSON.stringify({ name: t('tests_studio.untitled', 'Untitled Test Suite') }),
         });
         if (res.ok) {
             const data = await res.json();
@@ -211,7 +211,7 @@ export default function TestsStudio({ user }) {
             <StudioShell
                 sidebarTitle={(
                     <span className="flex items-center gap-2">
-                        {t('tests_studio.title') || 'Tests'}
+                        {t('tests_studio.title', 'Tests')}
                         <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/30">Beta</span>
                     </span>
                 )}
@@ -286,7 +286,7 @@ export default function TestsStudio({ user }) {
                         {loading && <div className="text-xs text-[var(--text-tertiary)]">Loading…</div>}
                         {!loading && filtered.length === 0 && (
                             <div className="text-xs text-[var(--text-tertiary)] italic px-1">
-                                {t('tests_studio.no_suites') || 'No test suites yet — create one with the + button.'}
+                                {t('tests_studio.no_suites', 'No test suites yet — create one with the + button.')}
                             </div>
                         )}
                         <div className="flex flex-col gap-1">

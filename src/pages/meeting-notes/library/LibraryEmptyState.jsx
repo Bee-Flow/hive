@@ -7,7 +7,7 @@ export default function LibraryEmptyState({ onCapture }) {
         <EmptyState
             icon={<Mic className="w-14 h-14" />}
             title="No meetings yet"
-            description="Record live, upload a file, or send a bot to your next meeting — you'll get a searchable transcript, summary and action items in minutes."
+            description="Record live, upload a file, or connect Nextcloud Talk or Google Meet to import your call recordings automatically."
             action={{
                 label: 'New transcription',
                 onClick: onCapture,

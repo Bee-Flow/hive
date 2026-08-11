@@ -88,3 +88,33 @@ describe('Legacy TipTap shapes', () => {
     expect(ast.content[0].content.some((n) => n.marks?.some((m) => m.type === 'bold'))).toBe(true);
   });
 });
+
+describe('nested table inside a td (S8)', () => {
+  const html = '<table><tbody>'
+    + '<tr><td>host'
+    + '<table><tbody><tr><td>n1</td><td>n2</td></tr><tr><td>n3</td><td>n4</td></tr></tbody></table>'
+    + '</td><td>plain</td></tr>'
+    + '</tbody></table>';
+
+  it('does not duplicate the nested rows into the outer table', () => {
+    const ast = htmlToAst(html);
+    const tables = ast.content.filter((n) => n.type === 'table');
+    expect(tables).toHaveLength(1);
+    // ONE outer row — the unscoped 'tr' selector used to add the two nested
+    // rows to the outer table as well (the mini-grid artifact).
+    expect(tables[0].content).toHaveLength(1);
+    expect(tables[0].content[0].content).toHaveLength(2);
+  });
+
+  it('preserves the nested content as cell content', () => {
+    const ast = htmlToAst(html);
+    const cell0 = ast.content[0].content[0].content[0];
+    const nested = (cell0.content || []).find((n) => n.type === 'table');
+    expect(nested).toBeTruthy();
+    expect(nested.content).toHaveLength(2);
+    const text = JSON.stringify(nested);
+    for (const t of ['n1', 'n2', 'n3', 'n4']) expect(text).toContain(t);
+    // The host cell's own text survives alongside.
+    expect(JSON.stringify(cell0)).toContain('host');
+  });
+});

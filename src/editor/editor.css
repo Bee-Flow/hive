@@ -135,8 +135,43 @@
 .bf-content .bf-formula-input {
   font-family: 'Fira Code', monospace; font-size: 0.9em; border: 1px solid var(--accent-primary);
   border-radius: 4px; padding: 0.05em 0.3em; background: var(--bg-secondary); color: var(--text-primary);
-  min-width: 120px;
+  /* Fill the cell instead of forcing a fixed minimum: a 120px min-width
+     overflowed narrow fixed-layout columns. */
+  min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box;
 }
+/* While a formula editor is open the table is a reference picker, so show that
+   the cells are targets rather than text. */
+.bf-content.bf-picking-ref td, .bf-content.bf-picking-ref th { cursor: cell; }
+
+/* ── table gutters: column names (A/B/C or header text) + row numbers ── */
+.bf-table-colhead, .bf-table-rowhead {
+  display: flex; align-items: center; justify-content: center; gap: 2px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.02em; cursor: pointer;
+  color: var(--text-tertiary); background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle); border-radius: 4px;
+  user-select: none; overflow: hidden; padding: 0 2px;
+}
+.bf-table-colhead:hover, .bf-table-rowhead:hover {
+  color: var(--accent-primary); border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--bg-secondary));
+}
+.bf-table-colhead-label, .bf-table-rowhead-label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bf-table-gutter-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 13px; height: 13px; flex: none; border-radius: 3px;
+  color: var(--text-tertiary); transition: color 0.12s, background 0.12s;
+}
+.bf-table-gutter-del:hover { color: #fff; background: #ef4444; }
+/* Σ (column total) — same hover-reveal as the delete ×, accent instead of red */
+.bf-table-gutter-sum {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 13px; height: 13px; flex: none; border-radius: 3px;
+  font-size: 9px; font-weight: 700; line-height: 1;
+  color: var(--text-tertiary); transition: color 0.12s, background 0.12s;
+}
+.bf-table-gutter-sum:hover { color: #fff; background: var(--accent-primary); }
 
 /* drag handle (section-aware) — sits in the left gutter aligned to the hovered block */
 .bf-drag-handle {

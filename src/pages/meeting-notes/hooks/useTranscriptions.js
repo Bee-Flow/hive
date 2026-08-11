@@ -18,8 +18,8 @@ export default function useTranscriptions() {
         return () => { mounted.current = false; };
     }, []);
 
-    const reload = useCallback(async () => {
-        setLoading(true);
+    const load = useCallback(async (showSpinner) => {
+        if (showSpinner) setLoading(true);
         try {
             const list = await api.listTranscriptions();
             if (mounted.current) {
@@ -29,11 +29,24 @@ export default function useTranscriptions() {
         } catch (err) {
             if (mounted.current) setError(err);
         } finally {
-            if (mounted.current) setLoading(false);
+            if (mounted.current && showSpinner) setLoading(false);
         }
     }, []);
 
+    const reload = useCallback(() => load(true), [load]);
+
     useEffect(() => { reload(); }, [reload]);
+
+    // While any note is still transcribing (async pipeline), poll quietly so the
+    // list flips it from a spinner to the finished note without a manual refresh.
+    // Depend on the derived boolean, not `items`: every poll result is a fresh
+    // array, which used to tear down and recreate the interval every 4s.
+    const hasProcessing = items.some((t) => t.status === 'processing');
+    useEffect(() => {
+        if (!hasProcessing) return;
+        const interval = setInterval(() => { load(false); }, 4000);
+        return () => clearInterval(interval);
+    }, [hasProcessing, load]);
 
     const removeLocal = useCallback((id) => {
         setItems((prev) => prev.filter((t) => t.id !== id));

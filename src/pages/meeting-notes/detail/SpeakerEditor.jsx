@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Loader2, Merge, Undo2 } from 'lucide-react';
+import { Loader2, Merge, Undo2, Sparkles } from 'lucide-react';
 import Modal from '../../../components/shared/Modal';
-import { SPEAKER_COLORS } from '../../../config/meetingNotesConfig';
-import { formatSpeakerLabel, getSpeakerColor } from '../lib/format';
+import { formatSpeakerLabel } from '../lib/format';
+import { buildSpeakerColorMap, speakerColor } from '../lib/playerData';
 
 /**
  * Owner-only modal to clean up speaker labels on a transcription:
@@ -16,12 +16,16 @@ import { formatSpeakerLabel, getSpeakerColor } from '../lib/format';
  *   - `mergedInto`         — original id → original id of the merge target
  * On save we collapse those into the route payload { renames, merges }.
  */
-export default function SpeakerEditor({ open, onClose, meeting, onSave }) {
+export default function SpeakerEditor({ open, onClose, meeting, onSave, onAutoDetect }) {
     const speakers = useMemo(() => Array.isArray(meeting?.speakers) ? meeting.speakers : [], [meeting]);
+    // Shared rank-based colors — a merge preview naturally shows the target's color.
+    const colorMap = useMemo(() => buildSpeakerColorMap(speakers), [speakers]);
 
     // Original ids → stable; staged edits are keyed by these.
     const [nameByOriginal, setNameByOriginal] = useState(() => Object.fromEntries(speakers.map(s => [s.id, s.id])));
     const [mergedInto, setMergedInto] = useState({}); // sourceId → targetId
+    const [autoNames, setAutoNames] = useState('');
+    const [autoDetecting, setAutoDetecting] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
 
@@ -122,6 +126,21 @@ export default function SpeakerEditor({ open, onClose, meeting, onSave }) {
             groups[target].push(orig);
         }
 
+        // Two speakers you did not explicitly merge must not end up with the
+        // same name. Collapsing them is irreversible — the server rebuilds
+        // every segment from the merged list — so catch it here, where the user
+        // can still see which two rows clash. (The server refuses it too.)
+        const nameOwner = new Map();
+        for (const target of Object.keys(groups)) {
+            const finalName = (nameByOriginal[target] ?? target).trim() || target;
+            if (nameOwner.has(finalName)) {
+                setError(`"${nameOwner.get(finalName)}" and "${target}" would both become "${finalName}". Use different names, or merge them on purpose.`);
+                setSaving(false);
+                return;
+            }
+            nameOwner.set(finalName, target);
+        }
+
         for (const [target, originals] of Object.entries(groups)) {
             const finalName = (nameByOriginal[target] ?? target).trim() || target;
             const sources = originals.filter(o => o !== target);
@@ -140,6 +159,20 @@ export default function SpeakerEditor({ open, onClose, meeting, onSave }) {
             setError(e?.message || 'Save failed');
         } finally {
             setSaving(false);
+        }
+    }
+
+    async function handleAutoDetect() {
+        if (!onAutoDetect || autoDetecting) return;
+        setAutoDetecting(true);
+        setError(null);
+        try {
+            const updated = await onAutoDetect(autoNames.trim());
+            if (updated) onClose?.();
+        } catch (e) {
+            setError(e?.message || 'Auto-detect failed');
+        } finally {
+            setAutoDetecting(false);
         }
     }
 
@@ -184,13 +217,43 @@ export default function SpeakerEditor({ open, onClose, meeting, onSave }) {
             }
         >
             <div className="flex flex-col gap-2">
+                {onAutoDetect && rows.length > 0 && (
+                    <div className="rounded-lg border p-3 mb-1" style={{ background: 'color-mix(in srgb, var(--accent-primary) 5%, var(--bg-secondary))', borderColor: 'var(--border-default)' }}>
+                        <div className="flex items-center gap-1.5 text-[13px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                            <Sparkles className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} />
+                            Auto-detect names
+                        </div>
+                        <p className="text-[11px] mb-2" style={{ color: 'var(--text-muted)' }}>
+                            Let AI map the speakers to real names using the transcript. Add who was in the meeting to make it reliable.
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <input
+                                value={autoNames}
+                                onChange={(e) => setAutoNames(e.target.value)}
+                                placeholder="Gerard, Tom, René… (optional)"
+                                className="flex-1 px-3 py-1.5 rounded-lg text-sm border outline-none"
+                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                            />
+                            <button
+                                type="button"
+                                onClick={handleAutoDetect}
+                                disabled={autoDetecting}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white disabled:opacity-50 whitespace-nowrap"
+                                style={{ background: 'var(--accent-primary)' }}
+                            >
+                                {autoDetecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                                Detect
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {rows.length === 0 && (
                     <div className="text-sm text-center py-6" style={{ color: 'var(--text-muted)' }}>
                         No speakers yet.
                     </div>
                 )}
                 {rows.map((row) => {
-                    const color = getSpeakerColor(row.targetId, SPEAKER_COLORS);
+                    const color = speakerColor(colorMap, row.targetId);
                     const otherRows = rows.filter(r => r.targetId !== row.targetId);
                     const merged = row.sources.length > 1;
                     return (

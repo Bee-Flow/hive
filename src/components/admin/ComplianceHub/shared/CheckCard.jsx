@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, MinusCircle, ChevronDown, ArrowRight, RefreshCw } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, MinusCircle, ChevronDown, ArrowRight, RefreshCw, Wand2 } from 'lucide-react';
 import { useTranslation } from '../../../../hooks/useTranslation';
 
 const STATUS_STYLES = {
@@ -21,10 +21,34 @@ const SEVERITY_LABEL_KEY = {
     low: 'compliance.sev_low',
 };
 
-export default function CheckCard({ check, onNavigate, onRerun, rerunning, focus = false }) {
+// How the result was established (registry.js `verification`). Attested items
+// are visually distinct so a passing card never overstates what the tool
+// actually verified.
+const VERIFICATION_BADGE = {
+    automated: { labelKey: 'compliance.verification_automated', color: '#10b981' },
+    attestation: { labelKey: 'compliance.verification_attestation', color: '#f59e0b' },
+    hybrid: { labelKey: 'compliance.verification_hybrid', color: '#3b82f6' },
+};
+
+export default function CheckCard({ check, onNavigate, onRerun, rerunning, onAutoFix, autoFixing, onLoadTrail, focus = false }) {
     const { t } = useTranslation();
     const [open, setOpen] = useState(focus);
+    const [confirmFix, setConfirmFix] = useState(false);
+    const [trailOpen, setTrailOpen] = useState(false);
+    const [trail, setTrail] = useState(null);       // { history, evidence } once loaded
+    const [trailLoading, setTrailLoading] = useState(false);
     const rootRef = useRef(null);
+
+    const toggleTrail = async () => {
+        const next = !trailOpen;
+        setTrailOpen(next);
+        if (next && trail === null && onLoadTrail) {
+            setTrailLoading(true);
+            try { setTrail(await onLoadTrail(check.check_id)); }
+            catch { setTrail({ history: [], evidence: [] }); }
+            finally { setTrailLoading(false); }
+        }
+    };
     const s = STATUS_STYLES[check.status] || STATUS_STYLES.pending;
     const Icon = s.Icon;
     const remediationHref = check.remediationLink ? `/${check.remediationLink.replace(/^\//, '')}` : null;
@@ -78,7 +102,16 @@ export default function CheckCard({ check, onNavigate, onRerun, rerunning, focus
                             padding: '2px 6px', borderRadius: 4,
                             background: 'var(--bg-tertiary, rgba(255,255,255,0.05))',
                             color: 'var(--text-muted, #888)',
-                        }}>Art. {check.article}</span>
+                        }}>{/* ISO refs (A.8.24, cl9.2) are self-labeling; GDPR/AIA articles get the Art. prefix */}
+                            {/^(A\.|cl)/.test(String(check.article || '')) ? check.article : `Art. ${check.article}`}</span>
+                        {VERIFICATION_BADGE[check.verification] && (
+                            <span title={t(`${VERIFICATION_BADGE[check.verification].labelKey}_hint`)} style={{
+                                fontSize: 10, fontWeight: 600,
+                                padding: '2px 6px', borderRadius: 4,
+                                background: `${VERIFICATION_BADGE[check.verification].color}18`,
+                                color: VERIFICATION_BADGE[check.verification].color,
+                            }}>{t(VERIFICATION_BADGE[check.verification].labelKey)}</span>
+                        )}
                     </div>
                     {check.details && (
                         <div style={{ fontSize: 12, color: 'var(--text-secondary, #aaa)', marginTop: 4, lineHeight: 1.4 }}>
@@ -134,15 +167,126 @@ export default function CheckCard({ check, onNavigate, onRerun, rerunning, focus
                             }}>{JSON.stringify(check.evidence, null, 2)}</pre>
                         </div>
                     )}
-                    {check.status !== 'pass' && remediationHref && onNavigate && (
-                        <button onClick={() => onNavigate(remediationHref.replace(/^\//, ''))}
-                            style={{
-                                ...btn(s.color, '#fff'),
-                                padding: '8px 14px', fontSize: 12.5, fontWeight: 600,
-                                alignSelf: 'flex-start',
+                    {onLoadTrail && (
+                        <div>
+                            <button onClick={toggleTrail} style={{
+                                ...btn('transparent', 'var(--text-muted, #999)'),
+                                padding: '4px 0', fontSize: 12, fontWeight: 600,
                             }}>
-                            {t('compliance.open_fix')} <ArrowRight size={14} />
-                        </button>
+                                <ChevronDown size={13} style={{ transform: trailOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                                {t('compliance.trail_toggle')}
+                            </button>
+                            {trailOpen && (
+                                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    {trailLoading ? (
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>{t('compliance.trail_loading')}</div>
+                                    ) : (
+                                        <>
+                                            <div>
+                                                <div style={label()}>{t('compliance.trail_history')}</div>
+                                                {(trail?.history || []).length === 0 ? (
+                                                    <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>{t('compliance.trail_empty')}</div>
+                                                ) : (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                                        {(trail.history || []).slice(0, 15).map((h, i) => {
+                                                            const hs = STATUS_STYLES[h.status] || STATUS_STYLES.pending;
+                                                            return (
+                                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5 }}>
+                                                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: hs.color, flexShrink: 0 }} />
+                                                                    <span style={{ color: hs.color, fontWeight: 600, width: 88, flexShrink: 0 }}>{t(hs.labelKey)}</span>
+                                                                    <span style={{ color: 'var(--text-muted, #888)' }}>{h.run_at ? new Date(h.run_at).toLocaleString() : '—'}</span>
+                                                                    {h.run_type && <span style={{ color: 'var(--text-muted, #666)', fontSize: 10.5 }}>({h.run_type})</span>}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <div style={label()}>{t('compliance.trail_evidence')}</div>
+                                                <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', marginBottom: 4 }}>
+                                                    {t('compliance.trail_evidence_hint')}
+                                                </div>
+                                                {(trail?.evidence || []).length === 0 ? (
+                                                    <div style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>{t('compliance.trail_empty')}</div>
+                                                ) : (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, overflow: 'auto' }}>
+                                                        {(trail.evidence || []).slice(0, 15).map((ev, i) => (
+                                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                                                                <span style={{ color: 'var(--text-muted, #888)', flexShrink: 0 }}>
+                                                                    {ev.captured_at ? new Date(ev.captured_at).toLocaleString() : '—'}
+                                                                </span>
+                                                                <code style={{
+                                                                    fontSize: 10, color: 'var(--text-muted, #777)',
+                                                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                                }} title={ev.hash}>
+                                                                    sha256:{String(ev.hash || '').slice(0, 16)}…
+                                                                </code>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {check.status !== 'pass' && remediationHref && onNavigate && (
+                            <button onClick={() => onNavigate(remediationHref.replace(/^\//, ''))}
+                                style={{
+                                    ...btn(s.color, '#fff'),
+                                    padding: '8px 14px', fontSize: 12.5, fontWeight: 600,
+                                }}>
+                                {t('compliance.open_fix')} <ArrowRight size={14} />
+                            </button>
+                        )}
+                        {check.autoFixId && onAutoFix
+                            && check.status !== 'pass' && check.status !== 'not_applicable' && !confirmFix && (
+                            <button onClick={() => setConfirmFix(true)} disabled={autoFixing}
+                                style={{
+                                    ...btn('var(--accent-primary, #6366f1)', '#fff'),
+                                    padding: '8px 14px', fontSize: 12.5, fontWeight: 600,
+                                    opacity: autoFixing ? 0.6 : 1,
+                                }}>
+                                <Wand2 size={14} style={{ animation: autoFixing ? 'spin 1s linear infinite' : 'none' }} />
+                                {autoFixing ? t('compliance.auto_fixing') : t('compliance.auto_fix')}
+                            </button>
+                        )}
+                    </div>
+                    {confirmFix && (
+                        <div style={{
+                            border: '1px solid var(--accent-primary, #6366f1)',
+                            borderRadius: 8, padding: '12px 14px',
+                            display: 'flex', flexDirection: 'column', gap: 8,
+                        }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary, #fff)' }}>
+                                {t('compliance.auto_fix_confirm_title')}
+                            </div>
+                            <div>{t('compliance.auto_fix_confirm_desc')}</div>
+                            {Array.isArray(check.evidence?.missing_disclosure) && check.evidence.missing_disclosure.length > 0 && (
+                                <div>
+                                    <div style={label()}>{t('compliance.auto_fix_affected')}</div>
+                                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                        {check.evidence.missing_disclosure.map(a => (
+                                            <li key={a.id}>{a.name || a.id}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button onClick={() => { setConfirmFix(false); onAutoFix(check.check_id); }}
+                                    style={{ ...btn('var(--accent-primary, #6366f1)', '#fff'), fontSize: 12.5, fontWeight: 600 }}>
+                                    <Wand2 size={14} /> {t('compliance.auto_fix_apply')}
+                                </button>
+                                <button onClick={() => setConfirmFix(false)}
+                                    style={{ ...btn('transparent', 'var(--text-muted, #888)'), fontSize: 12.5 }}>
+                                    {t('compliance.auto_fix_cancel')}
+                                </button>
+                            </div>
+                        </div>
                     )}
                 </div>
             )}

@@ -14,7 +14,7 @@
  */
 import { node, doc, emptyParagraph } from '../model/nodes.js';
 import { mark, addMark, sortMarks, sameMarkSet } from '../model/marks.js';
-import { decodeFromAttr, safeUrl } from './util.js';
+import { decodeFromAttr, safeUrl, safeCssColor, safeCssFont, squareUpRows } from './util.js';
 
 export function htmlToAst(html, DOMParserImpl) {
   const Impl = DOMParserImpl || (typeof DOMParser !== 'undefined' ? DOMParser : null);
@@ -132,7 +132,12 @@ function codeBlockFrom(el) {
 
 function tableFrom(el) {
   const rows = [];
-  for (const tr of Array.from(el.querySelectorAll('tr'))) {
+  // Only THIS table's rows: an unscoped 'tr' also matched the rows of a table
+  // nested inside a td, duplicating them into the outer table on every reload
+  // (the mini-grid artifact, S8). The nested table still parses — as cell
+  // content, via parseBlockChildren below.
+  const rowSel = ':scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr, :scope > tr';
+  for (const tr of Array.from(el.querySelectorAll(rowSel))) {
     const cells = [];
     for (const cell of Array.from(tr.children)) {
       const t = cell.tagName.toLowerCase();
@@ -147,8 +152,11 @@ function tableFrom(el) {
     }
     if (cells.length) rows.push(node('tableRow', null, cells));
   }
-  return node('table', null, rows);
+  // Pasted tables (Word, Google Docs, scraped pages) are frequently ragged.
+  return node('table', null, squareUpRows(rows, emptyTableCell));
 }
+
+const emptyTableCell = (header) => node('tableCell', { header }, [emptyParagraph()]);
 
 function imageFrom(img) {
   const width = img.getAttribute('data-width') || (img.style?.width ? parseInt(img.style.width, 10) : null);
@@ -211,12 +219,15 @@ function markForTag(tag, el) {
     case 'u':                  return mark('underline');
     case 's': case 'del': case 'strike': return mark('strike');
     case 'code':               return mark('code');
-    case 'mark':               return mark('highlight', { color: cssValue(el, 'background-color') || cssValue(el, 'background') || null });
+    // Imported/pasted HTML is untrusted: style values are validated on the way
+    // IN as well as on the way out (astToHtml), so a hostile value never even
+    // reaches the document model.
+    case 'mark':               return mark('highlight', { color: safeCssColor(cssValue(el, 'background-color') || cssValue(el, 'background')) || null });
     case 'a':                  return mark('link', { href: safeUrl(el.getAttribute('href') || ''), target: el.getAttribute('target') || undefined, rel: el.getAttribute('rel') || undefined });
     case 'span': {
-      const color = cssValue(el, 'color');
-      const font = cssValue(el, 'font-family');
-      if (color || font) return mark('textStyle', { color: color || null, fontFamily: font ? font.replace(/['"]/g, '') : null });
+      const color = safeCssColor(cssValue(el, 'color'));
+      const font = safeCssFont((cssValue(el, 'font-family') || '').replace(/['"]/g, ''));
+      if (color || font) return mark('textStyle', { color: color || null, fontFamily: font || null });
       return null;
     }
     default: return null;

@@ -83,14 +83,20 @@ const EncryptionSetup = ({ mode, onComplete, recoveryKeyProp }) => {
         try {
             // Try OPAQUE PIN login first (PIN never sent to server)
             const result = await opaquePinLogin(pin);
-            if (result.needsSetup) {
-                window.location.reload();
-                return;
-            }
             if (result.success) {
                 onComplete();
                 return;
             }
+            // `needsSetup` here means only "this account has no opaqueRecord"
+            // (auth/opaqueRoutes.js:487). For an account still on
+            // kdfMode 'legacy_argon2' that is NOT first-time setup: its DEK is
+            // wrapped with Argon2 in users.wrappedDEK, and the legacy endpoint
+            // below unwraps it — and transparently re-wraps it with current
+            // params. Reloading here instead trapped those accounts in a loop
+            // (reload -> PIN screen -> reload) with the PIN never checked and
+            // no error shown, because this early return also skipped the
+            // fallback. Fall through and let the legacy endpoint decide; it
+            // reports genuine first-time setup via its own needsSetup.
         } catch (opaqueErr) {
             console.warn('[Encryption] OPAQUE PIN unlock failed, falling back to legacy:', opaqueErr.message);
         }

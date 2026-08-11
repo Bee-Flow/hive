@@ -89,6 +89,16 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
     const webpageIdRef = useRef(webpageId);
     useEffect(() => { webpageIdRef.current = webpageId; }, [webpageId]);
 
+    // The preview iframe is the ONLY window allowed to drive these postMessage
+    // handlers. Without this check any other frame/window could post
+    // `__beeflowTokenRefresh` and receive a fresh preview bearer token, or spoof
+    // a selection. The iframe is sandboxed without `allow-same-origin`, so it has
+    // an opaque origin (`event.origin === 'null'`) and `event.source` is its
+    // contentWindow — verify both.
+    const iframeRef = useRef(null);
+    const isFromPreviewIframe = (event) =>
+        !!iframeRef.current && event?.source === iframeRef.current.contentWindow;
+
     // Merge metadata + content into a single shape composeWebpageDocument expects.
     const extras = useMemo(() => extraFiles.map(f => {
         const c = extraContents[f.path];
@@ -98,6 +108,20 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
     }), [extraFiles, extraContents]);
 
     const isReact = framework === 'react-mui';
+    // Full tier: a real per-project Node/Vite container (server/services/
+    // webpageRuntimeManager.js), reverse-proxied same-origin through
+    // /api/webpages-preview/:id/full/ (server/routes/webpagesFullTierProxy.js).
+    // GATED server-side — inert unless WEBPAGE_FULL_RUNTIME_ENABLED=1; if the
+    // gate is off the proxy 404s and the iframe shows a normal browser error,
+    // same as any other unreachable URL. Reuses the SAME dbToken this
+    // component already mints for the light-tier DB bridge — the proxy's
+    // requirePreviewToken middleware verifies it via query string (an
+    // Authorization header isn't settable on a plain iframe navigation).
+    const isFull = runtime === 'full';
+    const fullTierUrl = useMemo(() => {
+        if (!isFull || !webpageId || !dbToken) return null;
+        return `${dbApiBase}/api/webpages-preview/${encodeURIComponent(webpageId)}/full/?token=${encodeURIComponent(dbToken)}`;
+    }, [isFull, webpageId, dbToken, dbApiBase]);
 
     // A project can hold React source (src/main.jsx) while its framework is still
     // 'vanilla' (e.g. created before react-mui became the default, or the flag
@@ -136,7 +160,10 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
     const [reactDoc, setReactDoc] = useState('');
     const [building, setBuilding] = useState(false);
     useEffect(() => {
-        if (!isReact) return;
+        // Full tier renders the container's proxied URL directly (see isFull
+        // above) — skip the in-browser esbuild-wasm bundle entirely so a
+        // full-tier + react-mui project doesn't pay for a build nobody uses.
+        if (!isReact || isFull) return;
         let cancelled = false;
         setBuilding(true);
         // While the AI is streaming files, intermediate states have missing
@@ -162,13 +189,14 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
             }
         }, delay);
         return () => { cancelled = true; clearTimeout(timer); };
-    }, [isReact, html, css, js, extras, bridgeOn, dbToken, dbApiBase, webpageId, runtime, refreshKey, isStreaming]);
+    }, [isReact, isFull, html, css, js, extras, bridgeOn, dbToken, dbApiBase, webpageId, runtime, refreshKey, isStreaming]);
 
     const srcDoc = isReact ? reactDoc : vanillaSrcDoc;
 
     useEffect(() => {
         if (!bridgeOn) return;
         const handler = (event) => {
+            if (!isFromPreviewIframe(event)) return;
             const data = event?.data;
             if (!data || data.__beeflowWebpageSelection !== true) return;
             const text = typeof data.text === 'string' ? data.text.trim() : '';
@@ -192,6 +220,7 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
     // calls working across dev-server restarts and key rotation.
     useEffect(() => {
         const handler = async (event) => {
+            if (!isFromPreviewIframe(event)) return;
             const data = event?.data;
             if (!data || data.__beeflowTokenRefresh !== true) return;
             const currentId = webpageIdRef.current;
@@ -221,6 +250,12 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
     }, []);
 
     const openInNewTab = () => {
+        if (isFull) {
+            // Already a real, same-origin proxied URL — no blob indirection needed
+            // (there's no srcDoc to wrap; the container serves live HTML directly).
+            if (fullTierUrl) window.open(fullTierUrl, '_blank', 'noopener,noreferrer');
+            return;
+        }
         // A blob: URL with a unique opaque origin — gives the user a full-window
         // view without ever sharing an origin with the host app.
         const blob = new Blob([srcDoc], { type: 'text/html' });
@@ -270,21 +305,43 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
             <div className="flex-1 min-h-0 relative">
                 <iframe
                     key={refreshKey}
+                    ref={iframeRef}
                     title="Webpage preview"
-                    srcDoc={srcDoc}
+                    {...(isFull ? { src: fullTierUrl || 'about:blank' } : { srcDoc })}
                     sandbox="allow-scripts allow-forms"
                     referrerPolicy="no-referrer"
                     style={{ width: '100%', height: '100%', border: 0, background: '#fff' }}
                 />
+                {/* Full tier: the only "generating" state we can show client-side is
+                    "waiting for a preview token" — the container's own boot/HMR
+                    progress isn't observable from here (it's whatever Vite renders
+                    once the proxied document loads). */}
+                {isFull && !fullTierUrl && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none"
+                         style={{ background: '#fff', color: '#475569' }}>
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                        <span className="text-sm">Starting the dev server…</span>
+                    </div>
+                )}
                 {/* While the page is still being generated and nothing has been
                     painted yet, show a clear in-progress state instead of a blank
                     white iframe that looks broken (BFSF-178). For react-mui this
                     is the first in-browser bundle (no doc yet). */}
-                {((isStreaming && !isReact && !(html && html.trim())) || (isReact && building && !reactDoc)) && (
+                {!isFull && ((isStreaming && !isReact && !(html && html.trim())) || (isReact && building && !reactDoc)) && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none"
                          style={{ background: '#fff', color: '#475569' }}>
                         <RefreshCw className="w-5 h-5 animate-spin" />
                         <span className="text-sm">{isReact ? 'Building React preview…' : 'Generating preview…'}</span>
+                    </div>
+                )}
+                {/* Nothing built yet and nothing streaming — a friendly hint beats
+                    a blank white iframe that reads as broken. */}
+                {!isFull && !isStreaming && !isReact && !(html && html.trim()) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none px-6 text-center"
+                         style={{ background: '#fff', color: '#94a3b8' }}>
+                        <span className="text-2xl">🌐</span>
+                        <span className="text-sm font-medium" style={{ color: '#475569' }}>Nothing to preview yet</span>
+                        <span className="text-xs" style={{ maxWidth: 280 }}>Ask the AI in the chat to build something — the preview will appear here as it works.</span>
                     </div>
                 )}
             </div>

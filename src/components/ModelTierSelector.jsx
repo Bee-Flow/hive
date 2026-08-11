@@ -1,19 +1,64 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { TIER_META, customTierMeta, configuredTierKeys } from './tierMeta';
 import AppEmoji from './AppEmoji';
 
 // Map a tier key to its catalog id; custom tiers fall back to tier.custom.
 const tierCatalogId = (key) => key?.startsWith('custom:') ? 'tier.custom' : (key === 'pro' ? 'tier.deep' : `tier.${key}`);
 
-const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection = 'up', variant = 'default' }) => {
+const PANEL_MIN_WIDTH = 240;
+
+/**
+ * `portal` renders the dropdown into document.body at a fixed position anchored
+ * to the trigger. Use it inside a SCROLLING/clipping container (e.g. the App
+ * Studio inspector), where an absolutely-positioned panel is cut off by the
+ * ancestor's overflow. Off by default — every existing call site keeps its
+ * current absolute behaviour.
+ */
+const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection = 'up', variant = 'default', portal = false }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
+    const panelRef = useRef(null);
+    const [pos, setPos] = useState(null);
 
     useEffect(() => {
-        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        const handler = (e) => {
+            if (ref.current && ref.current.contains(e.target)) return;
+            // The portalled panel lives outside `ref` — without this it would
+            // unmount on mousedown and swallow the option's click.
+            if (panelRef.current && panelRef.current.contains(e.target)) return;
+            setOpen(false);
+        };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, []);
+
+    // Anchor the portalled panel to the trigger; follow scroll/resize.
+    useLayoutEffect(() => {
+        if (!portal || !open || !ref.current) return undefined;
+        const update = () => {
+            const r = ref.current.getBoundingClientRect();
+            const width = panelRef.current?.offsetWidth || PANEL_MIN_WIDTH;
+            // Right-align to the trigger, then CLAMP into the viewport: a
+            // trigger near the left edge (the AI builder composer) would
+            // otherwise push a right-aligned panel off-screen.
+            const left = Math.min(
+                Math.max(8, r.right - width),
+                Math.max(8, window.innerWidth - width - 8),
+            );
+            const next = { left };
+            if (dropDirection === 'down') next.top = r.bottom + 6;
+            else next.bottom = Math.max(8, window.innerHeight - r.top + 6);
+            setPos(next);
+        };
+        update();
+        window.addEventListener('resize', update);
+        window.addEventListener('scroll', update, true);
+        return () => {
+            window.removeEventListener('resize', update);
+            window.removeEventListener('scroll', update, true);
+        };
+    }, [portal, open, dropDirection]);
 
     // Ordered, configured-only tier keys (auto, fast, standard/Flow, swarm,
     // thinking, writer, pro, then custom). Shared with the AI-step settings
@@ -23,6 +68,9 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
     const currentMeta = TIER_META[value]
         || (value && value.startsWith('custom:') ? customTierMeta(value, tiers[value]) : null)
         || TIER_META.fast;
+
+    // Portalled panels escape the ancestor's overflow; inline ones stay put.
+    const renderPanel = (el) => (portal ? createPortal(el, document.body) : el);
 
     return (
         <div ref={ref} style={{ position: 'relative', display: 'inline-block' }} data-testid="model-tier-selector">
@@ -67,21 +115,29 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
             {/* Dropdown panel — inner padding so the rounded hover bg paints
                 fully inside the panel's rounded corners, and a single,
                 quietly-strong selected state (no double-indicator). */}
-            {open && (
+            {open && (!portal || pos) && renderPanel(
                 <div
-                    className="model-tier-panel absolute"
+                    ref={panelRef}
+                    className={portal ? 'model-tier-panel' : 'model-tier-panel absolute'}
                     data-surface="opaque"
                     role="listbox"
                     style={{
-                        ...(dropDirection === 'down'
-                            ? { top: 'calc(100% + 6px)' }
-                            : { bottom: 'calc(100% + 6px)' }),
-                        right: 0, minWidth: '240px',
+                        ...(portal
+                            ? { position: 'fixed', ...pos, zIndex: 1000 }
+                            : {
+                                position: 'absolute',
+                                ...(dropDirection === 'down'
+                                    ? { top: 'calc(100% + 6px)' }
+                                    : { bottom: 'calc(100% + 6px)' }),
+                                right: 0, zIndex: 100,
+                            }),
+                        minWidth: `${PANEL_MIN_WIDTH}px`,
+                        maxWidth: 'calc(100vw - 16px)', // never wider than the viewport
                         border: '1px solid var(--border-default)',
                         borderRadius: '14px',
                         padding: '6px',
                         boxShadow: 'var(--shadow-popover, 0 12px 36px rgba(15,23,42,0.18))',
-                        overflow: 'hidden', zIndex: 100,
+                        overflow: 'hidden',
                         animation: 'modelTierPanelIn 140ms cubic-bezier(0.22, 1, 0.36, 1) both',
                         transformOrigin: dropDirection === 'down' ? 'top right' : 'bottom right',
                     }}

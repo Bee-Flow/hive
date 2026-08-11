@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Eye, FileText } from 'lucide-react';
 import InvoicePdfModal from './InvoicePdfModal';
+import { useTranslation } from '../../hooks/useTranslation';
 
 /**
  * In-app invoice list. Fetches the caller's invoices from
@@ -43,11 +44,14 @@ function formatAmount(amount, currency) {
 function formatDate(iso) {
     if (!iso) return '—';
     try {
-        return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        // nl-NL to match formatAmount's currency locale (BFSF-250 polish —
+        // the mixed en-GB dates next to €-formatted amounts read as a glitch).
+        return new Date(iso).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short', year: 'numeric' });
     } catch (_) { return '—'; }
 }
 
-export default function InvoicesPanel({ fetcher, pdfFetcher, title = 'Invoices' }) {
+export default function InvoicesPanel({ fetcher, pdfFetcher, title }) {
+    const { t } = useTranslation();
     const [invoices, setInvoices] = useState(null); // null = loading
     const [error, setError] = useState(null);
     const [viewing, setViewing] = useState(null); // invoice being previewed in the modal
@@ -59,7 +63,7 @@ export default function InvoicesPanel({ fetcher, pdfFetcher, title = 'Invoices' 
                 const list = await fetcher();
                 if (alive) setInvoices(Array.isArray(list) ? list : []);
             } catch (e) {
-                if (alive) { setError(e?.message || 'Failed to load invoices'); setInvoices([]); }
+                if (alive) { setError(e?.message || t('billing.invoices_load_failed', 'Failed to load invoices')); setInvoices([]); }
             }
         })();
         return () => { alive = false; };
@@ -70,7 +74,7 @@ export default function InvoicesPanel({ fetcher, pdfFetcher, title = 'Invoices' 
         <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border-subtle)]">
                 <FileText className="w-4 h-4 text-[var(--text-muted)]" />
-                <span className="text-sm font-semibold text-[var(--text-primary)]">{title}</span>
+                <span className="text-sm font-semibold text-[var(--text-primary)]">{title || t('billing.invoices', 'Invoices')}</span>
             </div>
 
             {invoices === null ? (
@@ -80,11 +84,12 @@ export default function InvoicesPanel({ fetcher, pdfFetcher, title = 'Invoices' 
             ) : error ? (
                 <div className="px-4 py-6 text-sm text-rose-400">{error}</div>
             ) : invoices.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-[var(--text-muted)]">No invoices yet.</div>
+                <div className="px-4 py-6 text-sm text-[var(--text-muted)]">{t('billing.no_invoices', 'No invoices yet.')}</div>
             ) : (
                 <div className="divide-y divide-[var(--border-subtle)]">
                     {invoices.map(inv => {
                         const tone = STATUS_TONE[inv.status] || { label: inv.status, color: 'var(--text-muted)', bg: 'var(--bg-tertiary)' };
+                        const toneLabel = STATUS_TONE[inv.status] ? t(`billing.status_${inv.status}`, tone.label) : tone.label;
                         const amount = inv.amountPaid != null ? inv.amountPaid : inv.amountDue;
                         return (
                             <div key={inv.id} className="flex items-center gap-3 px-4 py-3 text-sm">
@@ -97,7 +102,7 @@ export default function InvoicesPanel({ fetcher, pdfFetcher, title = 'Invoices' 
                                     className="w-24 text-center text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0"
                                     style={{ color: tone.color, background: tone.bg }}
                                 >
-                                    {tone.label}
+                                    {toneLabel}
                                 </span>
                                 {inv.invoicePdf && pdfFetcher ? (
                                     <button

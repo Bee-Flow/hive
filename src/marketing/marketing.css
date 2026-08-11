@@ -17,6 +17,8 @@
    site.design.fonts. Inter is kept as a system fallback so the page never
    shows a flash of unstyled text before the loader runs. */
 
+@import './tokens.css';
+
 .marketing-root {
     /* ── Brand / design-system tokens (user-controlled) ─────────────── */
     --brand-primary:        #F5A623;
@@ -32,16 +34,32 @@
 
     --radius-base: 12px;
 
-    /* ── Legacy tokens — aliased to the brand tokens above ──────────── */
+    /* ── Legacy tokens — aliased to the brand tokens above ────────────
+       Card fills / borders / glows now ride the derived-token layer in
+       tokens.css (surface ladder, hairlines, accent tints), so a brand
+       palette change re-tints ALL of them — no literal ambers left. */
     --bg-primary:        var(--brand-bg);
     --bg-secondary:      var(--brand-surface);
-    --bg-card:           rgba(0, 0, 0, 0.03);
-    --bg-card-hover:     rgba(0, 0, 0, 0.06);
+    --bg-card:           var(--surface-2);
+    --bg-card-hover:     var(--surface-3);
     --bg-glass:          rgba(255, 255, 255, 0.7);
+    /* Menu surfaces are OPAQUE by contract, and --bg-glass is not allowed
+       anywhere near them.
+
+       WHY: `.header` sets `transform: translateZ(0)` + `will-change:
+       transform`, which makes it a BACKDROP ROOT. A `backdrop-filter` on a
+       descendant therefore samples only what is painted inside the header —
+       i.e. nothing — so the blur silently no-ops and a 70%-alpha panel lets
+       the page read straight through it. The header bar itself may keep its
+       glass (it owns the backdrop root, so its own blur works); anything
+       nested inside it may not.
+
+       Tracks --brand-bg, so it inverts in dark mode with everything else. */
+    --menu-surface:      var(--surface-0);
 
     --accent:            var(--brand-primary);
     --accent-light:      var(--brand-accent);
-    --accent-glow:       rgba(245, 166, 35, 0.25);
+    --accent-glow:       var(--accent-tint-22);
     /* Default fill is SOLID. The .cms-gradient class below upgrades it to a
        linear gradient when the user opts in via the Design tab. */
     --accent-gradient:   var(--brand-primary);
@@ -50,24 +68,38 @@
     --text-secondary:    var(--brand-text-secondary);
     --text-muted:        rgba(15, 23, 42, 0.5);
 
-    --border-subtle:     rgba(15, 23, 42, 0.08);
-    --border-accent:     rgba(245, 166, 35, 0.3);
+    --border-subtle:     var(--hairline);
+    --border-accent:     var(--hairline-accent);
 
-    /* Radius scale derived from --radius-base so the global slider scales
-       buttons, cards, inputs proportionally. */
-    --radius-sm: calc(var(--radius-base) * 0.5);
+    /* Radius vocabulary derived from --radius-base so the global slider
+       scales buttons, cards, inputs proportionally: 8 / 12 / 16 / 24px
+       at the default base of 12. */
+    --radius-sm: calc(var(--radius-base) * 0.667);
     --radius-md: var(--radius-base);
-    --radius-lg: calc(var(--radius-base) * 1.5);
+    --radius-lg: calc(var(--radius-base) * 1.333);
     --radius-xl: calc(var(--radius-base) * 2);
 
-    --shadow-card: 0 4px 24px rgba(15, 23, 42, 0.08);
-    --shadow-glow: 0 0 60px rgba(245, 166, 35, 0.08);
+    /* Shadows are split into COLOR + geometry so dark mode and dark bands can
+       re-tint them by overriding one token. NOTE: .cms-theme-dark and
+       .cms-band--dark must override --shadow-color, NOT --shadow-card —
+       otherwise a site-level `shadow` setting (inline on .marketing-root)
+       would beat the class and dark mode would get a light-mode shadow. */
+    --shadow-color:        rgba(15, 23, 42, 0.08);
+    --shadow-color-strong: rgba(15, 23, 42, 0.14);
+    --shadow-card: 0 4px 24px var(--shadow-color);
+    --shadow-glow: 0 0 60px var(--accent-tint-08);
 
-    --transition-fast: 0.2s ease;
-    --transition-med:  0.35s ease;
-    --transition-slow: 0.6s ease;
+    --transition-fast: var(--motion-fast) var(--ease-soft);
+    --transition-med:  var(--motion-med)  var(--ease-soft);
+    --transition-slow: var(--motion-slow) var(--ease-out);
 
-    --max-width:     1200px;
+    --max-width:     1280px;
+    /* Chrome runs wider than content on purpose. 1280px is a reading measure
+       — right for prose, but it left the header and footer floating in ~130px
+       of dead gutter on a 1536px display, which reads as a narrow site rather
+       than a considered one. The header and footer are navigation, not text,
+       so they get the full frame and only the content column stays narrow. */
+    --max-width-wide: 1600px;
     --header-height: 72px;
 
     /* ── Base ─────────────────────────────────────────────────────────── */
@@ -98,17 +130,33 @@
 .marketing-root *::before,
 .marketing-root *::after { box-sizing: border-box; }
 
+/* Horizontal-overflow guard. A single stray wide element (a long unbroken
+   word, a full-bleed image, a header row that doesn't fit) would otherwise
+   make the WHOLE page scroll sideways / render zoomed-out on phones — the
+   classic "fine on desktop, broken on mobile" symptom. `clip` (not `hidden`)
+   contains horizontal overflow without creating a scroll container or
+   forcing overflow-y to auto, so it doesn't break the fixed header or any
+   sticky descendants. */
+.marketing-root { overflow-x: clip; }
+
 .marketing-root a { color: inherit; text-decoration: none; }
 .marketing-root img { max-width: 100%; display: block; }
 .marketing-root button { font-family: inherit; cursor: pointer; border: none; background: none; }
 
-/* ── Typography ────────────────────────────────────────────────────────── */
-.marketing-root .headline-xl { font-size: clamp(2.5rem, 5vw, 3.25rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; }
-.marketing-root .headline-lg { font-size: clamp(2rem,  4vw, 3rem);   font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }
-.marketing-root .headline-md { font-size: clamp(1.3rem, 2.5vw, 1.75rem); font-weight: 600; line-height: 1.25; }
+/* ── Typography ────────────────────────────────────────────────────────
+   Weights cap at --heading-weight (600 default) — oversized-but-not-bold
+   is the premium register. .headline-display (tokens.css) is the hero
+   scale; .headline-xl stays one step below so section titles never
+   out-shout the hero. */
+.marketing-root .headline-xl { font-size: var(--text-h1); font-weight: var(--heading-weight, 600); line-height: var(--leading-h1); letter-spacing: var(--tracking-h1); }
+.marketing-root .headline-lg { font-size: var(--text-h2); font-weight: var(--heading-weight, 600); line-height: var(--leading-h2); letter-spacing: var(--tracking-h2); }
+.marketing-root .headline-md { font-size: var(--text-h3); font-weight: 600; line-height: var(--leading-h3); letter-spacing: var(--tracking-h3); }
 .marketing-root .body-lg     { font-size: 1.125rem; font-weight: 400; line-height: 1.6; color: var(--text-secondary); }
 .marketing-root .body-md     { font-size: 1rem;     font-weight: 400; line-height: 1.6; color: var(--text-secondary); }
-.marketing-root .label       { font-size: 0.8rem;   font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); }
+/* Eyebrows are 13px TEXT, so they use --accent-strong, not the raw accent:
+   #F5A623 on white is ~2:1 (WCAG failure); the strong variant is the same
+   hue at ≥4.5:1 on light surfaces and re-brightens inside dark scopes. */
+.marketing-root .label       { font-size: 0.8rem;   font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent-strong, var(--accent)); }
 
 .marketing-root .gradient-text {
     background: var(--accent-gradient);
@@ -126,51 +174,70 @@
 }
 
 .marketing-root section {
-    padding: 120px 0;
+    padding: var(--section-y) 0;
     position: relative;
 }
 .marketing-root section.alt-bg { background: var(--bg-secondary); }
 
 /* ── Buttons ──────────────────────────────────────────────────────────── */
+/* Buttons are token-driven so a theme can pick shape (pill / soft /
+   rounded / sharp) and size independently of the card radius. Every
+   fallback is the literal that was here before, so an unset token renders
+   byte-identically. --btn-lift must be a LENGTH (0px, not 0) because
+   translateY() rejects a unitless zero. */
 .marketing-root .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 14px 32px;
-    border-radius: var(--radius-xl);
-    font-weight: 600;
-    font-size: 0.95rem;
-    transition: all var(--transition-fast);
+    padding: var(--btn-pad-y, 14px) var(--btn-pad-x, 32px);
+    border-radius: var(--btn-radius, var(--radius-xl));
+    font-weight: var(--btn-weight, 600);
+    font-size: var(--btn-font-size, 0.95rem);
+    /* Named, not `all` — see the card recipe in tokens.css. Covers what the
+       primary/secondary hover states change. */
+    transition:
+        transform var(--transition-fast),
+        background-color var(--transition-fast),
+        border-color var(--transition-fast),
+        color var(--transition-fast),
+        box-shadow var(--transition-fast);
     white-space: nowrap;
     cursor: pointer;
 }
+/* Per-instance size modifiers — declared AFTER .btn so they win at equal
+   specificity. Site-wide sizing comes from the theme token instead. */
+.marketing-root .btn--sm { --btn-pad-y: 10px; --btn-pad-x: 22px; --btn-font-size: 0.875rem; }
+.marketing-root .btn--md { --btn-pad-y: 14px; --btn-pad-x: 32px; --btn-font-size: 0.95rem; }
+.marketing-root .btn--lg { --btn-pad-y: 17px; --btn-pad-x: 40px; --btn-font-size: 1.0625rem; }
 .marketing-root .btn-primary {
     background: var(--accent-gradient);
-    color: #fff;
-    box-shadow: 0 4px 20px var(--accent-glow);
+    color: var(--btn-primary-fg, #fff);
+    box-shadow: var(--btn-shadow, 0 4px 20px var(--accent-glow));
 }
 .marketing-root .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px var(--accent-glow);
+    transform: translateY(var(--btn-lift, -2px));
+    box-shadow: var(--btn-shadow-hover, 0 8px 30px var(--accent-glow));
 }
 .marketing-root .btn-secondary {
-    background: var(--bg-glass);
+    background: var(--btn-secondary-bg, var(--bg-glass));
     color: var(--text-primary);
-    border: 1px solid var(--border-subtle);
-    backdrop-filter: blur(10px);
+    border: 1px solid var(--btn-secondary-border, var(--border-subtle));
+    backdrop-filter: var(--btn-blur, blur(10px));
 }
 .marketing-root .btn-secondary:hover {
     border-color: var(--border-accent);
     box-shadow: 0 0 20px var(--accent-glow);
 }
 .marketing-root .btn-login {
+    /* Padding stays literal on purpose: tertiary header chrome must not
+       grow when a theme picks buttonSize:'lg'. */
     padding: 10px 24px;
     font-size: 0.85rem;
     background: transparent;
     color: var(--text-primary);
     border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-xl);
+    border-radius: var(--btn-radius, var(--radius-xl));
 }
 .marketing-root .btn-login:hover {
     border-color: var(--border-accent);
@@ -211,11 +278,23 @@
     top: 0; left: 0; right: 0;
     height: var(--header-height);
     z-index: 1000;
-    transition: all var(--transition-med);
+    /* Named, not `all` — the scrolled/nav-open state changes exactly these.
+       Deliberately absent: backdrop-filter (blur interpolation repaints the
+       whole glass layer every frame) and `top` (it moves when the
+       announcement bar is dismissed, but the hero padding that moves with it
+       has no transition — animating only the header would desync the two;
+       a uniform instant snap is the consistent behaviour). */
+    transition:
+        background-color var(--transition-med),
+        box-shadow var(--transition-med);
     transform: translateZ(0);
     will-change: transform;
 }
-.marketing-root .header.scrolled {
+/* The bar's own glass DOES work: .header owns the backdrop root, so its
+   blur samples the page behind it. Only its descendants are affected by
+   that (see --menu-surface). */
+.marketing-root .header.scrolled,
+.marketing-root .header.nav-open {
     background: var(--bg-glass);
     backdrop-filter: blur(20px) saturate(1.5);
     box-shadow: 0 1px 0 0 var(--border-subtle);
@@ -225,9 +304,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    max-width: var(--max-width);
+    max-width: var(--max-width-wide);
     margin: 0 auto;
-    padding: 0 24px;
+    padding: 0 40px;
+}
+@media (max-width: 900px) {
+    .marketing-root .header-inner { padding: 0 20px; }
 }
 .marketing-root .header-logo {
     display: flex;
@@ -235,19 +317,23 @@
     gap: 12px;
     font-weight: 700;
     font-size: 1.1rem;
+    /* The wordmark is a mark, not copy — on ~400px screens "Bee Flow"
+       broke to "Bee / Flow." across two lines. Never wrap it; narrow
+       viewports shrink it instead (see the 480px block below). */
+    white-space: nowrap;
 }
 .marketing-root .header-logo .logo-tile {
-    width: 38px; height: 38px;
-    border-radius: var(--radius-sm);
+    width: var(--logo-size, 38px); height: var(--logo-size, 38px);
+    border-radius: var(--logo-radius, var(--radius-sm));
     background: var(--accent-gradient);
     display: flex; align-items: center; justify-content: center;
-    color: #fff; font-weight: 800;
+    color: var(--btn-primary-fg, #fff); font-weight: 800;
 }
 /* Image logo — uploaded via Site chrome → Logo image. Sized to roughly
    match the letter-avatar's height so swapping between modes doesn't
    change the header's vertical rhythm. */
 .marketing-root .header-logo .logo-image {
-    height: 38px;
+    height: var(--logo-size, 38px);
     width: auto;
     max-width: 160px;
     object-fit: contain;
@@ -257,7 +343,10 @@
 .marketing-root .header-nav {
     display: flex;
     align-items: center;
-    gap: 36px;
+    /* Fill the header's full height so a dropdown parent can stretch to it
+       (see .nav-item.has-dropdown). Plain links stay centred. */
+    align-self: stretch;
+    gap: 32px;
 }
 .marketing-root .header-nav a {
     position: relative;
@@ -270,11 +359,16 @@
     content: '';
     position: absolute;
     left: 0; bottom: -4px;
-    width: 0; height: 2px;
+    /* Full-width from the start, scaled to zero — `transition: width`
+       re-lays-out the pseudo-element every frame of every nav hover;
+       a scaleX from the left edge is the same visual on the compositor. */
+    width: 100%; height: 2px;
     background: var(--accent);
-    transition: width var(--transition-fast);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--transition-fast);
 }
-.marketing-root .header-nav a:hover::after { width: 100%; }
+.marketing-root .header-nav a:hover::after { transform: scaleX(1); }
 
 /* Nav dropdown — items in site.header.nav with non-empty `children`
    render as a parent <a> + a hidden <ul> that appears on hover/focus.
@@ -284,6 +378,13 @@
     position: relative;
     display: inline-flex;
     align-items: center;
+    /* Full header height, for two reasons: the hover target becomes the
+       whole bar rather than one line of text, and `top: 100%` on the panel
+       then lands on the header's BOTTOM EDGE instead of halfway up the bar
+       (which is what made the panel appear to grow out of the middle of the
+       header). The inner <a> stays content-height so its hover underline is
+       still drawn under the label. */
+    align-self: stretch;
 }
 .marketing-root .header-nav .nav-item.has-dropdown > a {
     display: inline-flex;
@@ -310,17 +411,17 @@
 }
 .marketing-root .header-nav .nav-dropdown {
     position: absolute;
-    top: 100%;
-    left: 0;
+    top: calc(100% + 8px);
+    left: -8px;
     margin: 0;
     padding: 6px;
-    min-width: 200px;
+    min-width: 220px;
     list-style: none;
-    background: var(--bg-glass);
+    /* Opaque — never --bg-glass. See the --menu-surface note. */
+    background: var(--menu-surface);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-card);
-    backdrop-filter: blur(10px);
+    box-shadow: 0 16px 40px var(--shadow-color), 0 2px 6px var(--shadow-color);
     /* Hidden by default; revealed by hover/focus on the parent .nav-item.
        opacity + visibility (rather than display:none) so the transition
        runs and so focus stays inside the dropdown when tabbing. */
@@ -366,14 +467,18 @@
    same 150ms close-delay (JS-managed in Header.jsx).                  */
 .marketing-root .header-nav .nav-mega {
     position: absolute;
-    top: 100%;
-    left: 0;
-    padding: 18px;
-    background: var(--bg-glass);
+    top: calc(100% + 8px);
+    /* Pulled left by the item's own inner padding so the first column's
+       labels line up with the trigger's label, not with its hit area. */
+    left: -12px;
+    padding: 20px;
+    /* Opaque — never --bg-glass. See the --menu-surface note: a
+       backdrop-filter here is a no-op because .header is a backdrop root,
+       so a translucent panel would simply let the page show through. */
+    background: var(--menu-surface);
     border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-card);
-    backdrop-filter: blur(10px);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 56px var(--shadow-color), 0 2px 8px var(--shadow-color);
     opacity: 0;
     visibility: hidden;
     transform: translateY(-4px);
@@ -382,7 +487,31 @@
                 visibility 0s linear var(--transition-fast);
     z-index: 100;
     /* Sized to its contents; the inner grid sets column widths. */
-    max-width: min(960px, calc(100vw - 32px));
+    max-width: min(920px, calc(100vw - 32px));
+    /* A tall column (5+ items) otherwise runs off the bottom of a short
+       window with no way to reach the last entry. Both units restated —
+       browsers without dvh must not drop the vh line. */
+    max-height: calc(100vh - var(--header-height) - var(--announce-height, 0px) - 24px);
+    max-height: calc(100dvh - var(--header-height) - var(--announce-height, 0px) - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+/* Invisible bridge across the 8px gap between the trigger and the panel.
+   Without it the panel closes the moment the cursor leaves the header and
+   the 150ms JS delay alone makes that feel like a race.
+
+   It hangs off the TRIGGER, not the panel: the panel sets `overflow-y:auto`,
+   which would clip a pseudo-element positioned above its own top edge. And
+   it only exists while the panel is open, so a closed item never claims a
+   strip of the page below the header. */
+.marketing-root .header-nav .nav-item.has-dropdown:hover::after,
+.marketing-root .header-nav .nav-item.has-dropdown:focus-within::after,
+.marketing-root .header-nav .nav-item.has-dropdown.is-open::after {
+    content: '';
+    position: absolute;
+    left: -12px; right: -12px;
+    top: 100%;
+    height: 10px;
 }
 .marketing-root .header-nav .nav-item.has-dropdown:hover .nav-mega,
 .marketing-root .header-nav .nav-item.has-dropdown:focus-within .nav-mega,
@@ -392,15 +521,47 @@
     transform: translateY(0);
     transition-delay: 0s;
 }
+/* Four categories (the Compare menu) no longer fit the 920px clamp:
+   4×260px columns plus three 18/18/1px separators need ~1150px, so the
+   fourth column sat behind a horizontal scrollbar. A four-column panel
+   therefore widens and re-anchors to the header's centre — `fixed` here
+   resolves against .header (its backdrop-filter makes it the containing
+   block), so left:50% is the header's midline, i.e. the viewport's.
+   Two- and three-column menus keep their item-aligned position, and
+   browsers without :has() keep the scrollable fallback. */
+.marketing-root .header-nav .nav-mega:has(.nav-mega-col:nth-child(4)) {
+    position: fixed;
+    left: 50%;
+    top: calc(var(--header-height) + 8px);
+    max-width: min(1220px, calc(100vw - 32px));
+    transform: translate(-50%, -4px);
+}
+.marketing-root .header-nav .nav-item.has-dropdown:hover .nav-mega:has(.nav-mega-col:nth-child(4)),
+.marketing-root .header-nav .nav-item.has-dropdown:focus-within .nav-mega:has(.nav-mega-col:nth-child(4)),
+.marketing-root .header-nav .nav-item.has-dropdown.is-open .nav-mega:has(.nav-mega-col:nth-child(4)) {
+    transform: translate(-50%, 0);
+}
 .marketing-root .header-nav .nav-mega-grid {
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(180px, 1fr);
-    gap: 24px;
-    align-items: start;
+    /* 180px was too narrow: after the 22px icon and its 10px gap the text
+       had ~148px, so nearly every label wrapped ("Routines & / automations",
+       "Integrations & / MCP") and the columns read as one ragged block.
+       260px keeps two-word labels on one line; 3 columns still fit inside
+       the 920px clamp. */
+    grid-auto-columns: minmax(260px, 1fr);
+    gap: 0;
+    align-items: stretch;
 }
 .marketing-root .header-nav .nav-mega-col {
     min-width: 0;
+}
+/* A hairline between columns — with a gap alone the eye groups the items by
+   row, which is the wrong reading: each column is its own category. */
+.marketing-root .header-nav .nav-mega-col + .nav-mega-col {
+    border-left: 1px solid var(--hairline);
+    margin-left: 18px;
+    padding-left: 18px;
 }
 .marketing-root .header-nav .nav-mega-col > ul {
     list-style: none;
@@ -422,14 +583,15 @@
 .marketing-root .header-nav .nav-mega-item {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    padding: 8px 8px;
+    gap: 12px;
+    padding: 10px;
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
     transition: background var(--transition-fast), color var(--transition-fast);
 }
 .marketing-root .header-nav .nav-mega-item::after { content: none; }
-.marketing-root .header-nav .nav-mega-item:hover {
+.marketing-root .header-nav .nav-mega-item:hover,
+.marketing-root .header-nav .nav-mega-item:focus-visible {
     background: var(--bg-card);
     color: var(--text-primary);
 }
@@ -437,15 +599,35 @@
     background: var(--bg-card);
     color: var(--text-primary);
 }
+/* The icon sits on its own tinted tile so a row of mixed emoji reads as one
+   aligned column instead of a ragged left edge. */
+/* The tile holds a Lucide outline, not an emoji (see NavIcon). An emoji
+   brought its own colour and its own optical weight; a stroked icon inherits
+   `color`, so the mark can go muted at rest and take the accent on hover
+   together with the tile — one gesture instead of a static sticker. */
 .marketing-root .header-nav .nav-mega-item-icon {
     flex: 0 0 auto;
-    width: 22px;
-    height: 22px;
+    width: 32px;
+    height: 32px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     line-height: 1;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text-muted);
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.marketing-root .header-nav .nav-mega-item-icon svg {
+    width: 17px;
+    height: 17px;
+    stroke-width: 1.75;
+}
+.marketing-root .header-nav .nav-mega-item:hover .nav-mega-item-icon,
+.marketing-root .header-nav .nav-mega-item.active .nav-mega-item-icon {
+    background: var(--accent-tint-14);
+    color: var(--accent-strong, var(--accent));
 }
 .marketing-root .header-nav .nav-mega-item-text {
     display: flex;
@@ -461,8 +643,15 @@
 .marketing-root .header-nav .nav-mega-item-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin-top: 2px;
-    line-height: 1.3;
+    margin-top: 3px;
+    line-height: 1.35;
+    /* Two lines is the budget. A long description otherwise pushes the
+       column — and with it the whole panel — to an awkward height. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 /* Mobile section heading inside the accordion (mega-menu columns only). */
@@ -486,25 +675,39 @@
     padding-left: 12px;
     border-left: 1px solid var(--border-subtle);
 }
-.marketing-root .mobile-nav-children a {
+/* `.mobile-nav` is repeated in this selector on purpose. Without it this
+   rule ties with `.marketing-root .mobile-nav a` further down the file
+   (both 0,2,1) and LOSES on source order — so submenu entries silently
+   rendered at the parent's 1.3rem/600 and the accordion had no visual
+   hierarchy at all. */
+.marketing-root .mobile-nav .mobile-nav-children a {
     font-size: 1.05rem;
     font-weight: 500;
     color: var(--text-secondary);
+}
+.marketing-root .mobile-nav a.mobile-nav-item {
+    font-size: 1.05rem;
+    font-weight: 500;
 }
 .marketing-root .header-actions {
     display: flex;
     align-items: center;
     gap: 16px;
 }
-/* Public language switcher — sits in the header actions, left of the CTAs. */
+/* Public language switcher — sits in the header actions, left of the CTAs.
+   These rules used to reference FOUR tokens that are never declared in the
+   marketing token set (--border-default, --surface, --bg-tertiary, and
+   --accent-primary, which is an ADMIN-panel token). They silently fell back
+   to their literals, so the switcher ignored the theme entirely and rendered
+   a white menu with dark text in dark mode. Repointed to real tokens. */
 .marketing-root .lang-switcher { position: relative; }
 .marketing-root .lang-switcher-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    border: 1px solid var(--border-default, rgba(0,0,0,0.12));
-    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--pill-radius, 999px);
     background: transparent;
     color: var(--text-secondary);
     font-size: 13px;
@@ -514,7 +717,7 @@
 }
 .marketing-root .lang-switcher-btn:hover {
     color: var(--text-primary);
-    border-color: var(--accent-primary);
+    border-color: var(--border-accent);
 }
 .marketing-root .lang-switcher-menu {
     position: absolute;
@@ -524,10 +727,10 @@
     margin: 0;
     padding: 4px;
     list-style: none;
-    background: var(--surface, #fff);
-    border: 1px solid var(--border-default, rgba(0,0,0,0.12));
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+    background: var(--surface-0);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    box-shadow: 0 10px 30px var(--shadow-color);
     z-index: 50;
 }
 .marketing-root .lang-switcher-menu li { margin: 0; }
@@ -537,14 +740,14 @@
     text-align: left;
     padding: 8px 10px;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-primary);
     font-size: 13px;
     cursor: pointer;
 }
-.marketing-root .lang-switcher-menu button:hover { background: var(--bg-tertiary, rgba(0,0,0,0.05)); }
-.marketing-root .lang-switcher-menu button.active { color: var(--accent-primary); font-weight: 600; }
+.marketing-root .lang-switcher-menu button:hover { background: var(--surface-2); }
+.marketing-root .lang-switcher-menu button.active { color: var(--accent); font-weight: 600; }
 .marketing-root .lang-switcher-menu .lang-code { color: var(--text-muted); }
 
 /* Translation-list → preview highlight flash. */
@@ -568,7 +771,8 @@
 .marketing-root .hamburger span {
     height: 2px;
     background: var(--text-primary);
-    transition: all var(--transition-fast);
+    /* The active state only moves and fades the lines — both composited. */
+    transition: transform var(--transition-fast), opacity var(--transition-fast);
 }
 .marketing-root .hamburger.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
 .marketing-root .hamburger.active span:nth-child(2) { opacity: 0; }
@@ -577,17 +781,54 @@
 .marketing-root .mobile-nav {
     position: fixed;
     top: var(--header-height); left: 0; right: 0;
-    background: var(--bg-glass);
-    backdrop-filter: blur(20px) saturate(1.5);
+    /* Opaque. This drawer covers the page and every item in it has to stay
+       readable over whatever happens to be underneath — a hero photo, a dark
+       band, a table. 70% alpha could not promise that. */
+    background: var(--menu-surface);
     border-bottom: 1px solid var(--border-subtle);
+    box-shadow: 0 24px 48px var(--shadow-color);
     transform: translateY(-100%);
-    transition: transform var(--transition-med);
+    /* Closed state must be fully hidden. `translateY(-100%)` only shifts the
+       drawer up by its OWN height — and because `top` is the 72px header
+       offset, that parks the drawer's BOTTOM edge at the header's bottom.
+       Its last child (the CTA, e.g. "Boek een demo") then sits inside the
+       0–72px header band and, since the header has no background at the very
+       top of the page, bleeds THROUGH it and overlaps the logo (it vanishes
+       on scroll only because the header then gains its glass background).
+       visibility:hidden + pointer-events:none take the closed drawer out of
+       sight and interaction; the delayed visibility transition keeps the
+       slide animation intact on both open and close. */
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform var(--transition-med),
+                visibility 0s linear var(--transition-med);
     z-index: 999;
     display: none;
+    /* The drawer grows with its content (expanding an accordion submenu can
+       make it taller than the screen). Cap it to the space below the header
+       and let it scroll internally so the lower items (e.g. "Boek een demo")
+       stay reachable. `dvh` tracks the mobile URL-bar collapse; the `vh` line
+       above is the fallback for browsers without dvh. `overscroll-behavior:
+       contain` stops the scroll from chaining to the page behind the drawer. */
+    max-height: calc(100vh - var(--header-height));
+    max-height: calc(100dvh - var(--header-height));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
-.marketing-root .mobile-nav.active { transform: translateY(0); }
+.marketing-root .mobile-nav.active {
+    transform: translateY(0);
+    visibility: visible;
+    pointer-events: auto;
+    transition: transform var(--transition-med), visibility 0s;
+}
 .marketing-root .mobile-nav-inner {
-    padding: 32px 24px;
+    /* Generous bottom padding gives the drawer extra scroll room past the
+       last item — even with few items — so the bottom entry (e.g. "Boek een
+       demo") can be scrolled up away from the very edge of the screen, where
+       it's awkward to tap on many phones. Combined with the iOS safe-area
+       inset so it clears the home indicator. */
+    padding: 32px 24px calc(96px + env(safe-area-inset-bottom, 0px));
     display: flex;
     flex-direction: column;
     gap: 20px;
@@ -598,9 +839,135 @@
     color: var(--text-primary);
 }
 
+/* Dim the page behind an open drawer. Sits under the drawer (999) but over
+   everything else, and deliberately BELOW the header (1000) so the
+   hamburger that opened it stays tappable to close it again. */
+.marketing-root .mobile-nav-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 998;
+    background: rgba(15, 23, 42, 0.45);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--transition-med),
+                visibility 0s linear var(--transition-med);
+    display: none;
+}
+.marketing-root .mobile-nav-scrim.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity var(--transition-med), visibility 0s;
+}
+
+/* Parent row = a navigable label plus a separate expand control.
+   They are split because they do different things: before this, tapping a
+   parent only ever toggled the accordion, so "Product" (a real page at
+   /platform) was unreachable on a phone. */
+.marketing-root .mobile-nav-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.marketing-root .mobile-nav-row > a,
+.marketing-root .mobile-nav-row > button.mobile-nav-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+.marketing-root .mobile-nav-caret {
+    flex: 0 0 auto;
+    /* 44px — the smallest reliable touch target. The glyph is much smaller
+       than the button on purpose. */
+    width: 44px;
+    height: 44px;
+    margin: -10px -8px -10px 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: transform var(--transition-fast),
+                background var(--transition-fast);
+}
+.marketing-root .mobile-nav-caret[aria-expanded='true'] {
+    transform: rotate(180deg);
+    background: var(--surface-2);
+}
+.marketing-root .mobile-nav-caret svg { width: 18px; height: 18px; }
+
+.marketing-root .mobile-nav-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+.marketing-root .mobile-nav-item-icon {
+    flex: 0 0 auto;
+    width: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Aligns the mark with the FIRST line of a two-line item (label +
+       description) instead of centring it against the whole block. */
+    align-self: flex-start;
+    margin-top: 2px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+.marketing-root .mobile-nav-item-icon svg {
+    width: 17px;
+    height: 17px;
+    stroke-width: 1.75;
+}
+.marketing-root .mobile-nav-item.active .mobile-nav-item-icon { color: var(--accent-strong, var(--accent)); }
+.marketing-root .mobile-nav-item-desc {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-top: 2px;
+    line-height: 1.35;
+}
+
+/* CTAs in the drawer are buttons, not another nav link. They were visually
+   identical to the links above them, so the primary action disappeared into
+   the list. */
+/* `a.` qualified so these beat `.marketing-root .mobile-nav a` (0,2,1),
+   which would otherwise repaint the primary CTA's label in --text-primary
+   and leave white-on-white unreadable. */
+.marketing-root .mobile-nav a.mobile-nav-cta {
+    display: block;
+    margin-top: 8px;
+    padding: 14px 20px;
+    border-radius: var(--pill-radius, 999px);
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+.marketing-root .mobile-nav a.mobile-nav-cta--primary {
+    background: var(--accent-gradient);
+    color: var(--btn-primary-fg, #fff);
+}
+.marketing-root .mobile-nav a.mobile-nav-cta--secondary {
+    border: 1px solid var(--hairline-strong);
+    color: var(--text-primary);
+}
+
 /* ── Hero ─────────────────────────────────────────────────────────────── */
 .marketing-root .hero {
-    padding: calc(var(--header-height) + 80px) 0 120px;
+    padding: calc(var(--header-height) + clamp(48px, 6vw, 88px)) 0 var(--section-y-hero);
     position: relative;
     overflow: hidden;
 }
@@ -621,7 +988,7 @@
 }
 .marketing-root .hero::after {
     width: 400px; height: 400px;
-    background: #FF6B35;
+    background: var(--brand-accent);
     bottom: -100px; right: -100px;
     animation: orbFloat 15s ease-in-out infinite reverse;
 }
@@ -652,8 +1019,15 @@
     margin-bottom: 24px;
     border: 1px solid var(--border-accent);
     border-radius: var(--radius-xl);
-    background: rgba(245, 166, 35, 0.08);
-    color: var(--accent-light);
+    /* The amber fill + amber border carry the brand identity; the label text
+       uses --text-primary (not --accent-light) so it stays readable. The old
+       light-yellow --accent-light text (#FFD166) on this soft amber fill, over
+       the amber hero gradient, had almost no contrast and failed WCAG. Because
+       --text-primary flips per theme (near-black in light, near-white in dark
+       via .cms-theme-dark), this reads cleanly in both modes. Fill nudged from
+       0.08 → 0.14 so the pill keeps presence under the darker text. */
+    background: var(--accent-tint-14);
+    color: var(--text-primary);
     font-size: 0.85rem;
     font-weight: 500;
 }
@@ -671,6 +1045,15 @@
     flex-wrap: wrap;
     margin-bottom: 80px;
 }
+/* The 80px exists to push the mockup/panel away from the buttons. On a
+   text-only hero (comparison pages: no media, no mockup) .hero-content is
+   the container's only child and that margin was pure dead space stacked
+   on top of the hero's own 152px bottom padding — ~230px of nothing under
+   the CTAs. Drop it when no visual follows; any hero WITH a visual keeps
+   its spacing byte-identically. */
+.marketing-root .hero-content:last-child .hero-ctas {
+    margin-bottom: 0;
+}
 
 .marketing-root .hero-mockup {
     max-width: 900px;
@@ -683,19 +1066,56 @@
     position: relative;
     z-index: 1;
 }
+
+/* ── Hero layout variants ────────────────────────────────────────────
+   `content.variant`: classic (centered, legacy) · panel (centered copy +
+   full-width framed product panel) · split (7/5 copy|media) · video
+   (panel with a looping product video). Absent/unknown ⇒ classic. */
+.marketing-root .hero-panel {
+    max-width: 1040px;
+    margin: 8px auto 0;
+    position: relative;
+    z-index: 1;
+}
+.marketing-root .hero--split .hero-inner {
+    display: grid;
+    grid-template-columns: 7fr 5fr;
+    gap: 48px;
+    align-items: center;
+}
+.marketing-root .hero--split .hero-content {
+    text-align: left;
+    max-width: none;
+    margin: 0;
+}
+.marketing-root .hero--split .hero-lead { margin-left: 0; }
+.marketing-root .hero--split .hero-ctas { justify-content: flex-start; }
+.marketing-root .hero-split-media {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+}
+@media (max-width: 1024px) {
+    .marketing-root .hero--split .hero-inner { grid-template-columns: 1fr; }
+    .marketing-root .hero--split .hero-content { text-align: center; margin: 0 auto; }
+    .marketing-root .hero--split .hero-lead { margin-left: auto; }
+    .marketing-root .hero--split .hero-ctas { justify-content: center; }
+}
+/* Window chrome derives from the text color so it reads in BOTH themes —
+   the old rgba(255,255,255,…) literals were invisible on light canvases. */
 .marketing-root .mockup-header {
     height: 38px;
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 0 16px;
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--surface-2);
     border-bottom: 1px solid var(--border-subtle);
 }
 .marketing-root .mockup-dot {
     width: 12px; height: 12px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--hairline-strong);
 }
 .marketing-root .mockup-body {
     padding: 24px;
@@ -724,12 +1144,41 @@
     color: var(--text-primary);
 }
 
-/* ── Social Proof ─────────────────────────────────────────────────────── */
+/* ── Social Proof ─────────────────────────────────────────────────────
+   Quiet canvas-colored band directly under the hero — no borders, no
+   alt fill; the uniform monochrome wall IS the design. */
 .marketing-root .social-proof {
-    padding: 60px 0;
-    border-top: 1px solid var(--border-subtle);
-    border-bottom: 1px solid var(--border-subtle);
-    background: var(--bg-secondary);
+    padding: 48px 0;
+}
+
+/* Hard-numbers row (variant 'numbers') — quantified proof above the wall. */
+.marketing-root .social-proof-stats {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0 var(--space-12);
+    margin-bottom: var(--space-8);
+}
+.marketing-root .social-proof-stat {
+    text-align: center;
+    padding: 0 var(--space-6);
+}
+.marketing-root .social-proof-stat + .social-proof-stat {
+    border-left: 1px solid var(--hairline);
+}
+.marketing-root .social-proof-stat-number {
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-primary);
+}
+.marketing-root .social-proof-stat-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    margin-top: 2px;
 }
 .marketing-root .social-proof-eyebrow {
     text-align: center;
@@ -758,13 +1207,15 @@
     -webkit-mask-image: linear-gradient(to right, transparent, black 64px, black calc(100% - 64px), transparent);
             mask-image: linear-gradient(to right, transparent, black 64px, black calc(100% - 64px), transparent);
 }
+/* Uniform monochrome wall — every logo normalized to the same modest
+   height (the premium register is 24–32px), grayscale until hover. */
 .marketing-root .social-proof-logos img {
-    height: 72px;
+    height: clamp(24px, 3vw, 32px);
     width: auto;
-    max-width: 200px;
+    max-width: 160px;
     object-fit: contain;
     filter: grayscale(1) sepia(var(--logo-tint, 0%));
-    opacity: 0.55;
+    opacity: 0.65;
     transition: filter 250ms ease, opacity 250ms ease;
 }
 .marketing-root .social-proof-logos img:hover {
@@ -774,11 +1225,11 @@
 .marketing-root .social-proof-logos .logo-placeholder {
     color: var(--text-muted);
     font-weight: 600;
-    font-size: 1.1rem;
+    font-size: 1rem;
     letter-spacing: 0.05em;
     display: inline-flex;
     align-items: center;
-    height: 72px;
+    height: clamp(24px, 3vw, 32px);
     padding: 0 8px;
 }
 
@@ -830,8 +1281,8 @@
 /* Mobile — shorter logos, tighter gap. Marquee math is unchanged
    because both halves still each contribute exactly 50% of track width. */
 @media (max-width: 768px) {
-    .marketing-root .social-proof-logos img               { height: 48px; max-width: 140px; }
-    .marketing-root .social-proof-logos .logo-placeholder { height: 48px; font-size: 0.95rem; }
+    .marketing-root .social-proof-logos img               { max-width: 120px; }
+    .marketing-root .social-proof-logos .logo-placeholder { font-size: 0.9rem; }
     .marketing-root .social-proof-logos-half              { gap: 32px; }
     .marketing-root .social-proof-logos.is-scrolling .social-proof-logos-half + .social-proof-logos-half {
         margin-left: 32px;
@@ -854,14 +1305,45 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 24px;
 }
+
+/* Bento variant — asymmetric spans + media-bearing cards. Cards flex
+   vertically so a UI-fragment (FramedMedia) sits at the bottom and the
+   copy stays top-aligned; `dense` backfills holes left by span-2 tiles. */
+.marketing-root .features-grid--bento { grid-auto-flow: dense; }
+.marketing-root .features-grid--bento .feature-card {
+    display: flex;
+    flex-direction: column;
+}
+.marketing-root .feature-card--span-2 { grid-column: span 2; }
+.marketing-root .feature-media {
+    margin-top: auto;
+    padding-top: 20px;
+}
+.marketing-root .feature-media .cms-frame { box-shadow: none; }
+
+/* Spotlight hover (opt-in, one grid per page) — a soft radial accent
+   highlight tracking the cursor via --mx/--my set inline. */
+.marketing-root .feature-card--spotlight::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%),
+        var(--accent-tint-08), transparent 65%);
+    opacity: 0;
+    transition: opacity var(--motion-med) var(--ease-soft);
+    pointer-events: none;
+}
+.marketing-root .feature-card--spotlight:hover::after { opacity: 1; }
+/* Card recipes are reduced to ONLY custom properties + layout properties —
+   the shared base in tokens.css owns padding/background/border/radius/
+   shadow/transition. Re-declaring any of those here would win the cascade
+   (equal specificity, later rule) and make the token dead.
+   --bg-card === --surface-2 and --border-subtle === --hairline (see the
+   alias layer above), so these reductions are byte-identical. */
 .marketing-root .feature-card {
-    position: relative;
-    padding: 32px;
-    border-radius: var(--radius-lg);
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
+    --card-pad-base: 32px;
+    --card-lift: -4px;
     overflow: hidden;
-    transition: all var(--transition-med);
 }
 .marketing-root .feature-card::before {
     content: '';
@@ -873,30 +1355,59 @@
     transform-origin: left;
     transition: transform var(--transition-med);
 }
-.marketing-root .feature-card:hover {
-    transform: translateY(-4px);
-    background: var(--bg-card-hover);
-    border-color: var(--border-accent);
-    box-shadow: var(--shadow-card);
-}
+/* :hover handled by the shared base (lift/bg/border/shadow all match). */
 .marketing-root .feature-card:hover::before { transform: scaleX(1); }
+/* The tile carries a ring as well as a tint: at 8% on a warm canvas the
+   fill alone was too faint to read as a deliberate element, so the icon
+   looked like it was floating in the padding. 16px below it instead of 20
+   also binds it to its title rather than leaving it adrift at the top. */
 .marketing-root .feature-card .icon-tile {
-    width: 48px; height: 48px;
+    width: 44px; height: 44px;
     border-radius: var(--radius-md);
-    background: rgba(245, 166, 35, 0.1);
+    background: var(--accent-tint-08);
+    border: 1px solid var(--hairline-accent);
     color: var(--accent);
     display: flex; align-items: center; justify-content: center;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
 }
-.marketing-root .feature-card h3 { margin-bottom: 12px; font-size: 1.25rem; font-weight: 600; }
-.marketing-root .feature-card p { color: var(--text-secondary); font-size: 0.95rem; }
+.marketing-root .feature-card:hover .icon-tile {
+    background: var(--accent-tint-22);
+}
+/* `color` and `hyphens` are declared EXPLICITLY, not left to inherit.
+   QuoteRenderer.css shipped a global `.feature-card h3 { color: #3b82f6;
+   hyphens: auto }` — the same class name, unscoped — and it won both
+   properties here because this rule declared neither. Every card title on
+   the published site rendered blue with mid-word breaks. That file is now
+   scoped, and stating both here means the next stray global cannot decide
+   what a marketing card looks like. */
+.marketing-root .feature-card h3 {
+    margin-bottom: 12px;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    hyphens: manual;
+    /* Stops a title dropping one word onto its own line. */
+    text-wrap: balance;
+}
+.marketing-root .feature-card p {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    hyphens: manual;
+}
+/* A double-width card gives its paragraph twice the measure of the cards
+   beside it — around 95 characters, well past where a line stops being
+   comfortable to track. Cap the measure; the card keeps its width. */
+.marketing-root .features-grid--bento .feature-card--span-2 p { max-width: 64ch; }
 .marketing-root .feature-tech-tag {
     display: inline-block;
     margin-top: 16px;
     padding: 4px 10px;
     border-radius: var(--radius-sm);
-    background: rgba(99, 102, 241, 0.15);
-    color: #a5b4fc;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     font-weight: 500;
 }
@@ -915,7 +1426,7 @@
 .marketing-root .step-number {
     width: 56px; height: 56px;
     border-radius: 50%;
-    background: rgba(245, 166, 35, 0.1);
+    background: var(--accent-tint-08);
     border: 2px solid var(--accent);
     color: var(--accent);
     font-weight: 700;
@@ -925,15 +1436,334 @@
 }
 .marketing-root .step h3 { margin-bottom: 12px; font-size: 1.2rem; font-weight: 600; }
 .marketing-root .step p { color: var(--text-secondary); font-size: 0.95rem; }
+/* The example is the most concrete thing on the page — it was also the
+   faintest: --text-muted on a 4% wash, which read as an empty slab. It now
+   carries an accent rule so it scans as a quoted example, and text at
+   --text-secondary so it can actually be read. */
 .marketing-root .step-example {
-    margin-top: 16px;
-    padding: 12px 16px;
+    margin-top: 20px;
+    padding: 14px 18px;
     border-radius: var(--radius-sm);
-    background: var(--bg-card);
+    background: var(--surface-0);
     border: 1px solid var(--border-subtle);
-    font-style: italic;
+    border-left: 3px solid var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+/* Chapters variant — numbered full-width chapters with alternating
+   framed screenshots, separated by hairline rules. The mono "1.0"
+   eyebrow index is the Linear/Dust register. */
+.marketing-root .step-chapters {
+    display: flex;
+    flex-direction: column;
+}
+.marketing-root .step-chapter {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: 48px;
+    align-items: center;
+    padding: var(--space-16) 0;
+    text-align: left;
+}
+.marketing-root .step-chapter + .step-chapter {
+    border-top: 1px solid var(--hairline);
+}
+.marketing-root .step-chapter--flip .step-chapter-copy  { order: 2; }
+.marketing-root .step-chapter--flip .step-chapter-media { order: 1; }
+.marketing-root .step-chapter-copy .eyebrow-mono { margin-bottom: 12px; }
+.marketing-root .step-chapter-copy h3 { margin-bottom: 12px; }
+.marketing-root .step-chapter-copy p  { max-width: 60ch; }
+
+/* ── Copy-only chapters ───────────────────────────────────────────────
+   A chapter with no screenshot used to collapse to one 720px column
+   pinned to the left, with 64px of padding above and below. On a wide
+   screen that meant half the page was empty and each step consumed a
+   full viewport — you had to scroll to discover there were three of them.
+
+   The copy itself now provides the two columns: index and title form a
+   left rail, the prose and its example sit beside them. Same DOM, same
+   EditableText paths — only the placement changes. */
+.marketing-root .step-chapter--copy {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-12) 0;
+}
+.marketing-root .step-chapter--copy .step-chapter-copy {
+    display: grid;
+    grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
+    column-gap: clamp(32px, 5vw, 72px);
+    align-items: start;
+}
+.marketing-root .step-chapter--copy .step-chapter-copy > .eyebrow-mono {
+    grid-column: 1;
+    grid-row: 1;
+}
+.marketing-root .step-chapter--copy .step-chapter-copy > h3 {
+    grid-column: 1;
+    grid-row: 2;
+    margin-bottom: 0;
+    /* Balanced wrapping stops "A routine, when you want an / answer"
+       dropping a single orphan word onto the second line. */
+    text-wrap: balance;
+}
+/* Spanning both rail rows keeps the prose top-aligned with the index
+   rather than with the title. */
+.marketing-root .step-chapter--copy .step-chapter-copy > p {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    max-width: 62ch;
+}
+.marketing-root .step-chapter--copy .step-chapter-copy > .step-example {
+    grid-column: 2;
+    grid-row: 3;
+}
+
+@media (max-width: 900px) {
+    /* Below this the rail is narrower than its own title. */
+    .marketing-root .step-chapter--copy .step-chapter-copy {
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: 12px;
+    }
+    .marketing-root .step-chapter--copy .step-chapter-copy > .eyebrow-mono,
+    .marketing-root .step-chapter--copy .step-chapter-copy > h3,
+    .marketing-root .step-chapter--copy .step-chapter-copy > p,
+    .marketing-root .step-chapter--copy .step-chapter-copy > .step-example {
+        grid-column: 1;
+        grid-row: auto;
+    }
+}
+@media (max-width: 768px) {
+    .marketing-root .step-chapter {
+        grid-template-columns: 1fr;
+        gap: 24px;
+        padding: var(--space-12) 0;
+    }
+    .marketing-root .step-chapter--flip .step-chapter-copy  { order: 1; }
+    .marketing-root .step-chapter--flip .step-chapter-media { order: 2; }
+}
+
+/* ── Roadmap ──────────────────────────────────────────────────────────
+   Status buckets, each with a colour that is carried by BOTH a dot and the
+   group heading. The dot is never the only signal — the label always sits
+   beside it, so the page still reads correctly in monochrome or for anyone
+   who cannot distinguish the hues. */
+.marketing-root .roadmap--shipped   { --roadmap-accent: var(--brand-primary); }
+.marketing-root .roadmap--beta      { --roadmap-accent: var(--brand-accent, var(--brand-primary)); }
+.marketing-root .roadmap--building  { --roadmap-accent: var(--text-secondary); }
+.marketing-root .roadmap--exploring { --roadmap-accent: var(--text-muted); }
+
+/* Legend as pills rather than loose dot+label pairs. Three bare dots on a
+   baseline read as a footnote; pills read as a key you are meant to use. */
+.marketing-root .roadmap-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    list-style: none;
+    padding: 0;
+    margin: 0 0 48px;
+}
+.marketing-root .roadmap-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px 6px 11px;
+    border-radius: 999px;
+    background: var(--surface-0);
+    border: 1px solid var(--border-subtle);
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+.marketing-root .roadmap-dot {
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--roadmap-accent, var(--text-muted));
+    /* A halo in the same hue, so the dot reads as a status light rather than
+       a bullet. Sized in the shadow so it costs no layout. */
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--roadmap-accent, var(--text-muted)) 18%, transparent);
+}
+
+/* ── The spine ────────────────────────────────────────────────────────
+   A roadmap should read as movement through stages. It was a flat stack of
+   card grids with a rule above each — accurate, but it looked like three
+   unrelated walls. A single hairline runs down the left of every group and
+   the status dot sits ON it as a node, so the eye travels shipped → beta →
+   building → exploring instead of scanning three separate blocks.
+
+   The spine is decorative: the group heading text carries the same
+   information, so nothing is lost when it is hidden on narrow screens. */
+.marketing-root .roadmap-group {
+    position: relative;
+    padding-left: 34px;
+}
+.marketing-root .roadmap-group::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 6px;
+    bottom: -48px;
+    width: 1px;
+    background: var(--hairline);
+}
+.marketing-root .roadmap-group:last-child::before { bottom: 0; }
+.marketing-root .roadmap-group + .roadmap-group { margin-top: 48px; }
+
+.marketing-root .roadmap-group-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 22px;
+    font-family: var(--font-mono);
+    font-size: var(--text-eyebrow);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-primary);
+}
+/* The heading's dot is pulled onto the spine and given a solid ring in the
+   page background, so the line appears to pass behind it. */
+.marketing-root .roadmap-group-heading .roadmap-dot {
+    position: absolute;
+    left: 0;
+    width: 9px;
+    height: 9px;
+    box-shadow: 0 0 0 4px var(--bg-primary),
+                0 0 0 6px color-mix(in srgb, var(--roadmap-accent, var(--text-muted)) 30%, transparent);
+}
+.marketing-root .roadmap-group-count {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+}
+.marketing-root .roadmap-group-heading::after {
+    content: '';
+    flex: 1 1 auto;
+    height: 1px;
+    background: linear-gradient(to right, var(--hairline), transparent);
+}
+@media (max-width: 640px) {
+    /* No room for a gutter on a phone — drop the spine and let the headings
+       do the work they were always doing. */
+    .marketing-root .roadmap-group { padding-left: 0; }
+    .marketing-root .roadmap-group::before { display: none; }
+    .marketing-root .roadmap-group-heading .roadmap-dot { position: static; }
+}
+
+.marketing-root .roadmap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+}
+.marketing-root .roadmap-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    border-radius: var(--radius-lg, 16px);
+    /* A very slight vertical lift instead of a flat fill — enough to separate
+       the card from the band behind it without a heavier border. */
+    background: linear-gradient(to bottom, var(--surface-0), var(--bg-card, var(--surface-0)));
+    border: 1px solid var(--border-subtle);
+    overflow: hidden;
+    transition: border-color var(--transition-fast),
+                transform var(--transition-fast),
+                box-shadow var(--transition-fast);
+}
+/* The status colour as a bar across the TOP, not a 3px stripe down the left.
+   The left stripe was the single cheapest-looking thing on the page: a hard
+   vertical rule in a flat colour, repeated twenty times. This reads as part
+   of the card, fades out across its width, and still carries the bucket with
+   the card when someone links to one item.
+
+   The card keeps `overflow: hidden` so the bar follows the corner radius. */
+.marketing-root .roadmap-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: linear-gradient(
+        to right,
+        var(--roadmap-accent, var(--hairline)),
+        color-mix(in srgb, var(--roadmap-accent, var(--hairline)) 25%, transparent) 65%,
+        transparent
+    );
+}
+.marketing-root .roadmap-card:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--roadmap-accent, var(--hairline)) 45%, var(--border-subtle));
+    /* The lift shadow picks up the status hue, so hovering a beta card and an
+       exploring card do not feel identical. */
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--roadmap-accent, #000) 12%, var(--shadow-color));
+}
+@media (prefers-reduced-motion: reduce) {
+    .marketing-root .roadmap-card:hover { transform: none; }
+}
+.marketing-root .roadmap-card-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+/* Tinted by status rather than always amber. Twenty identical amber tiles
+   made every item look equally imminent, which is the opposite of what a
+   roadmap is for — an "exploring" idea should not wear the same badge as
+   something in beta. */
+.marketing-root .roadmap-card-icon {
+    flex: 0 0 auto;
+    width: 34px; height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--roadmap-accent, var(--accent)) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--roadmap-accent, var(--accent)) 28%, transparent);
+    color: var(--roadmap-accent, var(--accent));
+}
+.marketing-root .roadmap-card-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text-primary);
+    text-wrap: balance;
+}
+.marketing-root .roadmap-card-body {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+/* The caveat line — which tier it needs, that it is Dutch-law only. Quieter
+   than the body, but it must never be so quiet it stops being read: this is
+   the part that keeps the page honest. */
+.marketing-root .roadmap-card-note {
+    margin: 10px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--hairline);
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+.marketing-root .roadmap-card-link {
+    margin-top: 12px;
+    align-self: flex-start;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+.marketing-root .roadmap-card-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.marketing-root .roadmap-disclaimer {
+    margin: 44px 0 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--hairline);
     font-size: 0.85rem;
     color: var(--text-muted);
+    max-width: 70ch;
 }
 
 /* ── Security ─────────────────────────────────────────────────────────── */
@@ -943,16 +1773,10 @@
     gap: 24px;
 }
 .marketing-root .security-card {
-    padding: 28px;
-    border-radius: var(--radius-lg);
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
+    /* 28px is the base default, so no --card-pad-base needed. This card
+       recolors on hover but never lifts or gains a shadow. */
+    --card-shadow-hover: none;
     cursor: pointer;
-    transition: all var(--transition-med);
-}
-.marketing-root .security-card:hover {
-    border-color: rgba(34, 211, 238, 0.4);
-    background: var(--bg-card-hover);
 }
 .marketing-root .security-card-head {
     display: flex;
@@ -962,20 +1786,30 @@
 .marketing-root .security-card .icon-tile {
     width: 44px; height: 44px;
     border-radius: var(--radius-sm);
-    background: rgba(34, 211, 238, 0.1);
-    color: #67e8f9;
+    background: var(--accent-tint-08);
+    color: var(--accent);
     flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
 }
 .marketing-root .security-card h3 { font-size: 1.15rem; font-weight: 600; margin-bottom: 8px; }
 .marketing-root .security-card p { color: var(--text-secondary); font-size: 0.95rem; }
 .marketing-root .security-card-detail {
+    /* Collapsed via the grid 0fr→1fr trick rather than max-height. The old
+       `max-height: 0 → 600px` animated layout against an arbitrary cap: the
+       open animation's perceived duration depended on how far the content
+       fell short of 600px, and content taller than the cap was silently
+       clipped. Grid rows animate to the actual content height, whatever it
+       is. (The sole child is the <ul>; it carries the overflow.) */
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--transition-med);
+}
+.marketing-root .security-card-detail > ul {
+    min-height: 0;
     overflow: hidden;
-    max-height: 0;
-    transition: max-height var(--transition-med);
 }
 .marketing-root .security-card.open .security-card-detail {
-    max-height: 600px;
+    grid-template-rows: 1fr;
     margin-top: 16px;
 }
 .marketing-root .security-card-detail ul {
@@ -997,81 +1831,259 @@
     font-weight: 700;
 }
 
+/* Ledger variant — 5/7 split: sticky left header, right column a ledger
+   of hairline-divided rows (institutional-bright: transparent rows, no
+   cards). Rows carry a mono two-digit index on the accent. */
+.marketing-root .security-ledger {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 32px 64px;
+    align-items: start;
+}
+.marketing-root .security-ledger-head {
+    position: sticky;
+    top: calc(var(--header-height, 72px) + 24px);
+}
+.marketing-root .security-ledger-head .section-header {
+    text-align: left;
+    max-width: none;
+    margin: 0;
+}
+.marketing-root .security-ledger-head .section-header p { margin: 0; }
+.marketing-root .security-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 20px;
+    padding: 28px 0;
+    background: transparent;
+    border-top: 1px solid var(--hairline);
+}
+.marketing-root .security-ledger-rows > .security-row:last-child {
+    border-bottom: 1px solid var(--hairline);
+}
+.marketing-root .security-row-index {
+    padding-top: 4px;
+    /* Two-digit mono index — text at eyebrow size, so accent-strong. */
+    color: var(--accent-strong, var(--accent));
+}
+.marketing-root .security-row h3 { font-size: 1.15rem; font-weight: 600; margin-bottom: 8px; }
+.marketing-root .security-row-body > p { color: var(--text-secondary); font-size: 0.95rem; }
+/* Details are part of the ledger entry — always expanded. */
+.marketing-root .security-row .security-card-detail.security-row-detail {
+    max-height: none;
+    margin-top: 12px;
+}
+.marketing-root .security-row-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 14px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+}
+.marketing-root .security-row-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+@media (max-width: 900px) {
+    .marketing-root .security-ledger { grid-template-columns: minmax(0, 1fr); }
+    .marketing-root .security-ledger-head { position: static; }
+}
+
 /* ── Integrations ─────────────────────────────────────────────────────── */
 .marketing-root .integrations-categories {
     display: flex;
     flex-direction: column;
-    gap: 40px;
-    max-width: 960px;
+    gap: 36px;
+    max-width: 1040px;
     margin: 0 auto;
 }
+/* The heading, its count and a rule to the right edge share one row, so a
+   category reads as a section with a boundary. A bare mono label floating
+   above loose chips gave the eye nothing to group by, which is why the wall
+   scanned as one long undifferentiated list. */
+.marketing-root .integration-category-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.marketing-root .integration-category-head::after {
+    content: '';
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--hairline);
+}
+/* Category heading — mono-caps label register (the eyebrow-mono look). */
 .marketing-root .integration-category h3 {
-    position: relative;
-    padding-left: 16px;
-    margin-bottom: 20px;
-    font-size: 1rem;
-    font-weight: 600;
+    margin-bottom: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-eyebrow);
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--text-primary);
+    color: var(--text-secondary);
 }
-.marketing-root .integration-category h3::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 4px; bottom: 4px;
-    width: 3px;
-    background: var(--accent);
+.marketing-root .integration-count {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
 }
+/* A grid, not flex-wrap: with free wrapping every row ended at a different
+   ragged x, so eight tidy chips looked like spilled tiles. Equal tracks let
+   the rows line up while auto-fill still adapts to the viewport. */
 .marketing-root .integration-logos {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+    gap: 10px;
 }
 .marketing-root .integration-item {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 16px;
+    padding: 11px 14px;
     border-radius: var(--radius-sm);
-    background: var(--bg-card);
+    /* The canvas colour, not the 4% wash: on the warm alt band these read
+       as light chips instead of muddying into it. */
+    background: var(--surface-0);
     border: 1px solid var(--border-subtle);
     font-size: 0.9rem;
     color: var(--text-primary);
-    transition: all var(--transition-fast);
+    min-width: 0;
+    transition: border-color var(--transition-fast),
+                background var(--transition-fast),
+                transform var(--transition-fast),
+                box-shadow var(--transition-fast);
 }
 .marketing-root .integration-item:hover {
-    border-color: var(--border-accent);
+    border-color: var(--hairline-accent);
     background: var(--bg-card-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px var(--shadow-color);
+}
+/* Long names ("Activity & Notifications", "NMBRS payroll (read-only)") wrap
+   to a second line rather than being truncated — a chip that says "NMBRS
+   payroll (read-…" has lost the one word that mattered. Grid stretches the
+   row, so its neighbours match its height instead of looking misaligned. */
+.marketing-root .integration-item > span:not(.icon-tile) {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 .marketing-root .integration-item .icon-tile {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--accent-tint-08);
     color: var(--accent);
-    display: flex; align-items: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast);
+}
+.marketing-root .integration-item:hover .icon-tile {
+    background: var(--accent-tint-22);
+}
+/* Real logo on the chip — same recipe as the social-proof wall:
+   normalized height, grayscale until the chip is hovered. */
+.marketing-root .integration-logo {
+    height: 20px;
+    width: auto;
+    max-width: 96px;
+    object-fit: contain;
+    filter: grayscale(1);
+    opacity: 0.7;
+    transition: filter var(--transition-fast), opacity var(--transition-fast);
+}
+.marketing-root .integration-item:hover .integration-logo {
+    filter: none;
+    opacity: 1;
+}
+/* Inline brand SVG from the product's own logo registry. Unlike the <img>
+   above these are full colour by default: a wall of forty grey marks is a
+   wall of grey, and the whole point of showing Gmail's red-and-white M is
+   that a visitor recognises it without reading. They desaturate slightly at
+   rest only so the chips stay a set rather than forty competing brands. */
+.marketing-root .integration-logo-mark {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+    background: var(--surface-1, rgba(0, 0, 0, 0.03));
+    filter: saturate(0.9);
+    transition: filter var(--transition-fast), transform var(--transition-fast);
+}
+.marketing-root .integration-item:hover .integration-logo-mark {
+    filter: saturate(1.1);
+    transform: scale(1.06);
+}
+@media (prefers-reduced-motion: reduce) {
+    .marketing-root .integration-item:hover .integration-logo-mark { transform: none; }
 }
 
-/* ── Architecture ─────────────────────────────────────────────────────── */
+/* ── Architecture ─────────────────────────────────────────────────────
+   Stacked layers connected by a thin accent spine down the left; each
+   layer row gets a small hexagon node (pure CSS clip-path) sitting on
+   the spine. Layers are transparent with a hairline border — the
+   diagram reads as a schematic, not a pile of cards. */
 .marketing-root .arch-layer-stack {
     display: flex;
     flex-direction: column;
     gap: 16px;
     max-width: 800px;
     margin: 0 auto;
+    position: relative;
+    padding-left: 28px;
+}
+/* Vertical accent spine. Inset top/bottom so it visually starts and
+   ends at the first/last node rather than running edge to edge. */
+.marketing-root .arch-layer-stack::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 12px;
+    bottom: 12px;
+    width: 2px;
+    background: var(--accent-tint-22);
 }
 .marketing-root .arch-layer {
+    --card-bg: transparent;
+    --card-radius: var(--radius-md);
+    padding: calc(20px * var(--card-pad-scale, 1)) calc(24px * var(--card-pad-scale, 1));
     display: flex;
     align-items: center;
     gap: 24px;
-    padding: 20px 24px;
-    border-radius: var(--radius-md);
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
+}
+/* Hexagon node on the spine (centered on the 2px line at x = 5px of the
+   stack: the layer's box starts at the 28px stack padding, so -29px puts
+   the 12px-wide hexagon's center exactly on the spine). */
+.marketing-root .arch-layer::before {
+    content: '';
+    position: absolute;
+    left: -29px;
+    top: 50%;
+    width: 12px;
+    height: 13px;
+    transform: translateY(-50%);
+    background: var(--accent);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
 }
 .marketing-root .arch-layer-label {
     flex: 0 0 140px;
+    font-family: var(--font-mono);
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.12em;
-    color: var(--accent);
+    /* Small mono text on the page canvas — same contrast rule as .label. */
+    color: var(--accent-strong, var(--accent));
 }
 .marketing-root .arch-layer-tags {
     display: flex;
@@ -1082,38 +2094,166 @@
 .marketing-root .arch-tag {
     padding: 4px 12px;
     border-radius: var(--radius-sm);
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--surface-2);
     border: 1px solid var(--border-subtle);
     font-size: 0.85rem;
     color: var(--text-secondary);
 }
 
-/* ── Tech Stats ───────────────────────────────────────────────────────── */
+/* ── Tech Stats ───────────────────────────────────────────────────────
+   De-boxed: no cards — big tabular numerals separated by hairline
+   rules. The four-identical-boxes look was the 2016 cliché. */
 .marketing-root .tech-stats {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 24px;
+    gap: 0 24px;
 }
 .marketing-root .tech-stat {
     text-align: center;
-    padding: 32px 16px;
-    border-radius: var(--radius-md);
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
+    padding: 16px 16px;
+}
+.marketing-root .tech-stat + .tech-stat {
+    border-left: 1px solid var(--hairline);
 }
 .marketing-root .tech-stat .number {
-    font-size: 2.5rem;
-    font-weight: 800;
-    color: var(--accent);
+    font-size: clamp(2.5rem, 4vw, 3.5rem);
+    font-weight: var(--heading-weight, 600);
+    font-variant-numeric: tabular-nums lining-nums;
+    color: var(--text-primary);
     line-height: 1;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
 }
 .marketing-root .tech-stat .label-text {
-    font-size: 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
+
+/* ── Pricing ──────────────────────────────────────────────────────────
+   Token-driven classes (the old block was fully inline-styled and
+   ignored the radius slider, shadow token and dark mode). The featured
+   tier is emphasized via a 2px accent border ('border') or a polarity
+   flip to the secondary color ('flip'); the filled CTA belongs to the
+   featured tier only once one is chosen. */
+.marketing-root .pricing-toggle-row { display: flex; justify-content: center; margin-bottom: 40px; }
+.marketing-root .pricing-toggle {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--pill-radius, 999px);
+}
+.marketing-root .pricing-toggle button {
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px 20px;
+    border-radius: var(--pill-radius, 999px);
+    font-size: 0.9rem;
+    font-weight: 600;
+    background: transparent;
+    color: var(--text-secondary);
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.marketing-root .pricing-toggle button[aria-pressed="true"] {
+    background: var(--accent);
+    color: #fff;
+}
+.marketing-root .pricing-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    align-items: stretch;
+    justify-content: center;
+}
+.marketing-root .pricing-col { flex: 1 1 260px; max-width: 380px; min-width: 0; }
+.marketing-root .pricing-card {
+    /* The only card filled with the page canvas rather than a surface —
+       see the .cms-cards--flat corrective rule in tokens.css. */
+    --card-bg: var(--bg-primary);
+    padding: calc(30px * var(--card-pad-scale, 1)) calc(26px * var(--card-pad-scale, 1));
+    height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.marketing-root .pricing-card--featured {
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 40px var(--glow-color);
+}
+/* Polarity flip — re-scoping the text tokens on the card re-colors every
+   descendant that consumes them. */
+.marketing-root .pricing-card--flip {
+    background: var(--brand-secondary);
+    border-color: transparent;
+    --text-primary: #fff;
+    --text-secondary: rgba(255, 255, 255, 0.75);
+    color: #fff;
+}
+.marketing-root .pricing-name { margin: 0; font-size: 1.25rem; font-weight: 600; line-height: 1.25; color: var(--text-primary); }
+.marketing-root .pricing-price-row { display: flex; align-items: baseline; gap: 6px; }
+.marketing-root .pricing-price {
+    font-size: 2.4rem;
+    font-weight: var(--heading-weight, 600);
+    line-height: 1.1;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums lining-nums;
+}
+.marketing-root .pricing-suffix { font-size: 0.95rem; color: var(--text-secondary); }
+.marketing-root .pricing-custom { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); }
+.marketing-root .pricing-tagline { margin: 0; font-size: 0.95rem; line-height: 1.5; color: var(--text-secondary); white-space: pre-wrap; }
+.marketing-root .pricing-trial {
+    align-self: flex-start;
+    padding: 4px 12px;
+    border-radius: var(--pill-radius, 999px);
+    background: var(--accent-tint-14);
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.marketing-root .pricing-features { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.marketing-root .pricing-feature { display: flex; align-items: flex-start; gap: 8px; font-size: 0.92rem; color: var(--text-secondary); line-height: 1.5; }
+.marketing-root .pricing-feature .check { color: var(--accent); flex: none; }
+.marketing-root .pricing-cta {
+    /* Follows the theme's button SHAPE, but keeps its own padding — it's a
+       full-width block CTA, not an inline button. */
+    margin-top: auto;
+    display: block;
+    text-align: center;
+    padding: 13px 22px;
+    border-radius: var(--btn-radius, var(--radius-md));
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+    line-height: 1.2;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    background: transparent;
+    transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+.marketing-root .pricing-cta:hover { border-color: var(--border-accent); }
+.marketing-root .pricing-cta--filled {
+    background: var(--accent-gradient);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 4px 20px var(--accent-glow);
+}
+.marketing-root .pricing-card--flip .pricing-cta:not(.pricing-cta--filled) {
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.35);
+}
+.marketing-root .pricing-skeleton {
+    min-height: 280px;
+    background: var(--surface-1);
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+.marketing-root .pricing-empty { color: var(--text-secondary); font-size: 0.95rem; }
 
 /* ── CTA section ──────────────────────────────────────────────────────── */
 .marketing-root .cta-section {
@@ -1137,27 +2277,63 @@
 }
 .marketing-root .cta-content h2 { margin-bottom: 20px; }
 .marketing-root .cta-content p  { margin-bottom: 32px; }
+.marketing-root .cta-actions {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+/* Dark closer band: the lead is `.body-lg`, which pins the LIGHT-theme
+   --text-secondary (#475569) — on the #1F2937 band that read at ~1.9:1.
+   Same on-dark ink every other cms-bg--dark block uses (≈11:1 here). */
+.marketing-root .cta-section.cms-bg--dark .cta-content p {
+    color: rgba(255, 255, 255, 0.85);
+}
+/* Thin accent "honeycomb rule" — the page-closing bracket device. */
+.marketing-root .cta-section.cms-motif-hex {
+    border-top: 2px solid var(--accent);
+}
 
-/* ── Footer ───────────────────────────────────────────────────────────── */
+/* ── Footer ───────────────────────────────────────────────────────────
+   Mega-footer: brand column + auto-fitting link columns, mono-caps
+   column eyebrows, and an accountability row (address / registration /
+   DPA — the footer is a trust surface). */
 .marketing-root .site-footer {
     padding: 80px 0 40px;
     background: var(--bg-secondary);
     border-top: 1px solid var(--border-subtle);
 }
+/* The footer shares `.container` with the content sections but is chrome, so
+   it tracks the header's wider frame instead of the reading measure. Without
+   this the six link columns crushed together inside 1280px while ~130px of
+   empty gutter sat on either side. */
+.marketing-root .site-footer > .container {
+    max-width: var(--max-width-wide);
+    padding: 0 40px;
+}
+@media (max-width: 900px) {
+    .marketing-root .site-footer > .container { padding: 0 20px; }
+}
 .marketing-root .footer-grid {
-    display: flex;
-    flex-wrap: nowrap;
+    display: grid;
+    /* 140px was narrow enough that "Data processing agreement" and
+       "Sustainable Use License" wrapped while their neighbours had room to
+       spare, so the columns never lined up. 168px then stopped SIX columns
+       from fitting on one row at 1600px, which dropped the last one onto a
+       row of its own — worse than a wrap. 152px + a 24px gutter fits six
+       with room; auto-fit collapses the empty tracks on sites with fewer
+       columns, so a three-column footer still spreads. */
+    grid-template-columns: minmax(200px, 1.6fr) repeat(auto-fit, minmax(152px, 1fr));
     align-items: flex-start;
-    gap: 40px;
+    column-gap: 24px;
+    row-gap: 40px;
     margin-bottom: 48px;
 }
 .marketing-root .footer-brand {
-    flex: 0 1 320px;
     max-width: 360px;
     min-width: 0;
 }
 .marketing-root .footer-col {
-    flex: 1 1 0;
     min-width: 0;
 }
 .marketing-root .footer-brand p {
@@ -1165,27 +2341,64 @@
     font-size: 0.95rem;
     margin-top: 12px;
 }
+/* Muted, not secondary: the heading and its links were the same colour and
+   near the same size, so a column read as five peers rather than a label
+   over four destinations. */
 .marketing-root .footer-col h4 {
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 16px;
-    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 18px;
+    color: var(--text-muted);
 }
+/* Legal strip — address, registration ids, legal links, copyright, locale.
+   ONE row. This was two stacked rows (accountability + copyright) each with
+   its own top border, which spent three horizontal rules and ~90px of height
+   on what is a single line of small print. Wraps rather than overflows, so
+   narrow viewports stack it instead of scrolling sideways. */
+.marketing-root .footer-legal {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-subtle);
+    /* This row carries the registered address and company number — the
+       trust content. --text-muted made the one part of the footer a
+       regulator or a procurement reviewer looks for the faintest on it. */
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+.marketing-root .footer-legal a {
+    color: var(--text-muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color var(--transition-fast);
+}
+.marketing-root .footer-legal a:hover { color: var(--text-primary); }
+/* The locale toggle and social marks sit at the far end of the same line.
+   `margin-left: auto` on a wrapped flex row pushes them right on the line
+   they land on, which is what you want at every width. */
+.marketing-root .footer-legal .footer-bottom-right { margin-left: auto; }
 .marketing-root .footer-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
 .marketing-root .footer-col a {
     color: var(--text-secondary);
     font-size: 0.9rem;
+    /* Keeps a two-line entry ("Data processing agreement") tight instead of
+       sitting on the 1.6 body leading and looking like two separate links. */
+    line-height: 1.35;
     transition: color var(--transition-fast);
 }
-.marketing-root .footer-col a:hover { color: var(--accent-light); }
-.marketing-root .footer-bottom {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-top: 24px;
-    border-top: 1px solid var(--border-subtle);
-    color: var(--text-muted);
-    font-size: 0.85rem;
+/* Hover went to --accent-light (#FFD166) — pale yellow on the #F3EFE7
+   footer band, about 1.3:1. Pointing at a link made it HARDER to read than
+   leaving it alone. Darken instead, and underline so the affordance does
+   not depend on colour at all. */
+.marketing-root .footer-col a:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
 }
 .marketing-root .footer-bottom-right {
     display: flex;
@@ -1204,7 +2417,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 999px;
+    border-radius: var(--pill-radius, 999px);
     border: 1px solid var(--border-subtle);
     background: var(--bg-card);
     color: var(--text-secondary);
@@ -1221,22 +2434,54 @@
 }
 .marketing-root .cms-theme-toggle:active { transform: scale(0.95); }
 
-/* ── Scroll reveal ────────────────────────────────────────────────────── */
+/* ── Scroll reveal ────────────────────────────────────────────────────
+   Token-driven: distance/duration/easing from tokens.css, stagger via
+   --reveal-order (0, 1, 2, …) set inline by the renderer. The legacy
+   .reveal-delay-N classes stay as aliases for stored cssClass values. */
 .marketing-root .reveal {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(var(--reveal-distance));
     transition: opacity var(--transition-slow), transform var(--transition-slow);
+    transition-delay: calc(var(--reveal-order, 0) * var(--reveal-stagger));
 }
 .marketing-root .reveal.visible {
     opacity: 1;
     transform: translateY(0);
 }
-.marketing-root .reveal-delay-1 { transition-delay: 0.1s; }
-.marketing-root .reveal-delay-2 { transition-delay: 0.2s; }
-.marketing-root .reveal-delay-3 { transition-delay: 0.3s; }
-.marketing-root .reveal-delay-4 { transition-delay: 0.4s; }
-.marketing-root .reveal-delay-5 { transition-delay: 0.5s; }
-.marketing-root .reveal-delay-6 { transition-delay: 0.6s; }
+/* Above the fold nothing may animate. useScrollReveal adds `.visible`
+   pre-paint to everything already inside the first viewport, but its rect
+   measurement had flushed the opacity:0 start state, so the transition
+   (450ms + up to 420ms stagger) still ran — hero lead and CTAs faded in
+   visibly AFTER first paint. The hook tags that batch with this class:
+   render visible, full stop. Below-the-fold reveals are untouched. */
+.marketing-root .reveal.reveal-instant {
+    transition: none;
+}
+.marketing-root .reveal-delay-1 { --reveal-order: 1; }
+.marketing-root .reveal-delay-2 { --reveal-order: 2; }
+.marketing-root .reveal-delay-3 { --reveal-order: 3; }
+.marketing-root .reveal-delay-4 { --reveal-order: 4; }
+.marketing-root .reveal-delay-5 { --reveal-order: 5; }
+.marketing-root .reveal-delay-6 { --reveal-order: 6; }
+
+/* Global reduced-motion guard — reveals render visible, ambience and
+   entrance keyframes stop. (The logo marquee has its own guard.) */
+@media (prefers-reduced-motion: reduce) {
+    .marketing-root .reveal {
+        opacity: 1;
+        transform: none;
+        transition: none;
+    }
+    .marketing-root .hero::before,
+    .marketing-root .hero::after,
+    .marketing-root .chat-bubble {
+        animation: none;
+    }
+    .marketing-root .btn-primary:hover,
+    .marketing-root .feature-card:hover {
+        transform: none;
+    }
+}
 
 /* ── Inline-edit affordances (preview mode only) ─────────────────────── */
 .marketing-root .cms-editable {
@@ -1248,13 +2493,13 @@
     position: relative;
 }
 .marketing-root .cms-editable:hover {
-    outline-color: rgba(245, 166, 35, 0.5);
-    background-color: rgba(245, 166, 35, 0.06);
+    outline-color: var(--hairline-accent);
+    background-color: var(--accent-tint-08);
 }
 .marketing-root .cms-editable:focus,
 .marketing-root .cms-editable[contenteditable="true"]:focus-visible {
     outline: 2px solid var(--accent);
-    background-color: rgba(245, 166, 35, 0.1);
+    background-color: var(--accent-tint-08);
 }
 .marketing-root .cms-editable[data-cms-empty="true"]::before {
     content: attr(data-cms-placeholder);
@@ -1282,26 +2527,77 @@
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
+    /* The nav collapses to the drawer HERE, not at 768. Six top-level items
+       plus the language switcher and the CTA stop fitting well before a
+       phone width: between 769 and 1024 they were colliding with the logo,
+       and a 920px mega panel had nowhere to go. */
+    .marketing-root .header-nav   { display: none; }
+    .marketing-root .hamburger    { display: flex; }
+    .marketing-root .mobile-nav   { display: block; }
+    .marketing-root .mobile-nav-scrim { display: block; }
     .marketing-root .features-grid { grid-template-columns: repeat(2, 1fr); }
-    .marketing-root .tech-stats    { grid-template-columns: repeat(2, 1fr); }
-    .marketing-root .footer-grid   { display: grid; grid-template-columns: repeat(2, 1fr); }
+    .marketing-root .feature-card--span-2 { grid-column: span 2; }
+    .marketing-root .tech-stats    { grid-template-columns: repeat(2, 1fr); row-gap: 24px; }
+    /* Hairline separators only between columns of the same row. */
+    .marketing-root .tech-stat + .tech-stat { border-left: none; }
+    .marketing-root .tech-stat:nth-child(even) { border-left: 1px solid var(--hairline); }
+    /* Three across on a tablet, not two: six columns in pairs made the
+       footer as tall as a section. The brand blurb spans the full width
+       above them rather than sitting in a 1/3 column reading four words
+       per line. */
+    .marketing-root .footer-grid   { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 32px; }
+    .marketing-root .footer-brand  { grid-column: 1 / -1; }
     .marketing-root .footer-brand,
     .marketing-root .footer-col    { flex: initial; max-width: none; }
 }
 @media (max-width: 768px) {
-    .marketing-root section { padding: 80px 0; }
-    .marketing-root .hero   { padding: calc(var(--header-height) + 40px) 0 80px; }
-    .marketing-root .header-nav { display: none; }
-    .marketing-root .hamburger  { display: flex; }
-    .marketing-root .mobile-nav { display: block; }
+    /* Section rhythm scales itself via the --section-y clamp.
+       The nav/hamburger/drawer switch now happens in the 1024 block above. */
+    /* The header bar collapses on phones, but the PRIMARY CTA stays —
+       hiding every button cost the most important conversion affordance
+       on mobile. Non-primary buttons still live in the slide-down
+       mobile-nav; the primary renders compact so the row fits. */
+    .marketing-root .header-actions .btn { display: none; }
+    .marketing-root .header-actions .btn-primary {
+        display: inline-flex;
+        padding: 9px 16px;
+        font-size: 0.85rem;
+    }
     .marketing-root .features-grid,
     .marketing-root .steps,
-    .marketing-root .security-grid,
-    .marketing-root .footer-grid { display: grid; grid-template-columns: 1fr; }
+    .marketing-root .security-grid { display: grid; grid-template-columns: 1fr; }
+    /* Two across on a phone, not one. Six single-file columns of five links
+       is ~35 rows of scrolling before the legal strip — the footer becomes
+       the longest thing on the page. Link labels here are short enough for
+       a half-width column; only below 420px does that stop being true. */
+    .marketing-root .footer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .marketing-root .footer-brand { grid-column: 1 / -1; }
+    .marketing-root .feature-card--span-2 { grid-column: auto; }
     .marketing-root .hero-ctas   { flex-direction: column; align-items: stretch; }
     .marketing-root .arch-layer  { flex-direction: column; align-items: flex-start; gap: 12px; }
     .marketing-root .arch-layer-label { flex: none; }
-    .marketing-root .footer-bottom { flex-direction: column; gap: 16px; }
+    /* On a phone the legal strip stacks and the locale toggle stops being
+       pushed to a far edge that no longer exists. */
+    .marketing-root .footer-legal { gap: 12px; }
+    .marketing-root .footer-legal .footer-bottom-right { margin-left: 0; }
+}
+@media (max-width: 480px) {
+    /* The header row carries logo + language switcher + primary CTA +
+       hamburger. At 360–400px that set overflowed by ~30px, which is what
+       wrapped the wordmark. Tighter gaps and a slightly smaller wordmark
+       fit the full set at 360px; once the language switcher goes, there is
+       comfortable slack. No element is hidden or restacked. */
+    .marketing-root .header-inner   { padding: 0 16px; }
+    .marketing-root .header-logo    { gap: 8px; font-size: 1rem; }
+    .marketing-root .header-logo .logo-image { max-width: 112px; }
+    .marketing-root .header-actions { gap: 10px; }
+    .marketing-root .lang-switcher-btn { padding: 6px 8px; }
+}
+@media (max-width: 420px) {
+    /* "Routines & automations" and "Data processing agreement" both wrap to
+       three lines in a half-width column on a 360px phone, which turns the
+       pair of columns into a ragged block. One column below that. */
+    .marketing-root .footer-grid { grid-template-columns: 1fr; row-gap: 28px; }
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -1362,17 +2658,28 @@
    read on a dark background. */
 .marketing-root.cms-theme-dark {
     color-scheme: dark;
+    /* Fallback palette — applyDesignToRoot sets the real dark values
+       inline from design.darkColors; this class covers stale payloads
+       that predate darkColors. Card fills / hairlines are NOT flipped
+       here anymore: the derived tokens in tokens.css mix from
+       --brand-text, so they invert automatically. */
     --brand-bg:             #0F172A;
     --brand-surface:        #1E293B;
     --brand-text:           #F1F5F9;
     --brand-text-secondary: #94A3B8;
 
-    --bg-card:           rgba(255, 255, 255, 0.04);
-    --bg-card-hover:     rgba(255, 255, 255, 0.08);
     --bg-glass:          rgba(15, 23, 42, 0.7);
     --text-muted:        rgba(241, 245, 249, 0.5);
-    --border-subtle:     rgba(255, 255, 255, 0.08);
-    --shadow-card:       0 4px 24px rgba(0, 0, 0, 0.4);
+    /* Accent-as-text goes back to the bright accent on a dark canvas
+       (8.8:1 for the default amber) — also the non-color-mix fallback,
+       whose inherited literal is the dark-on-light value. */
+    --accent-strong:     var(--brand-primary);
+    /* Override the shadow COLOR, never --shadow-card itself: a site-level
+       `components.shadow` setting is applied inline on .marketing-root and
+       inline always beats a class, so overriding the composed token here
+       would silently give dark mode a light-mode shadow. */
+    --shadow-color:        rgba(0, 0, 0, 0.40);
+    --shadow-color-strong: rgba(0, 0, 0, 0.55);
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -1459,6 +2766,18 @@
 .marketing-root .content-el-image.is-rounded .content-el-image-wrap { border-radius: var(--radius-xl); }
 .marketing-root .content-el-image-wrap img  { width: 100%; height: 100%; object-fit: cover; display: block; }
 .marketing-root .content-el-image-wrap[style*="aspect-ratio"] img { object-fit: cover; }
+/* Framed images (el.frame → FramedMedia inside the wrap) bring their own
+   hairline box — neutralize the wrap's card styling and the cover-crop
+   img rule so the frame's intrinsic-height rendering wins. */
+.marketing-root .content-el-image-wrap.content-el-image-wrap--framed {
+    overflow: visible;
+    border-radius: 0;
+    background: transparent;
+}
+.marketing-root .content-el-image-wrap--framed img {
+    height: auto;
+    object-fit: unset;
+}
 
 /* Full-bleed image — escapes the (narrower) grid column and renders at the
    full content-container width, matching the Live Component block's
@@ -1544,7 +2863,14 @@
 
 .marketing-root .cms-bg--surface { background: var(--brand-surface); }
 .marketing-root .cms-bg--primary { background: var(--brand-primary);   color: #fff; }
-.marketing-root .cms-bg--dark    { background: var(--brand-secondary); color: var(--brand-bg); }
+.marketing-root .cms-bg--dark    {
+    background: var(--brand-secondary);
+    color: var(--brand-bg);
+    /* These sections don't get the band retheme scope, so accent-as-text
+       must flip back to the bright accent by hand or eyebrows inside a
+       dark section would keep the darkened-for-light value (~2.8:1). */
+    --accent-strong: var(--brand-primary);
+}
 
 /* ────────────────────────────────────────────────────────────────────────
    Media + Text block.
@@ -1573,12 +2899,29 @@
 .marketing-root .media-text-block-inner--size-two-thirds .media-text-block-media { flex: 0 0 66%; }
 /* size-half keeps the default 1 1 0 / 1 1 0 → 50/50 */
 
+/* No image (published site only — the editor keeps its placeholder). The
+   media column is not rendered at all, so the row becomes a single text
+   column. Cap the measure: full-container body text at 1280px is a wall,
+   and this block is prose, not a hero. */
+.marketing-root .media-text-block-inner--no-media .media-text-block-text {
+    flex: 1 1 100%;
+    max-width: 72ch;
+}
+.marketing-root .media-text-block-inner--no-media {
+    justify-content: flex-start;
+}
+
 /* Media rendering — image, video iframe (16:9), or placeholder. */
 .marketing-root .media-text-block-media img {
     width: 100%;
     height: auto;
     display: block;
     border-radius: var(--radius-lg);
+}
+/* Framed media (media.frame → FramedMedia): the frame owns the radius —
+   un-round the inner image so corners don't double up. */
+.marketing-root .media-text-block-media .cms-frame img {
+    border-radius: 0;
 }
 .marketing-root .media-text-block-video {
     position: relative;
@@ -1633,6 +2976,77 @@
     .marketing-root .media-text-block-inner--size-two-thirds .media-text-block-media {
         flex: 1 1 100%;
     }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Customer Support block (public support widget).
+
+   DELIBERATELY scoped to .customer-support-block instead of
+   .marketing-root: the same component renders on the standalone static
+   HomePage / PricingPage (via ContactSection) OUTSIDE the marketing
+   root, so every token reference carries a hard fallback matching the
+   widget's previous inline palette. These selectors can only ever match
+   inside a customer-support section, so nothing leaks into the app. */
+
+/* Section rhythm — inside the marketing root this matches the generic
+   `.marketing-root section` rule (same var, equal specificity, later in
+   the file); on the standalone pages the fallback keeps the widget's
+   original 80px breathing room. */
+section.customer-support-block {
+    padding: var(--section-y, 80px) 0;
+}
+.customer-support-block .support-card {
+    background: var(--surface-0, #ffffff);
+    border: 1px solid var(--hairline, #E5E7EB);
+    border-radius: var(--radius-lg, 16px);
+    box-shadow: var(--support-card-shadow, var(--shadow-card, 0 4px 12px rgba(0, 0, 0, 0.06)));
+    padding: 24px;
+    text-align: left;
+}
+.customer-support-block .support-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary, #1F2937);
+    margin-bottom: 4px;
+}
+.customer-support-block .support-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--hairline-strong, #E5E7EB);
+    border-radius: var(--radius-sm, 8px);
+    font-size: 14px;
+    font-family: inherit;
+    box-sizing: border-box;
+    background: var(--surface-0, #ffffff);
+    color: var(--text-primary, #1F2937);
+}
+.customer-support-block .support-input:focus {
+    outline: 2px solid var(--accent-tint-22, rgba(245, 166, 35, 0.22));
+    outline-offset: 1px;
+    border-color: var(--hairline-accent, rgba(245, 166, 35, 0.3));
+}
+.customer-support-block textarea.support-input {
+    resize: vertical;
+    min-height: 120px;
+}
+/* Submit — the shared primary-button recipe (accent gradient on the
+   pill radius), kept as its own class because the widget must also
+   style itself outside the marketing root. */
+.customer-support-block .support-submit {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: var(--accent-gradient, var(--brand-primary, #F5A623));
+    color: #fff;
+    border: none;
+    border-radius: var(--btn-radius, var(--radius-xl, 999px));
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    text-decoration: none;
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -1718,3 +3132,600 @@
     }
 }
 
+/* ────────────────────────────────────────────────────────────────────────
+   Testimonials block.
+   Variants: quotes (3-up hairline cards) · case (metric-first cards) ·
+   spotlight (one oversized 5/7 photo + quote split). Quantified proof —
+   name + role + company always; NEVER star ratings. Tokens only, so dark
+   theme and band retheme come for free. */
+
+.marketing-root .testimonials-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+}
+.marketing-root .testimonial-card {
+    /* Hover changes ONLY the border — keep the fill and stay flat. */
+    --card-hover-bg: var(--surface-2);
+    --card-hover-border: var(--hairline-strong);
+    --card-shadow-hover: none;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.marketing-root .testimonial-quote { margin: 0; flex: 1; }
+.marketing-root .testimonial-quote p {
+    margin: 0;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+
+/* Attribution row — 28px round avatar (photo or initial) + small text. */
+.marketing-root .testimonial-attrib {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.marketing-root .testimonial-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+.marketing-root .testimonial-avatar--initial {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-tint-14);
+    color: var(--accent);
+    font-size: 0.8125rem;
+    font-weight: 600;
+}
+.marketing-root .testimonial-attrib-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    font-size: var(--text-small);
+    line-height: 1.4;
+}
+.marketing-root .testimonial-attrib-name { font-weight: 600; color: var(--text-primary); }
+.marketing-root .testimonial-attrib-meta { color: var(--text-secondary); }
+.marketing-root .testimonial-logo {
+    height: 20px;
+    width: auto;
+    margin-left: auto;
+    flex-shrink: 0;
+    filter: grayscale(1);
+    opacity: 0.7;
+}
+
+/* Case variant — oversized tabular metric leads each card. */
+.marketing-root .testimonial-metric-head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.marketing-root .testimonial-metric {
+    font-size: clamp(2.5rem, 2rem + 1.5vw, 3rem);
+    font-weight: var(--heading-weight, 600);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+}
+
+/* Spotlight variant — one oversized 5/7 split (first item only). */
+.marketing-root .testimonial-spotlight {
+    display: grid;
+    grid-template-columns: 5fr 7fr;
+    gap: 48px;
+    align-items: center;
+}
+.marketing-root .testimonial-spotlight-media .cms-frame-media,
+.marketing-root .testimonial-spotlight-media .cms-frame-body {
+    border-radius: var(--radius-lg);
+}
+.marketing-root .testimonial-spotlight-quote { margin: 0 0 24px; }
+.marketing-root .testimonial-spotlight-quote p {
+    margin: 0;
+    font-size: 1.5rem;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+}
+
+@media (max-width: 1024px) {
+    .marketing-root .testimonials-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+    .marketing-root .testimonials-grid { grid-template-columns: 1fr; }
+    .marketing-root .testimonial-spotlight {
+        grid-template-columns: 1fr;
+        gap: 28px;
+    }
+    .marketing-root .testimonial-spotlight-quote p { font-size: 1.25rem; }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   FAQ block — controlled accordion (one open at a time). Hairline
+   border-top rows, 22px padding, chevron rotating in --motion-fast
+   (150ms), 720px centered column. The answer stays mounted and animates
+   via the grid-rows 0fr→1fr trick so inline editing keeps working. */
+
+.marketing-root .faq-list {
+    max-width: 720px;
+    margin: 0 auto;
+    border-bottom: 1px solid var(--hairline);
+}
+.marketing-root .faq-item { border-top: 1px solid var(--hairline); }
+.marketing-root .faq-q {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 22px 8px;
+    cursor: pointer;
+}
+.marketing-root .faq-q-text {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text-primary);
+}
+.marketing-root .faq-chevron {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    transition: transform var(--motion-fast) var(--ease-out);
+}
+.marketing-root .faq-item--open .faq-chevron { transform: rotate(180deg); }
+.marketing-root .faq-a-wrap {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--motion-med) var(--ease-out);
+}
+.marketing-root .faq-item--open .faq-a-wrap { grid-template-rows: 1fr; }
+.marketing-root .faq-a-inner { overflow: hidden; min-height: 0; }
+.marketing-root .faq-a {
+    margin: 0;
+    padding: 0 8px 22px;
+    max-width: 62ch;
+    color: var(--text-secondary);
+    line-height: var(--leading-body);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Trust band block — monochrome institutional chips (GDPR / zero-knowledge
+   / fair-code register). Bright by design: no dark styling baked in here,
+   dark treatments come from style.band via the retheme scope.
+   Variants: chips (centered pill row, sublabels hidden) · detailed
+   (small cards that show the sublabel). */
+
+/* One row of chips under a one-line eyebrow does not carry a full
+   --section-y (72–112px each side): on the homepage that stacked with the
+   hero's 152px bottom padding into ~260px of emptiness around a 100px
+   strip. Cap the band at 64px; min() keeps the compact rhythm preset
+   (48px) working, and explicit per-block padding (inline) still wins.
+   Deliberate trade-off: the spacious preset is also capped here. */
+.marketing-root section.trust-band {
+    padding-top: min(var(--section-y), 64px);
+    padding-bottom: min(var(--section-y), 64px);
+}
+.marketing-root .trust-band-head {
+    text-align: center;
+    max-width: 720px;
+    margin: 0 auto 32px;
+}
+.marketing-root .trust-band-head .eyebrow-mono { display: block; }
+.marketing-root .trust-band-title { margin: 12px auto 0; }
+
+.marketing-root .trust-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+}
+.marketing-root .trust-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--pill-radius, 999px);
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: border-color var(--motion-fast) var(--ease-soft);
+}
+.marketing-root a.trust-chip:hover { border-color: var(--hairline-accent); }
+.marketing-root .trust-chip-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: var(--text-primary);
+}
+.marketing-root .trust-chip-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-eyebrow);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-primary);
+}
+.marketing-root .trust-chip-sub { display: none; }
+
+/* Detailed variant — chips grow into small hairline cards. */
+.marketing-root .trust-chips--detailed {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 300px));
+    justify-content: center;
+    gap: 16px;
+}
+.marketing-root .trust-chips--detailed .trust-chip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 20px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+.marketing-root .trust-chip-top {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+.marketing-root .trust-chips--detailed .trust-chip-sub {
+    display: block;
+    font-size: var(--text-small);
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Showcase block — staged product proof. Variants: single (full-container
+   frame, glow + fade-mask) · pair (two frames, collapses <768px) ·
+   code-ui (mono code panel + frame, 5/7). Code panel is deliberately
+   unhighlighted — surface + mono type only. */
+
+.marketing-root .showcase-single { margin-top: 8px; }
+
+.marketing-root .showcase-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+}
+
+.marketing-root .showcase-code-ui {
+    display: grid;
+    grid-template-columns: 5fr 7fr;
+    gap: 32px;
+    align-items: center;
+}
+.marketing-root .showcase-code {
+    /* Asymmetric padding, so it sets `padding` explicitly (scaled) instead
+       of using --card-pad-base. */
+    padding: calc(20px * var(--card-pad-scale, 1)) calc(24px * var(--card-pad-scale, 1));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.marketing-root .showcase-code-lang { display: block; }
+.marketing-root .showcase-code-snippet {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.9375rem;
+    line-height: 1.7;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+@media (max-width: 900px) {
+    .marketing-root .showcase-code-ui { grid-template-columns: 1fr; gap: 24px; }
+}
+@media (max-width: 768px) {
+    .marketing-root .showcase-pair { grid-template-columns: 1fr; }
+}
+
+
+/* ── Announcement bar ──────────────────────────────────────────────────
+   A dismissible strip ABOVE the header (see components/AnnouncementBar.jsx).
+
+   LAYOUT CONTRACT — read before touching anything below.
+   `.header` and `.mobile-nav` are position:fixed and the hero padding, the
+   drawer top/max-height and the sticky ledger offset are all derived from
+   `--header-height`. The bar is fixed at top:0 and publishes its MEASURED
+   height as `--announce-height` on `.marketing-root`; the four overrides at
+   the bottom of this block add that value to each of those offsets.
+
+   `--announce-height` is deliberately NEVER declared in CSS. When no bar is
+   rendered the property is absent, every `var(--announce-height, 0px)`
+   resolves to `0px`, and each calc() computes byte-identically to what it
+   did before this feature existed — `calc(72px + 0px) === 72px`. The
+   renderer removes the property on unmount for the same reason.
+
+   These four rules intentionally re-declare properties set earlier in this
+   file. They win on source order at identical (0,2,0) specificity, which is
+   why this block must stay LAST. Only `.hero`'s padding-top and
+   `.mobile-nav`'s top/max-height are restated; every other declaration on
+   those rules is untouched. */
+
+.marketing-root .announce-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    /* Above the header (1000) and the mobile drawer (999) — the drawer's
+       closed state parks itself just above its `top`, i.e. over the bar. */
+    z-index: 1001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 24px;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    text-align: center;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+/* Extra right padding only when the close button is present, so centered
+   copy never runs underneath it. */
+.marketing-root .announce-bar--dismissible { padding-right: 56px; }
+
+.marketing-root .announce-bar-body {
+    margin: 0;
+    max-width: var(--max-width);
+    font-weight: 500;
+}
+.marketing-root .announce-bar-link {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    white-space: nowrap;
+}
+.marketing-root .announce-bar-close {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: var(--radius-sm);
+    color: inherit;
+    opacity: 0.7;
+    transition: opacity var(--transition-fast);
+}
+.marketing-root .announce-bar-close:hover { opacity: 1; }
+.marketing-root .announce-bar-close:focus-visible {
+    opacity: 1;
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
+}
+
+/* Variants. `accent` rides --accent-gradient (solid brand primary until the
+   user opts into the gradient), so it re-tints with the palette like every
+   other primary surface. */
+.marketing-root .announce-bar--accent {
+    background: var(--accent-gradient);
+    color: var(--btn-primary-fg, #fff);
+}
+.marketing-root .announce-bar--surface {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--hairline);
+}
+.marketing-root .announce-bar--dark {
+    background: var(--brand-secondary);
+    /* Same light-on-dark ink the dark band uses, so it stays legible on any
+       brand secondary and in both themes. */
+    color: var(--band-dark-text, #F4F2EE);
+}
+
+@media (max-width: 640px) {
+    .marketing-root .announce-bar { font-size: 0.8rem; padding: 8px 16px; }
+    .marketing-root .announce-bar--dismissible { padding-right: 44px; }
+    .marketing-root .announce-bar-close { right: 8px; }
+    /* Long copy + a nowrap link would force a horizontal scroll on phones. */
+    .marketing-root .announce-bar-link { white-space: normal; }
+}
+
+/* ── The four --header-height consumers, shifted by the bar's height ──── */
+.marketing-root .header {
+    top: var(--announce-height, 0px);
+}
+.marketing-root .hero {
+    padding-top: calc(var(--header-height) + clamp(48px, 6vw, 88px) + var(--announce-height, 0px));
+}
+.marketing-root .mobile-nav {
+    top: calc(var(--header-height) + var(--announce-height, 0px));
+    /* Both units restated: an appended dvh-only rule would be dropped by
+       browsers without dvh support, silently reverting them to the
+       un-offset vh line further up the file. */
+    max-height: calc(100vh - var(--header-height) - var(--announce-height, 0px));
+    max-height: calc(100dvh - var(--header-height) - var(--announce-height, 0px));
+}
+.marketing-root .security-ledger-head {
+    top: calc(var(--header-height, 72px) + 24px + var(--announce-height, 0px));
+}
+
+/* ── Live feature demo ────────────────────────────────────────────────
+   Frames the real product UI (/__demo__/<feature>) inside a marketing
+   page. The frame is deliberately app-coloured rather than marketing-
+   coloured: what sits inside is the product, and pretending otherwise by
+   tinting the chrome would undersell the "this is the real thing" point.
+   The poster state is a button, not a div, so it is keyboard-reachable —
+   the demo must not be mouse-only. */
+.feature-demo-frame {
+    position: relative;
+    margin-top: 32px;
+    width: 100%;
+    border-radius: var(--card-radius, var(--radius-lg));
+    border: 1px solid var(--hairline);
+    background: var(--surface-2);
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+}
+
+.feature-demo-iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+/* Breathing room inside the frame. The demos render app surfaces that assume
+   a full browser window and therefore sit flush to their own edges; dropped
+   straight into a bordered card on a marketing page that reads as cramped,
+   with headings touching the border. Padding on the frame rather than inside
+   each demo keeps the app components untouched. */
+.feature-demo-frame {
+    padding: 10px;
+    background: var(--surface-1, var(--surface-2));
+}
+.feature-demo-frame .feature-demo-iframe {
+    border-radius: calc(var(--card-radius, var(--radius-lg)) - 6px);
+    background: var(--surface-0);
+    height: calc(100% - 20px);
+}
+@media (max-width: 768px) {
+    /* On a phone the padding costs more than it buys. */
+    .feature-demo-frame { padding: 4px; }
+    .feature-demo-frame .feature-demo-iframe { height: calc(100% - 8px); }
+}
+
+.feature-demo-poster,
+.feature-demo-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    height: 100%;
+    padding: 24px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.feature-demo-poster {
+    border: 0;
+    background:
+        radial-gradient(80% 60% at 50% 40%, var(--accent-tint, rgba(245, 166, 35, 0.12)), transparent 70%),
+        var(--surface-2);
+    cursor: pointer;
+    font: inherit;
+    transition: background var(--transition-med);
+}
+.feature-demo-poster:hover { background: var(--surface-1); }
+.feature-demo-poster:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: -4px;
+}
+
+.feature-demo-poster-play {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: var(--pill-radius, 999px);
+    background: var(--brand-primary);
+    color: var(--btn-primary-fg, #fff);
+    font-size: 18px;
+    line-height: 1;
+}
+
+.feature-demo-poster-label { font-weight: 600; color: var(--text-primary); }
+.feature-demo-hint { font-size: 13px; color: var(--text-muted); }
+
+.feature-demo-note {
+    margin-top: 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    /* A phone cannot usefully show a desktop app in a 720px frame. The
+       poster and the unknown-id placeholder still get this capped frame
+       (!important because the renderer puts the block height inline); the
+       scaled live preview below sizes itself from the demo's own aspect. */
+    .feature-demo-frame:not(.feature-demo-frame--scaled) { height: 520px !important; }
+}
+
+/* ── Mobile scaled preview ────────────────────────────────────────────
+   ≤768px only, and only via the --scaled modifier the renderer adds there.
+   The frame shows the demo at a desktop logical width (1280px — past the
+   app's isCompact boundary, so it lays out exactly as on a laptop) scaled
+   down to fit: the same transform sandwich as the CMS editor's
+   PreviewStage. Non-interactive by design — at ~0.26 scale a tap on a 14px
+   button is a lottery — so the whole frame is one tap target that opens
+   the demo full screen in the same tab (DemoHost shows the way back).
+   Ordering is load-bearing: the iframe override below ties the
+   `.feature-demo-frame .feature-demo-iframe` rules above on specificity
+   and must sit later in the file to undo their calc() height. */
+.feature-demo-scale-clip {
+    position: relative;
+    overflow: hidden;
+    border-radius: calc(var(--card-radius, var(--radius-lg)) - 6px);
+    background: var(--surface-0);
+}
+.feature-demo-scale-canvas {
+    /* Thumbnail, not a widget — the overlay link owns all input. */
+    pointer-events: none;
+}
+.feature-demo-scale-canvas .feature-demo-iframe {
+    height: 100%;
+    border-radius: 0; /* the clip carries the radius */
+}
+.feature-demo-open-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 14px;
+    text-decoration: none;
+}
+.feature-demo-open-overlay:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: -4px;
+    border-radius: calc(var(--card-radius, var(--radius-lg)) - 6px);
+}
+.feature-demo-open-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: var(--pill-radius, 999px);
+    background: var(--brand-primary);
+    color: var(--btn-primary-fg, #fff);
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+.feature-demo-open-pill svg { width: 14px; height: 14px; }
+
+@media (max-width: 768px) {
+    /* Mobile-only footer stack for the full-screen button, note and CTA.
+       The footer has no desktop rules today — keep it that way, so the
+       desktop layout stays byte-identical. */
+    .feature-demo-footer {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        margin-top: 14px;
+    }
+    .feature-demo-footer .feature-demo-note { margin-top: 0; }
+}

@@ -19,7 +19,7 @@ export default function VersionPicker({ t, agentId, onClose, onRestore }) {
             className="absolute z-30 top-full left-0 mt-2 w-[460px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-xl"
         >
             <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
-                <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.section.versions') || 'Version History'}</span>
+                <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.section.versions', 'Version History')}</span>
                 <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
             </div>
             <div className="p-4">

@@ -1,24 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { useTranslation } from '../../../hooks/useTranslation';
-import { API_BASE, authFetch } from '../../../utils/helpers';
-import { getModelMeta, CAT_COLORS } from './modelMeta';
-
 import DirectChatConfig from './DirectChatConfig';
-import TicketAssistantTiersConfig from './TicketAssistantTiersConfig';
-import WebSearchInferenceConfig from './WebSearchInferenceConfig';
+import EmbeddingsConfig from './EmbeddingsConfig';
 import LeadEnrichmentConfig from './LeadEnrichmentConfig';
 import LimitsConfig from './LimitsConfig';
-import EmbeddingsConfig from './EmbeddingsConfig';
-
-import MistralApiKeyCard from './ProviderCards/MistralCard';
-import OpenAIApiKeyCard from './ProviderCards/OpenAICard';
+import ChatModelTiersConfig from '../ChatModelTiersConfig';
+import AzureConfigCard from './ProviderCards/AzureCard';
 import ClaudeApiKeyCard from './ProviderCards/ClaudeCard';
 import GoogleApiKeyCard from './ProviderCards/GoogleCard';
+import MistralApiKeyCard from './ProviderCards/MistralCard';
+import TicketAssistantTiersConfig from './TicketAssistantTiersConfig';
+import { useTranslation } from '../../../hooks/useTranslation';
+import { API_BASE, authFetch } from '../../../utils/helpers';
+import { getModelMeta, CAT_COLORS } from '../../../utils/modelMeta';
+
+import WebSearchInferenceConfig from './WebSearchInferenceConfig';
+
+import OpenAIApiKeyCard from './ProviderCards/OpenAICard';
 import ElevenLabsApiKeyCard from './ProviderCards/ElevenLabsCard';
-import AzureConfigCard from './ProviderCards/AzureCard';
 import GoogleVertexConfigCard from './ProviderCards/GoogleVertexCard';
 import RerankerConfig from './RerankerConfig';
-import ChatModelTiersConfig from '../ChatModelTiersConfig';
 
 
 const AIConfigPanel = () => {

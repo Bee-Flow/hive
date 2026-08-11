@@ -14,7 +14,7 @@ import { AlertCircle } from 'lucide-react';
 
 const BASE = `${API_BASE}/api/integrations/connections`;
 
-const RequiredConnectionsBanner = ({ resourceType, resourceId, providers }) => {
+const RequiredConnectionsBanner = ({ resourceType, resourceId, providers, purpose = "to use all of this agent's tools" }) => {
     const [required, setRequired] = useState([]);
     const list = (providers || []).filter(Boolean);
 
@@ -42,7 +42,7 @@ const RequiredConnectionsBanner = ({ resourceType, resourceId, providers }) => {
             <span>
                 Connect {required.map(r => r.provider).join(', ')} in{' '}
                 <a href="/settings?tab=integrations" className="underline" style={{ color: 'var(--accent-primary)' }}>Settings → Integrations</a>{' '}
-                to use all of this agent's tools.
+                {purpose}.
             </span>
         </div>
     );

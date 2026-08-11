@@ -1,10 +1,8 @@
 import React from 'react';
-import { MessageSquare } from 'lucide-react';
 import { useTranslation } from '../hooks/useTranslation';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar } from '../utils/agentAvatar';
-import RecentMeetingsCard from './dashboard/RecentMeetingsCard';
 
-const WelcomeScreen = ({ agent, onSendMessage, children, user, onNavigate }) => {
+const WelcomeScreen = ({ agent, onSendMessage, children }) => {
     const { t } = useTranslation();
     // Parse starter prompts (handle string or array)
     const starterPrompts = Array.isArray(agent?.starter_prompts)
@@ -55,12 +53,6 @@ const WelcomeScreen = ({ agent, onSendMessage, children, user, onNavigate }) => 
                     ))}
                 </div>
             ) : null}
-
-            {user && onNavigate && (
-                <div className="w-full flex justify-center mt-2">
-                    <RecentMeetingsCard user={user} onNavigate={onNavigate} />
-                </div>
-            )}
         </div>
     );
 };

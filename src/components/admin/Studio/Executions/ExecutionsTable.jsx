@@ -57,9 +57,12 @@ export default function ExecutionsTable({ scope, automationId, stepId, onOpenRun
         return () => io.disconnect();
     }, [hasMore, loadMore]);
 
+    // 6 columns in BOTH modes — matching the 6 cells ExecutionRow renders
+    // (Status, Name/Run, Started, Run time, Trigger, Actions). The non-global
+    // grid was previously 5 columns, so the row's Actions button wrapped.
     const gridCols = isGlobal
         ? 'minmax(120px,160px) minmax(0,1fr) 110px 90px 120px 36px'
-        : 'minmax(120px,180px) minmax(0,1fr) 110px 120px 36px';
+        : 'minmax(120px,180px) minmax(0,1fr) 110px 90px 120px 36px';
 
     return (
         <div className="flex flex-col h-full min-h-0">
@@ -78,12 +81,13 @@ export default function ExecutionsTable({ scope, automationId, stepId, onOpenRun
                 className="grid items-center gap-3 px-4 py-1.5 text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)] border-b border-[var(--border-default)]"
                 style={{ gridTemplateColumns: gridCols }}
             >
+                {/* Exactly 6 header cells, matching the 6-column grid and the
+                    6 cells each ExecutionRow renders. */}
                 <span>Status</span>
                 {isGlobal ? <span>Name</span> : <span>Run</span>}
                 <span>Started</span>
                 <span>Run time</span>
-                {isGlobal ? <span /> : <span>Trigger</span>}
-                {isGlobal && <span>Trigger</span>}
+                <span>Trigger</span>
                 <span />
             </div>
 
@@ -130,7 +134,19 @@ function EmptyState({ scope }) {
     );
 }
 
-function ExecutionRow({ run, isGlobal, gridCols, api, patchRow, refresh, onOpen, onOpenEditor }) {
+// Memoized so a live SSE tick that patches ONE row's `run` object doesn't
+// re-render every accumulated row. The function props (onOpen/onOpenEditor)
+// are inline per render but logically stable — they only ever act on this
+// row's own `run` — so the comparator keys on the data props and ignores them.
+const ExecutionRow = React.memo(ExecutionRowImpl, (prev, next) =>
+    prev.run === next.run
+    && prev.isGlobal === next.isGlobal
+    && prev.gridCols === next.gridCols
+    && prev.api === next.api
+    && prev.patchRow === next.patchRow,
+);
+
+function ExecutionRowImpl({ run, isGlobal, gridCols, api, patchRow, refresh, onOpen, onOpenEditor }) {
     const [menu, setMenu] = useState(null); // {x,y}
     const [pending, setPending] = useState(false);
     const token = tokenFor(run.status);

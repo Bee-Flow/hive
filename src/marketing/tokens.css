@@ -1,0 +1,576 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   Design tokens v2 — imported at the top of marketing.css.
+
+   Layering (bottom → top):
+     --brand-* (marketing.css root, user-controlled via site.design)
+       → derived color tokens here (surface ladder, hairlines, accent tints)
+       → legacy aliases in marketing.css re-pointed at these
+
+   Derived color tokens are declared twice:
+     1. literal fallbacks matching the pre-token visual language (below) —
+        these are what non-color-mix browsers (Safari <16.2) render;
+     2. a color-mix() upgrade inside @supports. The @supports rule ALSO
+        targets the retheme scopes ([data-cms-block-id], .cms-band--*):
+        custom properties resolve var() references on the element that
+        DECLARES them, so re-declaring the derived chain inside each scope
+        is what makes per-block --brand-* overrides and band tints actually
+        re-tint everything (see the resolution note in ProductWebsite.jsx
+        buildBlockOverrideCss).
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.marketing-root {
+    /* ── Surface ladder ─────────────────────────────────────────────── */
+    --surface-0: var(--brand-bg);        /* page canvas */
+    --surface-1: var(--brand-surface);   /* bands, alternating sections */
+    --surface-2: rgba(0, 0, 0, 0.03);    /* card fill        (fallback) */
+    --surface-3: rgba(0, 0, 0, 0.06);    /* hover / elevated (fallback) */
+
+    /* ── Hairlines (replace one-off border rgba literals) ───────────── */
+    --hairline:        rgba(15, 23, 42, 0.08);
+    --hairline-strong: rgba(15, 23, 42, 0.16);
+    --hairline-accent: rgba(245, 166, 35, 0.3);
+
+    /* ── Brand-derived accent tints (replace literal amber rgba) ────── */
+    --accent-tint-08: rgba(245, 166, 35, 0.08);
+    --accent-tint-14: rgba(245, 166, 35, 0.14);
+    --accent-tint-22: rgba(245, 166, 35, 0.22);
+    --glow-color:     rgba(245, 166, 35, 0.18);
+    /* Accent used AS TEXT on a light surface. Raw --brand-primary (#F5A623)
+       is fine as a fill but reads ~2:1 as 13px eyebrow text on white — a
+       WCAG failure. This is the same hue pulled toward the ink color until
+       it passes 4.5:1 on both the canvas (#FFF → 5.2:1) and the surface
+       band (#F7F8FA → 4.9:1). The literal matches the color-mix result in
+       the @supports upgrade below; dark scopes re-derive it light because
+       their --brand-text is light (and .cms-band--dark / .cms-theme-dark
+       pin it back to the bright accent explicitly). */
+    --accent-strong:  #8E6626;
+
+    /* ── Type scale — per-size leading + tracking ───────────────────── */
+    /* --display-max is set inline by applyDesignToRoot from
+       design.typography.displaySize (64/80/96px); 5rem = 80px default. */
+    --text-display:     clamp(2.75rem, 1.9rem + 3.2vw, var(--display-max, 5rem));
+    --leading-display:  1.05;
+    --tracking-display: -0.028em;
+    --text-h1: clamp(2.5rem, 1.9rem + 2.2vw, 3.25rem);  --leading-h1: 1.08; --tracking-h1: -0.025em;
+    --text-h2: clamp(2rem, 1.6rem + 1.5vw, 2.75rem);    --leading-h2: 1.12; --tracking-h2: -0.02em;
+    --text-h3: clamp(1.3rem, 1.15rem + 0.7vw, 1.6rem);  --leading-h3: 1.25; --tracking-h3: -0.01em;
+    --text-lead:    1.1875rem; --leading-lead: 1.55;
+    --text-body:    1rem;      --leading-body: 1.65;
+    --text-small:   0.875rem;
+    --text-eyebrow: 0.8125rem; --tracking-eyebrow: 0.14em;
+    --heading-weight: 600;     /* set inline from design.typography.headingWeight */
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+    /* ── Spacing scale (4/8 base) + section rhythm ──────────────────── */
+    --space-1: 4px;  --space-2: 8px;   --space-3: 12px; --space-4: 16px;
+    --space-6: 24px; --space-8: 32px;  --space-12: 48px; --space-16: 64px;
+    --space-24: 96px; --space-32: 128px;
+    --section-y:      clamp(72px, 6vw + 40px, 112px);
+    --section-y-hero: clamp(88px, 8vw + 48px, 152px);
+
+    /* ── Motion tokens ──────────────────────────────────────────────── */
+    --motion-fast: 150ms;
+    --motion-med:  250ms;
+    --motion-slow: 450ms;
+    --ease-out:  cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+    --reveal-distance: 16px;
+    --reveal-stagger:  70ms;
+
+    /* ── Grain overlay asset (toggled via .cms-grain) ───────────────── */
+    --grain-url: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='0.55'/></svg>");
+
+    /* Hexagon line-art pattern — used as an alpha MASK so its color comes
+       from CSS (background-color on the masked element), never baked in. */
+    --hex-pattern: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='64'><path d='M28 2 52 16v32L28 62 4 48V16z' fill='none' stroke='black' stroke-width='1.5'/></svg>");
+}
+
+/* color-mix upgrade — same declaration list on the root AND on every
+   retheme scope, so per-block color overrides and band tints re-derive
+   the whole chain from their local --brand-* values. */
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+    .marketing-root,
+    .marketing-root [data-cms-block-id],
+    .marketing-root .cms-band--surface,
+    .marketing-root .cms-band--tint,
+    .marketing-root .cms-band--dark,
+    .marketing-root .cms-band--primary {
+        --surface-2: color-mix(in srgb, var(--brand-text) 4%, transparent);
+        --surface-3: color-mix(in srgb, var(--brand-text) 8%, transparent);
+        --hairline:        color-mix(in srgb, var(--brand-text) 10%, transparent);
+        --hairline-strong: color-mix(in srgb, var(--brand-text) 18%, transparent);
+        --hairline-accent: color-mix(in srgb, var(--brand-primary) 30%, transparent);
+        --accent-tint-08: color-mix(in srgb, var(--brand-primary) 8%,  transparent);
+        --accent-tint-14: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+        --accent-tint-22: color-mix(in srgb, var(--brand-primary) 22%, transparent);
+        --glow-color:     color-mix(in srgb, var(--brand-primary) 18%, transparent);
+        /* Mixing toward --brand-text (not black) keeps this self-inverting:
+           light theme darkens the accent, dark scopes lighten it. */
+        --accent-strong:  color-mix(in srgb, var(--brand-primary) 55%, var(--brand-text));
+        --text-muted:     color-mix(in srgb, var(--brand-text) 55%, transparent);
+    }
+}
+
+/* Retheme scopes — re-declare the legacy alias layer so a block-level
+   --brand-* override (buildBlockOverrideCss) or a band tint re-evaluates
+   the aliases with its own brand values instead of inheriting the root's
+   already-resolved ones. Values must mirror the root aliases in
+   marketing.css. Blocks without overrides re-resolve to identical values,
+   so this rule is a no-op for them. */
+.marketing-root [data-cms-block-id],
+.marketing-root .cms-band--surface,
+.marketing-root .cms-band--tint,
+.marketing-root .cms-band--dark,
+.marketing-root .cms-band--primary {
+    --bg-primary:     var(--brand-bg);
+    --bg-secondary:   var(--brand-surface);
+    --accent:         var(--brand-primary);
+    --accent-light:   var(--brand-accent);
+    --text-primary:   var(--brand-text);
+    --text-secondary: var(--brand-text-secondary);
+    --accent-gradient: var(--brand-primary);
+    /* Card tokens are DERIVED (they reference --surface-2/--hairline), so
+       they must be re-declared here too — a custom property resolves its
+       var() references on the element that DECLARES it. Without this, cards
+       inside a dark band would keep the page-level fill and the whole band
+       feature would silently regress. */
+    --card-bg:           var(--surface-2);
+    --card-border-color: var(--hairline);
+    --card-hover-bg:     var(--surface-3);
+    --card-hover-border: var(--hairline-accent);
+}
+.marketing-root.cms-gradient [data-cms-block-id],
+.marketing-root.cms-gradient .cms-band--surface,
+.marketing-root.cms-gradient .cms-band--tint,
+.marketing-root.cms-gradient .cms-band--dark,
+.marketing-root.cms-gradient .cms-band--primary {
+    --accent-gradient: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-accent) 100%);
+}
+
+/* ── Per-block style v2 (block.style — band / rhythm / glow / columns) ──
+   All classes live on the .cms-block-wrap wrapper. The retheme-scope
+   rule above re-derives the alias + derived chain under .cms-band--*,
+   so EVERY section works on a band with zero per-section code. */
+
+.marketing-root .cms-band--surface { background: var(--bg-secondary); }
+.marketing-root .cms-band--tint {
+    background: rgba(245, 166, 35, 0.05);
+    background: color-mix(in srgb, var(--brand-primary) 5%, var(--bg-primary));
+}
+.marketing-root .cms-band--primary {
+    background: var(--brand-primary);
+    color: #fff;
+}
+/* Token-driven dark band — the "1–2 charcoal bands per page" device.
+   Re-scoping --brand-* here makes the alias/derived chain (and thus all
+   card fills, hairlines, tints) re-evaluate for this block only. */
+.marketing-root .cms-band--dark {
+    --brand-bg:             var(--band-dark-bg, #17161D);
+    --brand-surface:        var(--band-dark-surface, #201F27);
+    --brand-text:           var(--band-dark-text, #F4F2EE);
+    --brand-text-secondary: var(--band-dark-text-secondary, rgba(244, 242, 238, 0.72));
+    /* Accent-as-text stays the BRIGHT accent on the dark band (8.8:1 for
+       the default amber) — this also covers non-color-mix browsers, whose
+       inherited literal fallback is the dark-on-light value. Declared after
+       the @supports upgrade above at equal specificity, so it wins here. */
+    --accent-strong:        var(--brand-primary);
+    /* Shadows re-tint inside the band too (they were a literal slate before
+       the --shadow-color split, so they read wrong on a dark band). */
+    --shadow-color:        rgba(0, 0, 0, 0.40);
+    --shadow-color-strong: rgba(0, 0, 0, 0.55);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+/* Vertical rhythm presets — re-declare the section padding token for the
+   wrapped section; explicit spacing strings (inline padding) still win. */
+.marketing-root .cms-rhythm--compact  { --section-y: 48px; }
+.marketing-root .cms-rhythm--spacious { --section-y: clamp(128px, 11vw, 176px); }
+
+/* Accent glow behind a block (::after — ::before belongs to the
+   background-image overlay). Content sits at z-index 1 already. */
+.marketing-root .cms-glow::after {
+    content: '';
+    position: absolute;
+    inset: -10% -20%;
+    background: radial-gradient(50% 55% at 50% 40%, var(--glow-color), transparent 70%);
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* Per-block motion off — forces internal reveals visible. */
+.marketing-root .cms-no-reveal .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+}
+
+/* Grid column override (style.columns → --cms-cols set inline on the
+   wrapper). Selectors include the wrapper attribute so they outrank the
+   base grid rules in marketing.css regardless of import order; the
+   media overrides below must therefore also live here. */
+.marketing-root [data-cms-block-id] .features-grid  { grid-template-columns: repeat(var(--cms-cols, 3), 1fr); }
+.marketing-root [data-cms-block-id] .steps          { grid-template-columns: repeat(var(--cms-cols, 3), 1fr); }
+.marketing-root [data-cms-block-id] .security-grid  { grid-template-columns: repeat(var(--cms-cols, 2), 1fr); }
+.marketing-root [data-cms-block-id] .tech-stats     { grid-template-columns: repeat(var(--cms-cols, 4), 1fr); }
+@media (max-width: 1024px) {
+    .marketing-root [data-cms-block-id] .features-grid { grid-template-columns: repeat(min(var(--cms-cols, 3), 2), 1fr); }
+    .marketing-root [data-cms-block-id] .steps         { grid-template-columns: repeat(min(var(--cms-cols, 3), 2), 1fr); }
+    .marketing-root [data-cms-block-id] .security-grid { grid-template-columns: repeat(min(var(--cms-cols, 2), 2), 1fr); }
+    .marketing-root [data-cms-block-id] .tech-stats    { grid-template-columns: repeat(min(var(--cms-cols, 4), 2), 1fr); }
+}
+@media (max-width: 768px) {
+    .marketing-root [data-cms-block-id] .features-grid,
+    .marketing-root [data-cms-block-id] .steps,
+    .marketing-root [data-cms-block-id] .security-grid { grid-template-columns: 1fr; }
+    .marketing-root [data-cms-block-id] .tech-stats    { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Motion level (design.motion) ─────────────────────────────────────
+   'subtle' quiets everything; 'none' disables entrance animation and
+   ambience entirely (marketing.css's prefers-reduced-motion rule covers
+   the OS-level preference; these classes are the site-level knob). */
+.marketing-root.cms-motion--subtle {
+    --motion-slow: 300ms;
+    --reveal-distance: 10px;
+    --reveal-stagger: 40ms;
+}
+.marketing-root.cms-motion--subtle .hero::before,
+.marketing-root.cms-motion--subtle .hero::after {
+    animation: none;
+}
+.marketing-root.cms-motion--none .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+}
+.marketing-root.cms-motion--none .hero::before,
+.marketing-root.cms-motion--none .hero::after,
+.marketing-root.cms-motion--none .chat-bubble {
+    animation: none;
+}
+.marketing-root.cms-motion--none .social-proof-logos.is-scrolling .social-proof-logos-track {
+    animation: none;
+    transform: none;
+}
+
+/* ── Shared type/format utilities (consumed by section renderers) ────── */
+
+/* Display headline — the hero scale. Sections keep .headline-lg so the
+   page opens louder than any section title. */
+.marketing-root .headline-display {
+    font-size: var(--text-display);
+    line-height: var(--leading-display);
+    letter-spacing: var(--tracking-display);
+    font-weight: var(--heading-weight, 600);
+}
+
+/* Mono-caps eyebrow — the "01 — PRIVATE BY DESIGN" label register. */
+.marketing-root .eyebrow-mono {
+    font-family: var(--font-mono);
+    font-size: var(--text-eyebrow);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+}
+/* Index digits are text at eyebrow size — same 4.5:1 rule as .label. */
+.marketing-root .eyebrow-mono .eyebrow-index { color: var(--accent-strong, var(--accent)); }
+
+/* Tabular numerals — stats, prices, chapter numbers. */
+.marketing-root .tnum { font-variant-numeric: tabular-nums lining-nums; }
+
+/* Page-wide grain overlay (design.grain). Fixed so it doesn't repaint on
+   scroll; z-index above backgrounds but below nothing interactive thanks
+   to pointer-events:none. */
+.marketing-root.cms-grain::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: var(--grain-url);
+    background-repeat: repeat;
+    opacity: 0.04;
+    pointer-events: none;
+    z-index: 2147483000;
+}
+
+/* Hex line-art motif — the one ownable brand device (amber + hexagon
+   geometry, never literal bees). Apply the class to a positioned section;
+   the pattern paints in the accent color at whisper opacity. */
+.marketing-root .cms-motif-hex { position: relative; }
+.marketing-root .cms-motif-hex::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: var(--accent);
+    opacity: 0.05;
+    -webkit-mask-image: var(--hex-pattern);
+            mask-image: var(--hex-pattern);
+    -webkit-mask-size: 96px auto;
+            mask-size: 96px auto;
+    pointer-events: none;
+}
+
+/* ── FramedMedia (.cms-frame) — the single premium media treatment ──── */
+.marketing-root .cms-frame {
+    margin: 0;
+    position: relative;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--hairline-strong);
+    background: var(--surface-1);
+    overflow: hidden;
+}
+.marketing-root .cms-frame--none {
+    border: none;
+    background: transparent;
+}
+.marketing-root .cms-frame--glow {
+    box-shadow: 0 0 80px var(--glow-color);
+}
+.marketing-root .cms-frame-chrome {
+    height: 36px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--hairline);
+}
+.marketing-root .cms-frame-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--hairline-strong);
+}
+.marketing-root .cms-frame-media {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+/* Light/dark screenshot pair — CSS decides which is visible so a theme
+   flip needs no JS and no reflow beyond the swap. */
+.marketing-root .cms-frame-media--dark { display: none; }
+.marketing-root.cms-theme-dark .cms-frame-media--dark  { display: block; }
+.marketing-root.cms-theme-dark .cms-frame-media--light { display: none; }
+/* Bottom fade-mask — full-bleed showcase panels melt into the page. */
+.marketing-root .cms-frame--fade::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 26%;
+    background: linear-gradient(to bottom, transparent, var(--bg-primary));
+    pointer-events: none;
+}
+/* Empty-slot skeleton — looks intentional in the editor and in AI-built
+   drafts (the builder never invents asset keys). */
+.marketing-root .cms-frame-placeholder {
+    aspect-ratio: 16 / 9;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    justify-content: center;
+}
+.marketing-root .cms-frame-ph-line {
+    height: 12px;
+    border-radius: 6px;
+    background: var(--surface-3);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   THEME SHAPE + SIZE (design.components / design.layout)
+
+   Governing rule: every enum's DEFAULT value emits NO inline property, and
+   every consumer below is written `var(--token, <today's exact value>)`.
+   So an absent field, an unknown field and an explicitly-default field all
+   render byte-identically to before this system existed.
+
+   Class-vs-variable split follows the .cms-motion--* precedent: an enum
+   that only changes NUMBERS is an inline custom property; an enum that
+   changes WHICH DECLARATIONS EXIST is a root class.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Shared card recipe ──────────────────────────────────────────────────
+   Declared as a SELECTOR LIST rather than a new className so no JSX has to
+   change and no markup can go stale. `.cms-card` is included so new /
+   AI-authored markup can opt in directly.
+
+   Base and each per-section recipe are both (0,2,0) specificity, so the
+   recipe — later in the cascade — wins for any property both declare.
+   Each recipe is therefore reduced to ONLY custom properties + layout
+   properties; it must never re-declare padding/background/border/
+   border-radius/box-shadow, or the token would be dead. */
+.marketing-root .cms-card,
+.marketing-root .feature-card,
+.marketing-root .security-card,
+.marketing-root .testimonial-card,
+.marketing-root .showcase-code,
+.marketing-root .pricing-card,
+.marketing-root .arch-layer {
+    position: relative;
+    padding: calc(var(--card-pad-base, 28px) * var(--card-pad-scale, 1));
+    border-radius: var(--card-radius, var(--radius-lg));
+    background: var(--card-bg, var(--surface-2));
+    border: var(--card-border-width, 1px) solid var(--card-border-color, var(--hairline));
+    box-shadow: var(--card-shadow, none);
+    /* Named properties, not `all`. `transition: all` makes Chrome treat every
+       card as a potential animation of unsupported (non-composited)
+       properties — Lighthouse counted the card recipe as the bulk of its
+       "46-72 non-composited animated elements". These four are what the
+       hover state actually changes. */
+    transition:
+        transform var(--transition-med),
+        background-color var(--transition-med),
+        border-color var(--transition-med),
+        box-shadow var(--transition-med);
+}
+.marketing-root .cms-card--hover:hover,
+.marketing-root .feature-card:hover,
+.marketing-root .security-card:hover,
+.marketing-root .testimonial-card:hover {
+    transform: translateY(var(--card-lift, 0px));
+    background: var(--card-hover-bg, var(--surface-3));
+    border-color: var(--card-hover-border, var(--hairline-accent));
+    box-shadow: var(--card-shadow-hover, var(--shadow-card));
+}
+
+/* Card style variants. 'hairline' is the default and has no class. */
+.marketing-root.cms-cards--soft {
+    --card-bg:           var(--surface-1);
+    --card-border-color: var(--hairline);
+    --card-radius:       calc(var(--radius-base) * 1.9);
+    --card-shadow:       0 2px 10px var(--shadow-color);
+    --card-shadow-hover: 0 8px 24px var(--shadow-color);
+}
+.marketing-root.cms-cards--flat {
+    --card-bg:           var(--surface-2);
+    --card-border-width: 0px;
+    --card-border-color: transparent;
+    --card-shadow:       none;
+    --card-shadow-hover: none;
+    --card-hover-bg:     var(--surface-3);
+    --card-hover-border: transparent;
+}
+.marketing-root.cms-cards--elevated {
+    --card-bg:           var(--surface-0);
+    --card-border-color: var(--hairline);
+    --card-shadow:       var(--shadow-card);
+    /* Without a distinct hover the rest→hover delta is invisible, because
+       rest already carries --shadow-card. */
+    --card-shadow-hover: 0 12px 32px var(--shadow-color-strong);
+}
+/* MANDATORY corrective rules: `flat` drops the border, and these two
+   recipes set --card-bg on the ELEMENT (which beats the root class), so
+   pricing cards would render as an invisible page-canvas slab. */
+.marketing-root.cms-cards--flat .pricing-card { --card-bg: var(--surface-1); }
+.marketing-root.cms-cards--flat .arch-layer   { --card-bg: var(--surface-2); }
+
+/* ── Nav variants ────────────────────────────────────────────────────────
+   'bar' is the default and has no class.
+
+   KEY STRUCTURAL POINT for `floating`: .header STAYS `position:fixed;
+   left:0; right:0; height:var(--header-height)` and becomes a transparent
+   spacer — the PILL is .header-inner. That keeps every --header-height
+   consumer working untouched (.mobile-nav top/max-height, .hero
+   padding-top, .security-ledger-head sticky offset). Because box-sizing is
+   border-box globally, padding-top on .header shrinks the content box and
+   .header-inner{height:100%} resolves the pill height with no arithmetic. */
+
+/* --nav-bg is a NEW token rather than a reuse of --bg-glass: --bg-glass is
+   a hardcoded slate rgba that reads blue-grey on a warm near-black canvas,
+   and re-deriving --bg-glass itself would change the scrolled header for
+   every existing site. Literal first, color-mix upgrade in @supports. */
+.marketing-root { --nav-bg: var(--bg-glass); }
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+    .marketing-root { --nav-bg: color-mix(in srgb, var(--brand-bg) 72%, transparent); }
+}
+
+/* `.nav-open` is listed for the same reason `.scrolled` is: marketing.css
+   gives the bar a glass background while a menu is open, and that rule is
+   declared later at equal specificity, so without naming the class here it
+   would win and paint a full-width bar behind the floating pill. */
+.marketing-root.cms-nav--floating .header,
+.marketing-root.cms-nav--floating .header.scrolled,
+.marketing-root.cms-nav--floating .header.nav-open {
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    padding-top: var(--nav-float-gap, 14px);
+}
+.marketing-root.cms-nav--floating .header-inner {
+    max-width: min(var(--nav-max-width, 1120px), var(--max-width), calc(100vw - 32px));
+    padding: 0 var(--nav-float-pad, 20px);
+    border-radius: var(--nav-radius, var(--pill-radius, 999px));
+    background: var(--nav-bg);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(20px) saturate(1.5);
+    transition: box-shadow var(--transition-med), background var(--transition-med);
+}
+.marketing-root.cms-nav--floating .header.scrolled .header-inner {
+    box-shadow: 0 8px 30px var(--shadow-color-strong);
+}
+/* Chip hover replaces the 2px underline — today that underline is the ONLY
+   nav hover the CSS can express. */
+.marketing-root.cms-nav--floating .header-nav     { gap: var(--nav-gap, 4px); }
+.marketing-root.cms-nav--floating .header-actions { gap: 10px; }
+.marketing-root.cms-nav--floating .header-nav a::after { content: none; }
+.marketing-root.cms-nav--floating .header-nav a {
+    padding: 8px 12px;
+    border-radius: var(--nav-link-radius, var(--pill-radius, 999px));
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.marketing-root.cms-nav--floating .header-nav a:hover,
+.marketing-root.cms-nav--floating .header-nav a.active {
+    background: var(--surface-2);
+    color: var(--text-primary);
+}
+/* The mega panel is left:0 with max-width min(960px, 100vw-32px), which can
+   overflow the right edge of a 1120px pill. Centre it instead. */
+.marketing-root.cms-nav--floating .nav-item.is-mega .nav-mega {
+    left: 50%;
+    transform: translateX(-50%) translateY(-4px);
+}
+.marketing-root.cms-nav--floating .nav-item.is-mega.is-open .nav-mega,
+.marketing-root.cms-nav--floating .nav-item.is-mega:hover .nav-mega,
+.marketing-root.cms-nav--floating .nav-item.is-mega:focus-within .nav-mega {
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Bordered — solid bar with a persistent hairline, no glass. Uses the same
+   fake-hairline box-shadow device as .scrolled so the 1px never eats into
+   --header-height. */
+.marketing-root.cms-nav--bordered .header,
+.marketing-root.cms-nav--bordered .header.scrolled,
+.marketing-root.cms-nav--bordered .header.nav-open {
+    background: var(--nav-bg-solid, var(--bg-primary));
+    box-shadow: 0 1px 0 0 var(--border-subtle);
+    backdrop-filter: none;
+}
+
+/* Mobile: inset the drawer to match the pill. The closed-state
+   translateY(-100%) math is unchanged, and visibility:hidden still does the
+   hiding.
+
+   1024px, NOT 768: that is where marketing.css now swaps the nav for the
+   drawer. At 768 the inset stopped applying between 769 and 1024, so the
+   floating variant showed a full-bleed square-cornered drawer hanging off a
+   rounded pill. */
+@media (max-width: 1024px) {
+    .marketing-root.cms-nav--floating .mobile-nav {
+        /* + announce-height, like the max-height below — without it an
+           active announcement bar pushed the header down but not the
+           drawer, so the drawer's first item opened UNDER the header. */
+        top: calc(var(--header-height) + var(--announce-height, 0px) + 8px);
+        left: 16px;
+        right: 16px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        /* `overflow: hidden` clipped the y-axis too, so in this variant the
+           drawer could not scroll and anything past the fold — with the
+           Product accordion open, most of it — was unreachable. Hidden on x
+           still clips the corners to the radius. */
+        overflow: hidden auto;
+        max-height: calc(100vh - var(--header-height) - var(--announce-height, 0px) - 24px);
+        max-height: calc(100dvh - var(--header-height) - var(--announce-height, 0px) - 24px);
+    }
+}

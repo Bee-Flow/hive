@@ -132,7 +132,20 @@ const SignupStepAccount = ({
             setError('');
             try {
                 const pendingBody = isConsumerOAuth
-                    ? { signupType: 'consumer', authMethod: signupData.authMethod, consent: { accepted: true, accountType: 'consumer' } }
+                    ? {
+                        signupType: 'consumer',
+                        authMethod: signupData.authMethod,
+                        // Carried through the session into the OAuth callback,
+                        // which writes this user's personal Privacy Shield so a
+                        // new personal account starts protected (BFSF-289).
+                        privacyShield: {
+                            enabled: signupData.shieldEnabled !== false,
+                            piiDetectionCategories: signupData.piiCategories || [],
+                            piiDetectionAction: signupData.piiAction || 'tokenize',
+                            euModeEnabled: signupData.euModeEnabled,
+                        },
+                        consent: { accepted: true, accountType: 'consumer' },
+                    }
                     : {
                         newOrgName: signupData.newOrgName,
                         orgDetails: {

@@ -2,6 +2,7 @@ import { CheckCircle2, Loader2, ShieldQuestion, XCircle } from 'lucide-react';
 import React, { useState } from 'react';
 import useAutomationApi from '../../../../../hooks/useAutomationApi';
 import { toast } from '../../../../shared/Toast';
+import { denseInputClass } from '../flow/settings/formStyles';
 
 /**
  * Inline action bar for a step that's paused awaiting human approval.
@@ -58,7 +59,7 @@ export default function ApprovalActionBar({ runId, stepId, onResolved }) {
                     onChange={(e) => setReason(e.target.value)}
                     rows={2}
                     placeholder="Optional reason (recorded on reject)…"
-                    className="w-full px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                    className={denseInputClass('w-full')}
                 />
                 <div className="flex items-center gap-2">
                     <button

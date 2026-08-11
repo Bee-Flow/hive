@@ -2,11 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import TicketTimeline from './TicketTimeline';
 import { authFetch } from '../../../../utils/helpers';
+import { ok } from '@/test/http';
 
 vi.mock('../../../../utils/helpers', () => ({ API_BASE: '', authFetch: vi.fn() }));
-vi.mock('../../../../hooks/useTranslation', () => ({ default: () => ({ t: (_k, fallback) => fallback || _k }) }));
-
-const ok = (body) => Promise.resolve({ ok: true, json: async () => body });
+vi.mock('../../../../hooks/useTranslation', () => import('@/test/useTranslationMock'));
 
 describe('TicketTimeline', () => {
     beforeEach(() => { cleanup(); authFetch.mockReset(); });

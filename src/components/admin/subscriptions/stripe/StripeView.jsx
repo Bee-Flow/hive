@@ -205,6 +205,14 @@ export function StripeView() {
                     label="Enable Stripe Tax"
                     description="Automatically calculate and collect VAT on subscriptions."
                 />
+                {/* BFSF-250: flipping the toggle alone is not enough — prices
+                    synced while it was off lack tax_behavior (checkout fails
+                    against them) and Stripe Tax needs Dashboard registration.
+                    Existing subscriptions are backfilled automatically on
+                    enable; note the real-billing impact. */}
+                <p className="mt-2 text-[11px] text-amber-500/90">
+                    Enabling requires: (1) Stripe Tax activated in the Stripe Dashboard (origin address + NL VAT registration), and (2) re-syncing every plan so new Prices carry tax_behavior. Existing active subscriptions are backfilled automatically — their next invoice will include 21% BTW, so announce this to customers first.
+                </p>
                 <div className="mt-3">
                     <Field label="Tax nexus country" hint="where your business is registered for VAT">
                         <Select

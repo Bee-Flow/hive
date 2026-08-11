@@ -240,7 +240,10 @@ export function scoreSuggestions({
     const scores = new Map(); // key -> { score, reason }
 
     const bump = (key, amount, reason) => {
-        if (!key || key.startsWith('trigger:')) return; // never suggest a trigger
+        // Never suggest a trigger as "what comes NEXT" — nothing follows a
+        // step with a trigger. (Triggers ARE offered in search and in
+        // "Frequently used"; that gate lives in stepPalette.itemForKey.)
+        if (!key || key.startsWith('trigger:')) return;
         const cur = scores.get(key);
         if (cur) {
             cur.score += amount;

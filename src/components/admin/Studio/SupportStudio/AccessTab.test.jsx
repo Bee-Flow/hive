@@ -2,13 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import AccessTab from './AccessTab';
 import { authFetch } from '../../../../utils/helpers';
+import { ok } from '@/test/http';
 
 vi.mock('../../../../utils/helpers', () => ({ API_BASE: '', authFetch: vi.fn() }));
-vi.mock('../../../../hooks/useTranslation', () => ({
-    default: () => ({ t: (_k, fallback) => fallback || _k }),
-}));
+vi.mock('../../../../hooks/useTranslation', () => import('@/test/useTranslationMock'));
 
-const ok = (body) => Promise.resolve({ ok: true, json: async () => body });
 const INBOX = { id: 'i1', organization_id: 'org1' };
 const ADMIN = { isAdmin: true };
 

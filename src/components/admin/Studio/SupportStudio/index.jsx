@@ -23,6 +23,31 @@ const STATUS_COLORS = {
 // Status tabs + a tag-based "Not support" pseudo-tab.
 const FILTER_IDS = ['awaiting_agent', 'awaiting_user', 'resolved', '', 'not_support'];
 
+// Auto-refresh interval choices for the ticket list (persisted per browser).
+const AUTO_REFRESH_STORAGE_KEY = 'support.autoRefreshMs';
+const DEFAULT_AUTO_REFRESH_MS = 30000;
+const AUTO_REFRESH_OPTIONS = [
+    { ms: 0, key: 'off' },
+    { ms: 15000, key: '15s' },
+    { ms: 30000, key: '30s' },
+    { ms: 60000, key: '1m' },
+    { ms: 300000, key: '5m' },
+];
+
+const autoRefreshLabel = (t, key) => {
+    if (key === 'off') return t('support.refresh.off', 'Off');
+    return t(`support.refresh.${key}`, key);
+};
+
+const readStoredAutoRefreshMs = () => {
+    try {
+        const raw = window.localStorage.getItem(AUTO_REFRESH_STORAGE_KEY);
+        if (raw === null) return DEFAULT_AUTO_REFRESH_MS;
+        const v = Number(raw);
+        return AUTO_REFRESH_OPTIONS.some(o => o.ms === v) ? v : DEFAULT_AUTO_REFRESH_MS;
+    } catch (_) { return DEFAULT_AUTO_REFRESH_MS; }
+};
+
 const statusLabel = (t, s) => {
     if (s === '') return t('support.filter.all', 'All');
     if (s === 'not_support') return t('support.filter.not_support', 'Not support');
@@ -39,7 +64,14 @@ const slaBreached = (th) => !!(th && (th.sla_first_response_breached_at || th.sl
  * SupportStudio — tenant customer-support inbox inside the Studio.
  * Backend: /api/support-inbox/* (support_inbox license + beta + permission).
  */
-export default function SupportStudio({ user }) {
+/**
+ * @param {string} [initialTicketId] Open this thread on mount instead of the
+ *   "Select a ticket" pane. Same seam SkillsStudio, KBsStudio, AgentStudio and
+ *   NotebooksPage already expose (`initialSkillId`, `initialKbId`, …) — it is
+ *   how a deep link, and the public demo, land on something worth reading
+ *   rather than on an empty right-hand pane.
+ */
+export default function SupportStudio({ user, initialTicketId = null }) {
     const { t } = useTranslation();
     const [inboxes, setInboxes] = useState([]);
     const [activeInbox, setActiveInbox] = useState('all');
@@ -47,9 +79,11 @@ export default function SupportStudio({ user }) {
     const [search, setSearch] = useState('');
     const [threads, setThreads] = useState([]);
     const [counts, setCounts] = useState({});
-    const [activeThreadId, setActiveThreadId] = useState(null);
+    const [activeThreadId, setActiveThreadId] = useState(initialTicketId);
     const [view, setView] = useState('inbox'); // 'inbox' | 'settings' | 'insights'
     const [limit, setLimit] = useState(100);
+    const [refreshing, setRefreshing] = useState(false);
+    const [autoRefreshMs, setAutoRefreshMs] = useState(readStoredAutoRefreshMs);
 
     const fetchInboxes = useCallback(async () => {
         try {
@@ -71,11 +105,32 @@ export default function SupportStudio({ user }) {
         } catch (_) {}
     }, [activeInbox, statusFilter, search, limit]);
 
+    // Manual refresh — same fetch, but with a spinning indicator so the click
+    // gives visible feedback even when the list comes back unchanged.
+    const manualRefresh = useCallback(async () => {
+        setRefreshing(true);
+        try { await fetchThreads(); } finally { setRefreshing(false); }
+    }, [fetchThreads]);
+
     useEffect(() => { fetchInboxes(); }, [fetchInboxes]);
     useEffect(() => {
         const id = setTimeout(fetchThreads, search ? 250 : 0); // debounce search typing
         return () => clearTimeout(id);
     }, [fetchThreads, search]);
+
+    // Persist the chosen interval so it sticks across reloads.
+    useEffect(() => {
+        try { window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(autoRefreshMs)); } catch (_) {}
+    }, [autoRefreshMs]);
+
+    // Poll the ticket list on the chosen interval. This is the reliable fallback
+    // when the SSE stream is idle-dropped (e.g. behind an embed gateway), so the
+    // list stays fresh without a manual refresh.
+    useEffect(() => {
+        if (!autoRefreshMs) return undefined;
+        const id = setInterval(() => { fetchThreads(); }, autoRefreshMs);
+        return () => clearInterval(id);
+    }, [autoRefreshMs, fetchThreads]);
 
     // Live updates: refresh the ticket list on any inbox event. The open ticket
     // refreshes via its own Refresh control / re-open.
@@ -135,7 +190,20 @@ export default function SupportStudio({ user }) {
 
                     <div className="flex items-center justify-between mt-1 px-1">
                         <h4 className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{t('support.nav.tickets', 'Tickets')}</h4>
-                        <button onClick={fetchThreads} className="p-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)]" title={t('support.common.refresh', 'Refresh')}><RefreshCw size={11} /></button>
+                        <div className="flex items-center gap-1">
+                            <select value={autoRefreshMs} onChange={e => setAutoRefreshMs(Number(e.target.value))}
+                                title={t('support.refresh.auto_title', 'Auto-refresh interval')}
+                                className="text-[10px] rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-tertiary)] px-1 py-0.5">
+                                {AUTO_REFRESH_OPTIONS.map(o => (
+                                    <option key={o.key} value={o.ms}>{autoRefreshLabel(t, o.key)}</option>
+                                ))}
+                            </select>
+                            <button onClick={manualRefresh} disabled={refreshing}
+                                className="p-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] disabled:opacity-60"
+                                title={t('support.common.refresh', 'Refresh')}>
+                                <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
+                            </button>
+                        </div>
                     </div>
 
                     {threads.length === 0 && (
@@ -177,7 +245,7 @@ export default function SupportStudio({ user }) {
                 : view === 'insights'
                     ? <InsightsPanel inboxes={inboxes} activeInbox={activeInbox} onChanged={() => { fetchInboxes(); fetchThreads(); }} />
                     : activeThreadId
-                        ? <TicketDetail key={activeThreadId} threadId={activeThreadId} user={user} onChanged={fetchThreads} />
+                        ? <TicketDetail key={activeThreadId} threadId={activeThreadId} user={user} onChanged={fetchThreads} autoRefreshMs={autoRefreshMs} />
                         : <EmptyState hasConnected={hasConnected} onSettings={() => setView('settings')} />}
         </StudioShell>
     );
@@ -205,7 +273,7 @@ function EmptyState({ hasConnected, onSettings }) {
     );
 }
 
-function TicketDetail({ threadId, user, onChanged }) {
+function TicketDetail({ threadId, user, onChanged, autoRefreshMs = 0 }) {
     const { t } = useTranslation();
     const [thread, setThread] = useState(null);
     const [messages, setMessages] = useState([]);
@@ -226,6 +294,14 @@ function TicketDetail({ threadId, user, onChanged }) {
         if (res.ok) { const d = await res.json(); setThread(d.thread); setMessages(d.messages || []); }
     }, [threadId]);
     useEffect(() => { load(); }, [load]);
+
+    // Keep the open conversation fresh on the same interval as the ticket list,
+    // so a new customer reply or status change shows up without re-opening it.
+    useEffect(() => {
+        if (!autoRefreshMs) return undefined;
+        const id = setInterval(() => { load(); }, autoRefreshMs);
+        return () => clearInterval(id);
+    }, [autoRefreshMs, load]);
 
     const toggleActivity = () => setShowActivity(v => !v);
 

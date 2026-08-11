@@ -24,6 +24,7 @@ const META = [
     { id: 'gamma', label: 'Gamma', group: 'third-party', description: 'Generate presentations' },
     { id: 'afas-profit', label: 'AFAS Profit', group: 'third-party', description: 'Query AFAS Profit data (read-only)' },
     { id: 'nmbrs', label: 'NMBRS', group: 'third-party', description: 'Read NMBRS payroll & HR data (read-only)' },
+    { id: 'vplan', label: 'vPlan', group: 'third-party', description: 'Read vPlan planning & capacity (read-only)' },
     { id: 'n8n', label: 'n8n', group: 'third-party', description: 'Workflow automations' },
     { id: 'linkedin', label: 'LinkedIn', group: 'third-party', description: 'Post to LinkedIn' },
     { id: 'transcription', label: 'Meeting Transcription', group: 'platform', description: 'Transcribe audio with speaker diarization' },

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import SectionFrame from '../components/SectionFrame';
+import { sectionBgClass } from './sectionBg';
 import { inlineTextStyle } from './textStyle';
 import { featureLabel } from '../../shared/featureCatalog';
 
@@ -54,51 +55,26 @@ function formatPrice(amount, currency) {
     }
 }
 
-// Suffix shown after the formatted price ("/maand" or "/jaar"). Kept in
-// Dutch to match the rest of the marketing site's voice. If the plan
-// has no price (custom / "Contact us"), the suffix is suppressed.
-function intervalSuffix(interval) {
-    if (interval === 'yearly')  return '/jaar';
-    if (interval === 'monthly') return '/maand';
+// Suffix shown after the formatted price. Editor-configurable via
+// `suffixMonthly` / `suffixYearly`; the old Dutch literals stay as the
+// absent-field fallback so existing sites render byte-identically.
+function intervalSuffix(interval, data) {
+    if (interval === 'yearly')  return data?.suffixYearly  || '/jaar';
+    if (interval === 'monthly') return data?.suffixMonthly || '/maand';
     return '';
 }
 
-// Pill-style segmented control above the cards. Identical look-and-feel
-// to the prior static block's toggle — just wired to the new interval
-// state instead of a 3D flip.
+// Pill-style segmented control above the cards — token-driven classes
+// in marketing.css (.pricing-toggle).
 function MonthlyYearlyToggle({ monthlyLabel, yearlyLabel, value, onChange }) {
-    const opt = (active) => ({
-        appearance: 'none',
-        WebkitAppearance: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        padding: '8px 20px',
-        borderRadius: '9999px',
-        fontSize: '0.9rem',
-        fontWeight: 600,
-        background: active ? 'var(--accent)' : 'transparent',
-        color: active ? '#FFFFFF' : 'var(--text-secondary)',
-        transition: 'background 0.2s ease, color 0.2s ease',
-    });
     const isYearly = value === 'yearly';
     return (
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
-            <div
-                role="group"
-                aria-label="Billing period"
-                style={{
-                    display: 'inline-flex',
-                    gap: '4px',
-                    padding: '4px',
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '9999px',
-                }}
-            >
-                <button type="button" style={opt(!isYearly)} aria-pressed={!isYearly} onClick={() => onChange('monthly')}>
+        <div className="pricing-toggle-row">
+            <div role="group" aria-label="Billing period" className="pricing-toggle">
+                <button type="button" aria-pressed={!isYearly} onClick={() => onChange('monthly')}>
                     {monthlyLabel}
                 </button>
-                <button type="button" style={opt(isYearly)} aria-pressed={isYearly} onClick={() => onChange('yearly')}>
+                <button type="button" aria-pressed={isYearly} onClick={() => onChange('yearly')}>
                     {yearlyLabel}
                 </button>
             </div>
@@ -106,112 +82,62 @@ function MonthlyYearlyToggle({ monthlyLabel, yearlyLabel, value, onChange }) {
     );
 }
 
-const cardInner = {
-    height: '100%',
-    boxSizing: 'border-box',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    padding: '30px 26px',
-    background: 'var(--bg-primary, #ffffff)',
-    border: '1px solid var(--border-subtle)',
-    borderRadius: 'var(--radius-lg, 16px)',
-    boxShadow: 'var(--shadow-card, 0 10px 30px -12px rgba(15,23,42,0.15))',
-};
-
-const columnOuter = { flex: '1 1 260px', maxWidth: '380px', minWidth: 0 };
-
 // Card for a single plan. All visible text comes from the plan record
 // returned by the public-plans endpoint — admins edit it via the
-// /app/admin/subscriptions page, never inside the CMS.
-function PlanCard({ plan, ctaLabel }) {
+// /app/admin/subscriptions page, never inside the CMS. `featured` +
+// `featuredStyle` drive the emphasis treatment; `ctaFilled` is true for
+// the featured tier, or for every card while no featured tier is chosen
+// (the legacy look).
+function PlanCard({ plan, data, ctaLabel, featured, ctaFilled }) {
     const price = formatPrice(plan.price, plan.currency);
-    const suffix = price ? intervalSuffix(plan.billingInterval) : '';
+    const suffix = price ? intervalSuffix(plan.billingInterval, data) : '';
     const tagline = plan.tagline || plan.description || '';
     const features = Array.isArray(plan.allowedFeatures) ? plan.allowedFeatures : [];
     const hasTrial = Number(plan.trialDays) > 0;
     const ctaHref = `/app/billing?plan=${encodeURIComponent(plan.id)}`;
+    const customPriceText = data?.customPriceText || 'Op aanvraag';
+    const trialTemplate = data?.trialText || '{days} dagen gratis proberen';
+    const featuredStyle = data?.featuredStyle === 'flip' ? 'flip' : 'border';
+
+    const cardClass = [
+        'pricing-card',
+        featured ? 'pricing-card--featured' : '',
+        featured && featuredStyle === 'flip' ? 'pricing-card--flip' : '',
+    ].filter(Boolean).join(' ');
 
     return (
-        <div style={cardInner}>
-            <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700, lineHeight: 1.25, color: 'var(--text-primary)' }}>
-                {plan.name}
-            </h3>
+        <div className={cardClass}>
+            <h3 className="pricing-name">{plan.name}</h3>
 
             {price ? (
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                    <span style={{ fontSize: '2.2rem', fontWeight: 800, lineHeight: 1.15, color: 'var(--text-primary)' }}>
-                        {price}
-                    </span>
-                    {suffix ? (
-                        <span style={{ fontSize: '0.95rem', color: 'var(--text-secondary)' }}>{suffix}</span>
-                    ) : null}
+                <div className="pricing-price-row">
+                    <span className="pricing-price">{price}</span>
+                    {suffix ? <span className="pricing-suffix">{suffix}</span> : null}
                 </div>
             ) : (
-                <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Op aanvraag
-                </div>
+                <div className="pricing-custom">{customPriceText}</div>
             )}
 
-            {tagline ? (
-                <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: 1.5, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
-                    {tagline}
-                </p>
-            ) : null}
+            {tagline ? <p className="pricing-tagline">{tagline}</p> : null}
 
             {hasTrial ? (
-                <div
-                    style={{
-                        alignSelf: 'flex-start',
-                        padding: '4px 12px',
-                        borderRadius: '9999px',
-                        background: 'var(--accent-muted, rgba(245, 166, 35, 0.12))',
-                        color: 'var(--accent, #F5A623)',
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                    }}
-                >
-                    {plan.trialDays} dagen gratis proberen
+                <div className="pricing-trial">
+                    {trialTemplate.replace('{days}', String(plan.trialDays))}
                 </div>
             ) : null}
 
             {features.length ? (
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <ul className="pricing-features">
                     {features.map((f, i) => (
-                        <li
-                            key={i}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'flex-start',
-                                gap: '8px',
-                                fontSize: '0.92rem',
-                                color: 'var(--text-secondary)',
-                                lineHeight: 1.5,
-                            }}
-                        >
-                            <span aria-hidden="true" style={{ color: 'var(--accent, #F5A623)', flex: 'none' }}>✓</span>
+                        <li key={i} className="pricing-feature">
+                            <span aria-hidden="true" className="check">✓</span>
                             <span>{featureLabel(f)}</span>
                         </li>
                     ))}
                 </ul>
             ) : null}
 
-            <a
-                href={ctaHref}
-                style={{
-                    marginTop: 'auto',
-                    display: 'block',
-                    textAlign: 'center',
-                    background: 'var(--accent, #F5A623)',
-                    color: '#FFFFFF',
-                    padding: '13px 22px',
-                    borderRadius: '9999px',
-                    fontSize: '0.98rem',
-                    fontWeight: 600,
-                    textDecoration: 'none',
-                    lineHeight: 1.2,
-                }}
-            >
+            <a href={ctaHref} className={`pricing-cta${ctaFilled ? ' pricing-cta--filled' : ''}`}>
                 {ctaLabel}
             </a>
         </div>
@@ -221,17 +147,11 @@ function PlanCard({ plan, ctaLabel }) {
 // Skeleton placeholder shown during the initial fetch. Three columns so
 // the page doesn't reflow noticeably once real plans land.
 function SkeletonCards() {
-    const block = {
-        ...cardInner,
-        background: 'var(--bg-secondary, #F7F8FA)',
-        border: '1px dashed var(--border-subtle)',
-        minHeight: 280,
-    };
     return (
         <>
             {[0, 1, 2].map(i => (
-                <div key={i} style={columnOuter}>
-                    <div style={block} aria-hidden="true" />
+                <div key={i} className="pricing-col">
+                    <div className="pricing-skeleton" aria-hidden="true" />
                 </div>
             ))}
         </>
@@ -255,6 +175,7 @@ export default function Pricing({ data }) {
     const emptyText       = data?.emptyText || 'Geen plannen beschikbaar';
     const toggleMonthly   = data?.toggleLabelMonthly || 'Maandelijks';
     const toggleYearly    = data?.toggleLabelYearly || 'Jaarlijks';
+    const featuredPlanId  = typeof data?.featuredPlanId === 'string' ? data.featuredPlanId.trim() : '';
 
     // Avoid shadowing window.setInterval — the visitor-facing toggle is
     // billing-interval, not a timer.
@@ -280,33 +201,70 @@ export default function Pricing({ data }) {
             .catch(err => {
                 if (cancelled) return;
                 // Silent on the page (no broken error UI) — log so it
-                // surfaces during preview/development.
-                console.error('[pricing] public-plans fetch failed:', err.message);
+                // surfaces during preview/development. `warn`, not `error`:
+                // this is a degraded state the page handles (the section
+                // hides), and a console.error here is what Lighthouse's
+                // best-practices audit flags as "browser errors were logged".
+                console.warn('[pricing] public-plans fetch failed:', err.message);
                 setState({ loading: false, error: err.message || 'fetch failed', plans: [] });
             });
         return () => { cancelled = true; };
     }, []);
 
-    // Filter to the audience + active billing interval. Plans without
+    // Every plan for this audience, regardless of interval — the basis for
+    // deciding whether the monthly/yearly switch has anything to switch.
+    const audiencePlans = useMemo(
+        () => state.plans.filter(p => p?.planType === planType),
+        [state.plans, planType],
+    );
+
+    // Which billing intervals those plans actually cover. Interval-less
+    // plans (Free / Custom) surface on the monthly side, mirroring the
+    // visibility filter below.
+    const availableIntervals = useMemo(() => {
+        const set = new Set();
+        for (const p of audiencePlans) {
+            set.add(p?.billingInterval === 'yearly' ? 'yearly' : 'monthly');
+        }
+        return set;
+    }, [audiencePlans]);
+
+    // Honest UI: with a single plan (or every plan on the same interval)
+    // the toggle switches between "the plans" and "nothing" — so it only
+    // renders when both sides genuinely exist. One interval also implies
+    // the ≤1-plan case (a single plan can't cover two intervals).
+    const hasIntervalChoice = availableIntervals.size > 1;
+
+    // When there is no real choice, pin the interval to the one that
+    // exists — otherwise an editor-configured `defaultInterval: 'yearly'`
+    // hides the only (monthly / interval-less) plan behind an invisible
+    // toggle the visitor can no longer reach.
+    const effectiveInterval = hasIntervalChoice
+        ? activeInterval
+        : (availableIntervals.has('yearly') ? 'yearly' : 'monthly');
+
+    // Filter to the audience + effective billing interval. Plans without
     // an interval (e.g. Free / Custom) only match when monthly is
     // active, so they don't get hidden when the visitor flips to yearly
     // and they remain reachable.
     const visible = useMemo(() => {
-        return state.plans.filter(p => {
-            if (p?.planType !== planType) return false;
+        return audiencePlans.filter(p => {
             const pi = p?.billingInterval;
-            if (!pi) return activeInterval === 'monthly';
-            return pi === activeInterval;
+            if (!pi) return effectiveInterval === 'monthly';
+            return pi === effectiveInterval;
         });
-    }, [state.plans, planType, activeInterval]);
+    }, [audiencePlans, effectiveInterval]);
 
-    const showToggle = enableToggle;
+    // Hidden while loading too: the skeleton phase doesn't yet know whether
+    // there is anything to toggle, and a control that appears only to
+    // vanish reads worse than one that fades in with the cards.
+    const showToggle = enableToggle && !state.loading && hasIntervalChoice;
 
     if (isDisabled) return null;
 
     return (
         <SectionFrame id="pricing" name="Pricing" enabled={data?.enabled !== false}>
-            <section id="pricing" className="alt-bg">
+            <section id="pricing" className={sectionBgClass(data, 'alt-bg')}>
                 <div className="container">
                     {heading ? (
                         <h2
@@ -340,27 +298,30 @@ export default function Pricing({ data }) {
                         />
                     ) : null}
 
-                    <div
-                        style={{
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            gap: '24px',
-                            alignItems: 'stretch',
-                            justifyContent: 'center',
-                        }}
-                    >
+                    <div className="pricing-grid">
                         {state.loading ? (
                             <SkeletonCards />
                         ) : visible.length ? (
-                            visible.map(plan => (
-                                <div key={plan.id} style={columnOuter}>
-                                    <PlanCard plan={plan} ctaLabel={ctaLabel} />
-                                </div>
-                            ))
+                            visible.map(plan => {
+                                const featured = !!featuredPlanId && plan.id === featuredPlanId;
+                                // Filled CTA on the featured tier only — but
+                                // while no featured tier is chosen, every CTA
+                                // stays filled (the legacy look).
+                                const ctaFilled = featuredPlanId ? featured : true;
+                                return (
+                                    <div key={plan.id} className="pricing-col">
+                                        <PlanCard
+                                            plan={plan}
+                                            data={data}
+                                            ctaLabel={ctaLabel}
+                                            featured={featured}
+                                            ctaFilled={ctaFilled}
+                                        />
+                                    </div>
+                                );
+                            })
                         ) : (
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-                                {emptyText}
-                            </p>
+                            <p className="pricing-empty">{emptyText}</p>
                         )}
                     </div>
                 </div>

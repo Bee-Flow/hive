@@ -1,38 +1,22 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle, Search, Sparkles, Cloud } from 'lucide-react';
-import OrgCustomTiersPanel from './OrgCustomTiersPanel';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import NextcloudSyncPanel from './NextcloudSyncPanel';
-import { API_BASE, authFetch } from '../../utils/helpers';
+import OrgCustomTiersPanel from './OrgCustomTiersPanel';
+import OrgHealthBanner from './OrgHealthBanner';
+import { ORG_ROLES } from '../../config/orgRoles';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useUrlTab } from '../../hooks/useUrlTab';
-import { ORG_ROLES } from '../../config/orgRoles';
+import { useUserFilters } from '../../hooks/useUserFilters';
+import { API_BASE, authFetch } from '../../utils/helpers';
+import RoleBadge from '../shared/RoleBadge';
+import UserListSkeleton from '../shared/UserListSkeleton';
+import UserFilterBar from './shared/UserFilterBar';
 
 // The three sub-tabs map to /app/org-settings/users/{list|groups|roles}.
 // The 'list' URL corresponds to the 'users' internal id so the URL segment
 // doesn't collide with the parent path (`.../users`).
 const ORG_USERS_SECTIONS = ['users', 'groups', 'roles', 'customTiers', 'sync'];
 const ORG_USERS_URL_ALIASES = { users: 'list' };
-
-// Skeleton loader
-const TableSkeleton = () => (
-    <div className="animate-pulse">
-        <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] flex justify-between">
-            <div className="space-y-1.5">
-                <div className="h-5 w-40 bg-[var(--bg-tertiary)] rounded" />
-                <div className="h-3 w-64 bg-[var(--bg-tertiary)] rounded" />
-            </div>
-        </div>
-        {[1, 2, 3].map(i => (
-            <div key={i} className="px-5 py-3 flex items-center gap-4 border-b border-[var(--border-subtle)]">
-                <div className="w-9 h-9 rounded-full bg-[var(--bg-tertiary)]" />
-                <div className="flex-1 space-y-1.5">
-                    <div className="h-4 w-32 bg-[var(--bg-tertiary)] rounded" />
-                    <div className="h-3 w-48 bg-[var(--bg-tertiary)] rounded" />
-                </div>
-            </div>
-        ))}
-    </div>
-);
 
 const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
     const { t } = useTranslation();
@@ -61,12 +45,6 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
 
     // User role editing
     const [editingUserRole, setEditingUserRole] = useState(null);
-
-    // User list filters
-    const [userSearch, setUserSearch] = useState('');
-    const [userRoleFilter, setUserRoleFilter] = useState('all');
-    const [userGroupFilter, setUserGroupFilter] = useState('all');
-    const [userStatusFilter, setUserStatusFilter] = useState('all');
 
     // Expanded role details
     const [expandedRole, setExpandedRole] = useState(null);
@@ -403,7 +381,13 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                 setInviteRole('user');
                 await fetchInvitations();
             } else {
-                setInviteResult({ success: false, message: data.error || 'Failed to send invitation' });
+                setInviteResult({
+                    success: false,
+                    message: data.error || 'Failed to send invitation',
+                    // BFSF-251: seat cap reached → point the admin straight at
+                    // the upgrade flow instead of a dead-end error.
+                    upgradeLink: data.code === 'seat_cap_exceeded',
+                });
             }
         } catch (err) {
             setInviteResult({ success: false, message: 'Network error — please try again' });
@@ -448,32 +432,16 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
     // only drop system rows here.
     const orgUsers = users.filter(u => !u.isSystem);
 
-    const filteredOrgUsers = useMemo(() => {
-        const q = userSearch.trim().toLowerCase();
-        return orgUsers.filter(u => {
-            if (q) {
-                const hay = `${u.displayName || ''} ${u.username || ''} ${u.email || ''}`.toLowerCase();
-                if (!hay.includes(q)) return false;
-            }
-            if (userRoleFilter !== 'all') {
-                const role = u.orgRole || u.role || 'user';
-                if (userRoleFilter === 'user') {
-                    if (role !== 'user' && role !== 'member') return false;
-                } else if (role !== userRoleFilter) return false;
-            }
-            if (userGroupFilter !== 'all') {
-                const uGroups = Array.isArray(u.groups) ? u.groups : [];
-                if (!uGroups.includes(userGroupFilter)) return false;
-            }
-            if (userStatusFilter !== 'all') {
-                const status = u.status || 'active';
-                if (status !== userStatusFilter) return false;
-            }
-            return true;
-        });
-    }, [orgUsers, userSearch, userRoleFilter, userGroupFilter, userStatusFilter]);
-
-    const userFiltersActive = userSearch.trim() !== '' || userRoleFilter !== 'all' || userGroupFilter !== 'all' || userStatusFilter !== 'all';
+    // Filter state + filtering live in the shared hook, so this panel and the
+    // Security People directory cannot drift apart. This panel is already scoped
+    // to one org, so it uses neither the `org` nor the `via` axis.
+    const {
+        filters: userFilters,
+        setFilter: setUserFilter,
+        clear: clearUserFilters,
+        active: userFiltersActive,
+        filtered: filteredOrgUsers,
+    } = useUserFilters(orgUsers, { groups });
 
     const getGroupCount = (groupId) => {
         return users.filter(u => {
@@ -513,21 +481,7 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
         finally { setMemberBusy(false); }
     };
 
-    const getRoleBadge = (role) => {
-        const orgRole = ORG_ROLES.find(r => r.id === role);
-        if (orgRole) {
-            return (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-white" style={{ background: orgRole.color }}>
-                    {orgRole.name}
-                </span>
-            );
-        }
-        return (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
-                {role || 'user'}
-            </span>
-        );
-    };
+    const getRoleBadge = (role) => <RoleBadge role={role} />;
 
     // Count users with a specific role
     const getUsersWithRole = (roleId) => {
@@ -543,7 +497,7 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                     ))}
                 </div>
                 <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
-                    <TableSkeleton />
+                    <UserListSkeleton />
                 </div>
             </div>
         );
@@ -584,6 +538,9 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
             {/* ═══════════════ USERS SECTION ═══════════════ */}
             {activeSection === 'users' && (
                 <>
+                {/* Connector-health blockers (pending approvals / org-level
+                    blocks). Renders null for healthy or non-connector orgs. */}
+                <OrgHealthBanner />
                 {/* Auto-approve toggle — only meaningful when the org's sign-in
                     method is an external provider (Google/Microsoft). */}
                 {orgAuthMethod && orgAuthMethod !== 'password' && (
@@ -679,6 +636,15 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                                                 Copy invite link
                                             </button>
                                         )}
+                                        {/* BFSF-251: seat cap → direct upgrade path, no dead end */}
+                                        {inviteResult.upgradeLink && (
+                                            <a
+                                                href="/app/settings/organisation/license"
+                                                className="flex items-center gap-1 mt-1 font-semibold text-[var(--accent-primary)] hover:underline"
+                                            >
+                                                {t('agent_wizard.view_plans', 'View plans & upgrade')}
+                                            </a>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -703,61 +669,15 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                         </div>
                     ) : (
                         <>
-                            {/* Filter bar */}
-                            <div className="px-5 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-primary)] flex flex-wrap items-center gap-2">
-                                <div className="relative flex-1 min-w-[200px]">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)]" />
-                                    <input
-                                        type="text"
-                                        value={userSearch}
-                                        onChange={e => setUserSearch(e.target.value)}
-                                        placeholder={t('admin.org_search_users', 'Search by name or email…')}
-                                        className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none focus:border-[var(--accent-primary)] transition-colors"
-                                    />
-                                </div>
-                                <select
-                                    value={userRoleFilter}
-                                    onChange={e => setUserRoleFilter(e.target.value)}
-                                    className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none"
-                                >
-                                    <option value="all">{t('admin.org_all_roles')}</option>
-                                    <option value="user">{t('admin.org_role_user')}</option>
-                                    {ORG_ROLES.map(r => (
-                                        <option key={r.id} value={r.id}>{r.name}</option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={userGroupFilter}
-                                    onChange={e => setUserGroupFilter(e.target.value)}
-                                    disabled={orgGroups.length === 0}
-                                    className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none max-w-[200px] disabled:opacity-50"
-                                >
-                                    <option value="all">{t('admin.org_all_groups')}</option>
-                                    {orgGroups.map(g => (
-                                        <option key={g.id} value={g.id}>{g.name}</option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={userStatusFilter}
-                                    onChange={e => setUserStatusFilter(e.target.value)}
-                                    className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none"
-                                >
-                                    <option value="all">{t('admin.org_all_statuses')}</option>
-                                    <option value="active">{t('admin.org_status_active')}</option>
-                                    <option value="pending">{t('admin.org_status_pending')}</option>
-                                </select>
-                                <span className="text-[11px] text-[var(--text-muted)] ml-auto whitespace-nowrap">
-                                    {t('admin.org_showing_count', { count: filteredOrgUsers.length, total: orgUsers.length })}
-                                </span>
-                                {userFiltersActive && (
-                                    <button
-                                        onClick={() => { setUserSearch(''); setUserRoleFilter('all'); setUserGroupFilter('all'); setUserStatusFilter('all'); }}
-                                        className="text-[11px] text-[var(--accent-primary)] hover:underline"
-                                    >
-                                        {t('admin.org_clear_filters', 'Clear')}
-                                    </button>
-                                )}
-                            </div>
+                            <UserFilterBar
+                                filters={userFilters}
+                                setFilter={setUserFilter}
+                                clear={clearUserFilters}
+                                active={userFiltersActive}
+                                shownCount={filteredOrgUsers.length}
+                                totalCount={orgUsers.length}
+                                groups={orgGroups}
+                            />
                             {filteredOrgUsers.length === 0 ? (
                                 <div className="px-5 py-10 text-center">
                                     <Search className="w-8 h-8 mx-auto mb-2 text-[var(--text-muted)] opacity-30" />

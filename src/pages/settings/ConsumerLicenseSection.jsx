@@ -4,6 +4,9 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useDeploymentMode } from '../../hooks/useDeploymentMode';
 import InvoicesPanel from '../../components/billing/InvoicesPanel';
+import { hasPaidBillingRelationship } from '../../utils/billing';
+import { takePendingPlan } from '../../components/billing/pendingPlan';
+import { BILLING_ACTION } from '../../components/billing/billingTheme';
 
 /* ── Usage bar (matches OrgInfoPanel style) ─────────────────────────────── */
 const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6', percentOnly = false }) => {
@@ -84,6 +87,24 @@ const ConsumerLicenseSection = ({ user }) => {
     const [portalLoading, setPortalLoading] = useState(false);
     const [checkoutMessage, setCheckoutMessage] = useState(null); // success/cancel banner
     const [waiverAccepted, setWaiverAccepted] = useState({}); // planId → withdrawal-waiver tick
+
+    // A plan chosen on the public pricing page (`?plan=<id>`), carried across
+    // the sign-in redirect. Highlighted and scrolled to rather than checked out
+    // automatically — a paid plan still needs the withdrawal waiver ticked
+    // deliberately, so we must not skip that consent step.
+    const [preselectedPlanId, setPreselectedPlanId] = useState(null);
+    const preselectedRef = React.useRef(null);
+
+    useEffect(() => {
+        if (!plans.length || preselectedPlanId) return;
+        const pending = takePendingPlan();
+        if (pending && plans.some(p => p.id === pending)) setPreselectedPlanId(pending);
+    }, [plans, preselectedPlanId]);
+
+    useEffect(() => {
+        if (!preselectedPlanId || !preselectedRef.current) return;
+        preselectedRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, [preselectedPlanId]);
 
     // Check URL params for checkout result
     useEffect(() => {
@@ -205,9 +226,9 @@ const ConsumerLicenseSection = ({ user }) => {
     // BFSF-241: the Stripe Customer Portal only makes sense for a real paying
     // relationship. Free/trial/no-invoice users got an empty portal showing
     // global payment methods (Pix/Kakao/Amazon) that don't match our checkout,
-    // so we hide "Manage Billing" until they've actually paid. Previously-paid
-    // states (paused/disputed) keep access; trialing/free stay hidden.
-    const hasPaidBilling = hasBilling && ['paid', 'past_due', 'paused', 'disputed'].includes(subscription?.payment_status);
+    // so we hide "Manage Billing" until they've actually paid. The predicate
+    // is shared with OrgInfoPanel and mirrors the server-side gate.
+    const hasPaidBilling = hasPaidBillingRelationship(subscription);
 
     // Customer-facing: marked-up AI usage cost is the only AI figure shown.
     // Backend already applies markup_percent on `total_billed_cost`.
@@ -226,7 +247,7 @@ const ConsumerLicenseSection = ({ user }) => {
             {/* Header */}
             <div>
                 <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                    {t('settings.license_usage') || 'License & Usage'}
+                    {t('settings.license_usage', 'License & Usage')}
                 </h2>
                 <p className="text-sm text-[var(--text-muted)] mt-1">
                     Your personal account usage and limits
@@ -292,7 +313,7 @@ const ConsumerLicenseSection = ({ user }) => {
                                 }}
                             >
                                 {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
-                                Manage Billing
+                                {t('license.manage_billing', 'Manage billing')}
                             </button>
                         )}
                     </div>
@@ -389,32 +410,56 @@ const ConsumerLicenseSection = ({ user }) => {
                     <div className="flex items-start gap-2 mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
                         <CreditCard className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
                         <p className="text-[11.5px] leading-snug text-[var(--text-secondary)]">
-                            {t('billing.recurring_notice', 'This is a recurring monthly subscription. Your selected payment method is charged automatically each billing period (automatische incasso) until you cancel.')}
+                            {t('billing.recurring_notice', 'This is a recurring subscription. Your selected payment method is charged automatically at the start of each billing period (automatische incasso) until you cancel.')}
                         </p>
                     </div>
 
-                    <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(plans.length, 3)}, 1fr)` }}>
+                    {/* Responsive columns. This used to be a fixed
+                        `repeat(min(n,3), 1fr)` with no breakpoints, so three
+                        plans stayed three columns down to phone width and the
+                        cards became unreadable slivers. `min-w-0` on each card
+                        keeps long plan names from forcing a horizontal scroll. */}
+                    <div className={`grid gap-4 ${plans.length === 1 ? 'grid-cols-1'
+                        : plans.length === 2 ? 'grid-cols-1 sm:grid-cols-2'
+                            : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'}`}>
                         {plans.map(plan => {
                             const isCurrentPlan = hasActiveSub && subscription?.plan_id === plan.id;
+                            const isPreselected = !isCurrentPlan && plan.id === preselectedPlanId;
                             const sym = currencySymbol(plan.currency);
                             return (
                                 <div
                                     key={plan.id}
-                                    className="relative rounded-xl border overflow-hidden transition-all duration-200"
+                                    ref={isPreselected ? preselectedRef : null}
+                                    className="relative rounded-xl border overflow-hidden transition-all duration-200 min-w-0"
                                     style={{
-                                        borderColor: isCurrentPlan ? '#10b981' : 'var(--border-subtle)',
-                                        background: isCurrentPlan ? 'rgba(16,185,129,0.03)' : 'var(--bg-secondary)',
+                                        // "You're on this plan" is a success state, so it uses the
+                                        // --success token (the same emerald this file hardcoded).
+                                        // A deep-linked preselection is an attention state, so it
+                                        // borrows the billing-action blue instead.
+                                        borderColor: isCurrentPlan ? 'var(--success)'
+                                            : isPreselected ? BILLING_ACTION
+                                                : 'var(--border-subtle)',
+                                        background: isCurrentPlan
+                                            ? 'color-mix(in srgb, var(--success) 4%, var(--bg-secondary))'
+                                            : 'var(--bg-secondary)',
+                                        boxShadow: isPreselected ? `0 0 0 1px ${BILLING_ACTION}` : undefined,
                                     }}
                                 >
                                     {isCurrentPlan && (
-                                        <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500" />
+                                        <div className="absolute top-0 left-0 right-0 h-1" style={{ background: 'var(--success)' }} />
                                     )}
                                     <div className="p-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <h4 className="text-sm font-bold text-[var(--text-primary)]">{plan.name}</h4>
                                             {isCurrentPlan && (
-                                                <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full uppercase">
-                                                    Current
+                                                <span
+                                                    className="text-[9px] font-bold px-2 py-0.5 rounded-full uppercase"
+                                                    style={{
+                                                        color: 'var(--success)',
+                                                        background: 'color-mix(in srgb, var(--success) 12%, transparent)',
+                                                    }}
+                                                >
+                                                    {t('billing.current_plan', 'Current plan')}
                                                 </span>
                                             )}
                                         </div>
@@ -456,13 +501,13 @@ const ConsumerLicenseSection = ({ user }) => {
                                                 disabled
                                                 className="w-full py-2 rounded-lg text-xs font-semibold border"
                                                 style={{
-                                                    color: '#10b981',
-                                                    borderColor: 'rgba(16,185,129,0.3)',
-                                                    background: 'rgba(16,185,129,0.05)',
+                                                    color: 'var(--success)',
+                                                    borderColor: 'color-mix(in srgb, var(--success) 30%, transparent)',
+                                                    background: 'color-mix(in srgb, var(--success) 6%, transparent)',
                                                     cursor: 'default',
                                                 }}
                                             >
-                                                <Check className="w-3.5 h-3.5 inline mr-1" /> Active Plan
+                                                <Check className="w-3.5 h-3.5 inline mr-1" /> {t('billing.your_plan', 'Your plan')}
                                             </button>
                                         ) : (() => {
                                             const isPaid = Number(plan.price) > 0 || plan.billing_model === 'metered';
@@ -487,7 +532,7 @@ const ConsumerLicenseSection = ({ user }) => {
                                                     disabled={!!checkoutLoading || (isPaid && !waiverAccepted[plan.id])}
                                                     className="w-full py-2.5 rounded-lg text-xs font-bold text-white transition-all duration-200 flex items-center justify-center gap-1.5 disabled:opacity-50"
                                                     style={{
-                                                        background: '#3b82f6',
+                                                        background: BILLING_ACTION,
                                                         opacity: checkoutLoading && checkoutLoading !== plan.id ? 0.5 : 1,
                                                         cursor: checkoutLoading ? 'wait' : 'pointer',
                                                     }}
@@ -498,6 +543,12 @@ const ConsumerLicenseSection = ({ user }) => {
                                                         <><ArrowUpRight className="w-3.5 h-3.5" /> {isPaid ? t('checkout.order_with_obligation', 'Order with obligation to pay') : (hasActiveSub ? 'Switch Plan' : 'Subscribe')}</>
                                                     )}
                                                 </button>
+                                                {/* BFSF-243: recurring-billing disclosure right at the CTA */}
+                                                <div className="mt-1.5 flex justify-center">
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-amber-500/15 text-amber-500">
+                                                        {t('billing.recurring_badge', 'Recurring · automatische incasso')}
+                                                    </span>
+                                                </div>
                                             </>
                                             );
                                         })()}

@@ -145,6 +145,25 @@ describe('FlowletsPanel', () => {
         expect(props.onDeleteLayer).not.toHaveBeenCalled();
     });
 
+    it('keeps Delete live on an EMPTY layer even when something calls it', () => {
+        // The palette's "Create flowlet" drops a call node as part of creating
+        // one, so a brand-new flowlet was born un-deletable (BFSF-340).
+        const props = baseProps({ refCountFor: vi.fn(() => 1) });
+        render(<FlowletsPanel {...props} />);
+        // Row order: enrich (1 real step) then digest (none).
+        const [enrichDel, digestDel] = screen.getAllByLabelText('Delete flowlet');
+        expect(enrichDel.disabled).toBe(true);
+        expect(digestDel.disabled).toBe(false);
+        expect(digestDel.title).toMatch(/Call flowlet/);
+        fireEvent.click(digestDel);
+        expect(props.onDeleteLayer).toHaveBeenCalledWith('digest');
+    });
+
+    it('explains what a flowlet is even once one exists', () => {
+        render(<FlowletsPanel {...baseProps()} />);
+        expect(screen.getByText(/Reusable sub-flows/)).toBeTruthy();
+    });
+
     it('fires create + toggle callbacks', () => {
         const props = baseProps();
         render(<FlowletsPanel {...props} />);

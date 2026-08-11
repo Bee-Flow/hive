@@ -131,6 +131,7 @@ export default function EditorView({
                                     value={tier}
                                     onChange={setTier}
                                     dropDirection="down"
+                                    portal
                                 />
                             )}
                         </div>

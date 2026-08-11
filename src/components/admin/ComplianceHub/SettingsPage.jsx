@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Save } from 'lucide-react';
+import { Save, GraduationCap, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from '../../../hooks/useTranslation';
+import UserPicker from './shared/UserPicker';
 // Toast feedback happens centrally in ComplianceHub.handleSaveSettings.
 
 const LEGAL_BASES = [
@@ -12,7 +13,7 @@ const LEGAL_BASES = [
     { id: 'legitimate_interests', labelKey: 'compliance.lb_legitimate_interests' },
 ];
 
-export default function SettingsPage({ settings, onSave }) {
+export default function SettingsPage({ settings, onSave, orgUsers = null }) {
     const { t } = useTranslation();
     const [form, setForm] = useState(() => normalize(settings));
     const [saving, setSaving] = useState(false);
@@ -48,6 +49,8 @@ export default function SettingsPage({ settings, onSave }) {
                 breach_recipients: form.breach_recipients,
                 default_retention_days: form.default_retention_days ? Number(form.default_retention_days) : null,
                 privacy_notice_url: form.privacy_notice_url || null,
+                ai_literacy_confirmed_at: form.ai_literacy_confirmed_at || null,
+                ai_literacy_material_url: form.ai_literacy_material_url || null,
             });
         } catch { /* onSave shows its own error toast */ }
         finally { setSaving(false); }
@@ -57,6 +60,13 @@ export default function SettingsPage({ settings, onSave }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 820 }}>
 
             <Section title={t('compliance.settings_dpo')} description={t('compliance.settings_dpo_desc')}>
+                <UserPicker
+                    users={orgUsers}
+                    mode="single"
+                    label={t('compliance.pick_org_user')}
+                    placeholder={t('compliance.pick_org_user_placeholder')}
+                    onSelect={u => update({ dpo_name: u.displayName, dpo_email: u.email || '', dpo_phone: u.phone || '' })}
+                />
                 <Field label={t('compliance.dpo_name')}>
                     <input value={form.dpo_name} onChange={e => update({ dpo_name: e.target.value })}
                         placeholder="Jane Doe" style={input} />
@@ -105,10 +115,48 @@ export default function SettingsPage({ settings, onSave }) {
                     <input value={form.privacy_notice_url} onChange={e => update({ privacy_notice_url: e.target.value })}
                         placeholder="https://yourcompany.com/privacy" style={input} />
                 </Field>
+                <div style={{
+                    fontSize: 12, color: 'var(--text-muted, #888)', lineHeight: 1.5,
+                    padding: '8px 10px', borderRadius: 8,
+                    background: 'var(--bg-tertiary, rgba(255,255,255,0.03))',
+                }}>
+                    {t('compliance.public_dsr_hint')}{' '}
+                    <code style={{ fontSize: 11.5, color: 'var(--text-primary, #ddd)' }}>
+                        {`${window.location.origin}/privacy/requests`}
+                    </code>
+                </div>
+            </Section>
+
+            <Section title={t('compliance.settings_ai_literacy')} description={t('compliance.settings_ai_literacy_desc')}>
+                <Field label={t('compliance.ai_literacy_url')}>
+                    <input value={form.ai_literacy_material_url}
+                        onChange={e => update({ ai_literacy_material_url: e.target.value })}
+                        placeholder="https://intranet.example.com/ai-training" style={input} />
+                </Field>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <button onClick={() => update({ ai_literacy_confirmed_at: new Date().toISOString() })}
+                        style={{ ...input, width: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                        <GraduationCap size={14} /> {t('compliance.ai_literacy_confirm')}
+                    </button>
+                    <span style={{ fontSize: 12, color: form.ai_literacy_confirmed_at ? '#10b981' : 'var(--text-muted, #888)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        {form.ai_literacy_confirmed_at && <CheckCircle2 size={13} />}
+                        {form.ai_literacy_confirmed_at
+                            ? (t('compliance.ai_literacy_confirmed_at', { date: new Date(form.ai_literacy_confirmed_at).toLocaleDateString() }) || `Confirmed ${new Date(form.ai_literacy_confirmed_at).toLocaleDateString()}`)
+                            : t('compliance.ai_literacy_never')}
+                    </span>
+                </div>
             </Section>
 
             <Section title={t('compliance.settings_breach')} description={t('compliance.settings_breach_desc')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <UserPicker
+                        users={orgUsers}
+                        mode="multi"
+                        label={t('compliance.add_org_recipient')}
+                        placeholder={t('compliance.pick_org_user_placeholder')}
+                        excludeEmails={form.breach_recipients}
+                        onSelect={u => update({ breach_recipients: [...form.breach_recipients, u.email] })}
+                    />
                     {form.breach_recipients.map((r, i) => (
                         <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                             <span style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: 'var(--bg-tertiary, rgba(255,255,255,0.04))', fontSize: 13 }}>{r}</span>
@@ -147,6 +195,8 @@ function normalize(s) {
         breach_recipients: Array.isArray(s?.breach_recipients) ? s.breach_recipients : [],
         default_retention_days: s?.default_retention_days ?? '',
         privacy_notice_url: s?.privacy_notice_url || '',
+        ai_literacy_confirmed_at: s?.ai_literacy_confirmed_at || null,
+        ai_literacy_material_url: s?.ai_literacy_material_url || '',
         newRecipient: '',
     };
 }

@@ -34,6 +34,28 @@ describe('AnalyticsTracker', () => {
         expect(s.getAttribute('src')).toBe('https://stats.example.com/script.js');
     });
 
+    it('asks the tracker to collect web vitals', () => {
+        // Umami gates its ENTIRE PerformanceObserver block on this attribute
+        // being the literal string "true". Without it no vital is ever recorded
+        // and the Performance tab reports a flawless 0 ms it never measured.
+        render(<AnalyticsTracker {...baseProps} consentMode="cookieless" />);
+        expect(tracker().getAttribute('data-performance')).toBe('true');
+        expect(tracker().getAttribute('data-exclude-hash')).toBe('true');
+    });
+
+    it('replaces the tag when the config changes (attributes are read once, at eval)', () => {
+        const { rerender } = render(<AnalyticsTracker {...baseProps} consentMode="cookieless" />);
+        const first = tracker();
+        // Same config → same node, no needless reload.
+        rerender(<AnalyticsTracker {...baseProps} consentMode="cookieless" />);
+        expect(tracker()).toBe(first);
+
+        rerender(<AnalyticsTracker {...baseProps} websiteId="w-999" consentMode="cookieless" />);
+        expect(tracker()).not.toBe(first);
+        expect(tracker().getAttribute('data-website-id')).toBe('w-999');
+        expect(document.querySelectorAll(`#${SCRIPT_ID}`).length).toBe(1);
+    });
+
     it('does not inject without a websiteId or scriptUrl', () => {
         render(<AnalyticsTracker consentMode="cookieless" />);
         expect(tracker()).toBeNull();

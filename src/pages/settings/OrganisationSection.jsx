@@ -7,6 +7,8 @@ import UsageSection from './UsageSection';
 import GitHubSyncPanel from '../../components/admin/GitHubSyncPanel';
 import NextcloudSyncPanel from '../../components/admin/NextcloudSyncPanel';
 import MeetingNotesAdminPanel from '../../components/admin/MeetingNotesAdminPanel';
+import GoogleMeetAdminPanel from '../../components/admin/GoogleMeetAdminPanel';
+import SummaryTemplatesAdminPanel from '../../components/admin/SummaryTemplatesAdminPanel';
 import OrgNcIntegrationsPanel from '../../components/admin/OrgNcIntegrationsPanel';
 import OrgNcPairingPanel from '../../components/admin/OrgNcPairingPanel';
 import GroupAccessMatrix from '../../components/admin/GroupAccessMatrix';
@@ -102,7 +104,7 @@ const GoogleMapsRow = () => {
 /* ── OrganisationSection ─────────────────────────────────────────────────── */
 // activeSection is now controlled entirely by the parent sidebar.
 // Possible values: 'license' | 'auth' | 'privacy' | 'info' | 'users' | 'integrations'
-const OrganisationSection = ({ user, activeSection = 'license' }) => {
+const OrganisationSection = ({ user, activeSection = 'license', usageInitialReport = '' }) => {
     const { t } = useTranslation();
     const [orgState, setOrgState] = useState({ hasChanges: false, saving: false, message: null, handleSave: null });
     // Integrations sub-tab: 'access' (who can use which integration) | 'settings' (provider credentials / instance URLs)
@@ -120,11 +122,18 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
     const isNcOrg = !!user?.ncOrg?.instanceId;
 
     const isInfoSection = INFO_SECTIONS.some(s => s.id === activeSection);
+    // The Privacy Shield owns its own save bar, and has to: Save must be
+    // DISABLED when the config could not be loaded, and hidden entirely in
+    // read-only mode — neither of which this generic bar can know. Rendering
+    // both put two save affordances on one screen, and this one did nothing
+    // (OrgShieldEditor never calls onStateChange), so the button that looked
+    // like the primary action was the inert one.
+    const showOrgSaveBar = isInfoSection && activeSection !== 'privacy';
 
     return (
         <div>
             {/* Save bar — shown above content when info section has changes */}
-            {isInfoSection && (orgState.hasChanges || orgState.saving || orgState.message) && (
+            {showOrgSaveBar && (orgState.hasChanges || orgState.saving || orgState.message) && (
                 <div
                     className="flex items-center gap-3 px-4 py-2.5 rounded-xl mb-4"
                     style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}
@@ -173,7 +182,7 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
 
             {/* Usage & Monitoring */}
             {activeSection === 'usage' && (
-                <UsageSection />
+                <UsageSection initialReport={usageInitialReport} />
             )}
 
             {/* Integrations */}
@@ -268,7 +277,13 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                     {(isNcOrg || isFullAdmin) && <OrgNcPairingPanel />}
                     <NextcloudSyncPanel user={user} />
                     <MeetingNotesAdminPanel user={user} />
+                    <GoogleMeetAdminPanel user={user} />
                 </>
+            )}
+
+            {/* Meeting Notes summary templates (org + group) */}
+            {activeSection === 'meeting_templates' && isOrgAdmin && (
+                <SummaryTemplatesAdminPanel />
             )}
         </div>
     );

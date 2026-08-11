@@ -1,6 +1,7 @@
 import React from 'react';
 import Button from '../components/Button';
 import EditableText from '../components/EditableText';
+import FramedMedia from '../components/FramedMedia';
 import SectionFrame from '../components/SectionFrame';
 import { migrateLegacyContent, resolveVideoEmbed } from './contentMigration';
 import { inlineTextStyle } from './textStyle';
@@ -146,6 +147,13 @@ function ImageElement({ el, pathBase, fullWidth }) {
     const ratio = ['16/9', '4/3', '1/1', '3/4'].includes(el.aspectRatio) ? el.aspectRatio : 'auto';
     const wrapStyle = ratio !== 'auto' ? { aspectRatio: ratio } : undefined;
 
+    // Opt-in premium frame ('hairline' | 'browser') — renders through
+    // FramedMedia instead of the bare <img>. Absent/unknown keeps the
+    // legacy rendering. Framed images use the frame's own box: the fixed
+    // aspect-ratio crop is skipped, and when both frame and lightbox are
+    // set the frame wins (no zoom button).
+    const frame = el.frame === 'hairline' || el.frame === 'browser' ? el.frame : null;
+
     // Default sizing: fill the column. With a fixed aspect ratio the wrap
     // defines the box and the image covers it; with the intrinsic ratio the
     // image keeps its proportions (height: auto) at full column width. Set
@@ -177,15 +185,23 @@ function ImageElement({ el, pathBase, fullWidth }) {
     ].filter(Boolean).join(' ');
     const figureStyle = (!bleed && fullWidth) ? { width: '100%', maxWidth: '100%' } : undefined;
 
+    // Publish-time enrichment (server/core/cms/mediaDims.js) stores the
+    // intrinsic size; as attributes it reserves the box before the bytes
+    // arrive, while the CSS display size stays responsive.
+    const imgDims = el.width > 0 && el.height > 0
+        ? { width: Math.round(el.width), height: Math.round(el.height) }
+        : {};
     const imgEl = el.src
-        ? <img src={el.src} alt={el.alt || ''} loading="lazy" style={imgStyle} />
+        ? <img src={el.src} alt={el.alt || ''} {...imgDims} loading="lazy" style={imgStyle} />
         : null;
 
     return (
         <figure className={figureClass} style={figureStyle}>
-            <div className="content-el-image-wrap" style={wrapStyle}>
+            <div className={`content-el-image-wrap${frame ? ' content-el-image-wrap--framed' : ''}`} style={frame ? undefined : wrapStyle}>
                 {el.src ? (
-                    el.lightbox === true ? (
+                    frame ? (
+                        <FramedMedia media={{ src: el.src, alt: el.alt || '', kind: 'image', frame }} />
+                    ) : el.lightbox === true ? (
                         <button
                             type="button"
                             className="content-el-image-zoom"

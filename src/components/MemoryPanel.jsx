@@ -8,7 +8,15 @@ import { formatRelativeTime } from '../utils/dateFormatters';
 
 const PAGE_SIZE = 50;
 
-const MemoryPanel = ({ onClose, projectId }) => {
+/**
+ * @param {boolean} [canEdit=true] — false for a project VIEWER. Project memory
+ *   is a shared pool: the store drops its user_id filter for project-scoped
+ *   rows so every member sees the same entries, which means the role check is
+ *   the only thing between a read-only member and the delete button. The API
+ *   now enforces editor for writes; this hides the controls so a viewer is not
+ *   offered actions that will come back 403.
+ */
+const MemoryPanel = ({ onClose, projectId, canEdit = true }) => {
     const [memories, setMemories] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
@@ -323,6 +331,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         </button>
                         <button
                             onClick={() => setShowAddForm(!showAddForm)}
+                            hidden={!canEdit}
                             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all"
                             style={{
                                 background: showAddForm ? 'var(--bg-tertiary)' : 'var(--accent-primary)',
@@ -386,7 +395,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
             </div>
 
             {/* Add Memory Form */}
-            {showAddForm && (
+            {showAddForm && canEdit && (
                 <div className="p-4 border-b" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-tertiary)' }}>
                     <div className="max-w-2xl mx-auto">
                         <div className="flex gap-2 mb-3">
@@ -561,7 +570,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                                     </p>
                                                 )}
                                             </div>
-                                            {editingId !== memory.id && (
+                                            {editingId !== memory.id && canEdit && (
                                                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                                                     <button
                                                         onClick={() => handleEdit(memory)}
@@ -610,6 +619,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                 <div className="px-5 py-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
                     <button
                         onClick={handleClearAll}
+                        hidden={!canEdit}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-red-500/10"
                         style={{ color: '#f87171' }}
                         data-testid="memory-clear-all"

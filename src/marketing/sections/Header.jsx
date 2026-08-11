@@ -3,45 +3,33 @@ import Button from '../components/Button';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import NavIcon from '../components/NavIcon';
+import MobileNav from './MobileNav';
+import { readDropdown, navHandler } from './navShared';
 import { inlineTextStyle } from './textStyle';
+import { resolveAssetUrl } from '../assetUrl';
 
-// Resolve the dropdown shape regardless of which mode the user picked.
-// Returns:
-//   { kind: 'columns', columns: [{ heading, items: [...] }] }  — mega menu
-//   { kind: 'list',    items:   [{ label, href, ... }]      }  — flat
-//   null if the link has no dropdown content at all
-function readDropdown(link) {
-    if (link?.dropdown?.layout === 'columns'
-        && Array.isArray(link.dropdown.columns)
-        && link.dropdown.columns.length > 0) {
-        return { kind: 'columns', columns: link.dropdown.columns };
-    }
-    if (Array.isArray(link?.children) && link.children.length > 0) {
-        return { kind: 'list', items: link.children };
-    }
-    return null;
-}
-
-const isPreview = () =>
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).has('preview');
-
-// In preview mode, anchor clicks should not jump-scroll inside the iframe;
-// they'd take the admin's focus away from what they were editing.
-const navHandler = (e) => {
-    if (isPreview()) e.preventDefault();
-};
-
-export default function Header({ data }) {
+// `showLanguageSwitcher` deliberately mirrors the FOOTER's chrome flag (one
+// switch controls both switchers): offering seven languages while zero pages
+// are translated is a dead control, so the site hides both until the
+// translation round actually lands.
+export default function Header({ data, showLanguageSwitcher = true }) {
     const [scrolled, setScrolled] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     // Which top-level nav item currently has its dropdown open (desktop).
     // null = none. The 150ms close-delay lets the cursor traverse the gap
     // between the parent link and the mega panel without flicker.
     const [openNavIdx, setOpenNavIdx] = useState(null);
-    // Which mobile accordion section is expanded (one at a time).
-    const [mobileOpenIdx, setMobileOpenIdx] = useState(null);
     const closeTimerRef = useRef(null);
+    const navRef = useRef(null);
+    // Whether the panel was open at POINTERDOWN time. The wrapper's
+    // onFocus={open} fires between pointerdown and click (mousedown focuses
+    // the anchor), so by click time `isOpen` is already true and a naive
+    // toggle would close what the same tap just opened — making the panel
+    // unreachable on touch. Captured before focus can interfere; null when
+    // the click came from the keyboard (no pointerdown), where the live
+    // state IS accurate.
+    const triggerDownOpenRef = useRef(null);
     const cancelClose = () => {
         if (closeTimerRef.current) {
             clearTimeout(closeTimerRef.current);
@@ -60,6 +48,34 @@ export default function Header({ data }) {
         window.addEventListener('scroll', onScroll, { passive: true });
         return () => window.removeEventListener('scroll', onScroll);
     }, []);
+
+    // Escape closes whatever is open. Without it, a keyboard user who opens
+    // a mega menu has to tab through every item in it to get back out.
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.key !== 'Escape') return;
+            cancelClose();
+            setOpenNavIdx(null);
+            setMobileOpen(false);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    // Close the desktop panel on a click anywhere outside the nav. Hover
+    // cannot close it on a touch device — there is no "mouse leave" — so
+    // without this a tapped-open panel would stay open indefinitely.
+    useEffect(() => {
+        if (openNavIdx === null) return undefined;
+        const onDown = (e) => {
+            if (navRef.current && !navRef.current.contains(e.target)) {
+                cancelClose();
+                setOpenNavIdx(null);
+            }
+        };
+        document.addEventListener('pointerdown', onDown);
+        return () => document.removeEventListener('pointerdown', onDown);
+    }, [openNavIdx]);
 
     if (!data?.enabled) return null;
 
@@ -103,17 +119,27 @@ export default function Header({ data }) {
     // simply not emitted (CSS file defaults still win).
     const navLinkStyle = inlineTextStyle(data.navStyle);
     // A nav item is "active" when its href matches the slug of the page
-    // currently being viewed. Page-kind links resolve to `/slug` (or `/`
-    // for the homepage) via resolveLink / resolvePreviewHref, so a plain
-    // string compare is enough.
+    // currently being viewed. Page-kind links resolve to `/slug` on the
+    // published site (resolveLink) but to `/?slug=slug` in the admin preview
+    // (resolvePreviewHref keeps pathname '/' so the app router doesn't
+    // intercept) — match both forms. The homepage resolves to `/` with an
+    // empty activeSlug in both resolvers.
     const isActive = (href) => {
-        if (!activeSlug || !href) return false;
-        return href === `/${activeSlug}` || href === `/${encodeURIComponent(activeSlug)}`;
+        if (!href) return false;
+        if (!activeSlug) return href === '/';
+        const enc = encodeURIComponent(activeSlug);
+        return href === `/${activeSlug}` || href === `/${enc}`
+            || href === `/?slug=${activeSlug}` || href === `/?slug=${enc}`;
     };
 
     return (
         <SectionFrame id="header" name="Header" enabled={data.enabled}>
-            <header className={`header ${scrolled ? 'scrolled' : ''}`}>
+            {/* `nav-open` gives the bar a background while a panel or the
+                drawer is showing. At the top of the page the header is
+                deliberately transparent, which left an opaque panel hanging
+                off an invisible bar. */}
+            <header className={`header ${scrolled ? 'scrolled' : ''}`
+                + (openNavIdx !== null || mobileOpen ? ' nav-open' : '')}>
                 <div className="header-inner">
                     <a href={url?.trim() || '/'} className="header-logo" onClick={navHandler}>
                         {logo.src ? (
@@ -122,8 +148,18 @@ export default function Header({ data }) {
                             // as the letter avatar so the header height doesn't
                             // jump when switching between modes.
                             <img
-                                src={logo.src}
-                                alt={brandText || 'Logo'}
+                                // resolveAssetUrl, NOT the raw value. A stored
+                                // logo is a key like `cms/beeflow-logo.svg`,
+                                // which as a bare src is RELATIVE: on /solutions
+                                // the browser asked for /solutions/cms/… , hit
+                                // the SPA's catch-all, and got index.html back
+                                // with content-type text/html. The logo was a
+                                // broken-image icon on every page of the site.
+                                src={resolveAssetUrl(logo.src)}
+                                // Decorative when the brand name is also
+                                // rendered beside it — otherwise a screen
+                                // reader announces "Bee Flow Bee Flow".
+                                alt={brandText ? '' : 'Logo'}
                                 className="logo-image"
                             />
                         ) : (
@@ -136,10 +172,12 @@ export default function Header({ data }) {
                             <EditableText path="header.logo.text" placeholder="Logo">
                                 {brandText}
                             </EditableText>
-                            <span className="logo-dot">.</span>
+                            {/* Opt-in flourish — the always-on "." read as a
+                                template artifact on most brand names. */}
+                            {logo.showDot === true ? <span className="logo-dot">.</span> : null}
                         </span>
                     </a>
-                    <nav className="header-nav">
+                    <nav className="header-nav" ref={navRef}>
                         {navItems.map((link, i) => {
                             const dropdown = readDropdown(link);
                             if (!dropdown) {
@@ -166,6 +204,37 @@ export default function Header({ data }) {
                             // between the parent link and the panel.
                             const open  = () => { cancelClose(); setOpenNavIdx(i); };
                             const close = () => scheduleClose();
+                            const closeNow = () => { cancelClose(); setOpenNavIdx(null); };
+                            // A trigger that owns a dropdown never navigates:
+                            // click (and Enter/Space) toggles the panel. It
+                            // used to follow its own href, which sent a click
+                            // on "Resources" straight to the first child page
+                            // before the panel could be used. Modified clicks
+                            // (ctrl/cmd/shift — new tab/window) keep native
+                            // link behavior on the href.
+                            const onTriggerPointerDown = () => {
+                                triggerDownOpenRef.current = isOpen;
+                            };
+                            const onTriggerClick = (e) => {
+                                if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+                                e.preventDefault();
+                                // Pointer interactions decide on the state
+                                // captured at pointerdown (see the ref note);
+                                // keyboard "clicks" use the live state.
+                                const wasOpen = triggerDownOpenRef.current !== null
+                                    ? triggerDownOpenRef.current
+                                    : isOpen;
+                                triggerDownOpenRef.current = null;
+                                if (wasOpen) closeNow(); else open();
+                            };
+                            // Enter fires a native click on the anchor; Space
+                            // only scrolls unless handled explicitly. Escape
+                            // is handled by the window-level listener above.
+                            const onTriggerKeyDown = (e) => {
+                                if (e.key !== ' ') return;
+                                e.preventDefault();
+                                if (isOpen) closeNow(); else open();
+                            };
                             return (
                                 <div
                                     key={i}
@@ -179,16 +248,30 @@ export default function Header({ data }) {
                                         href={link.href}
                                         target={link.target}
                                         rel={link.rel}
-                                        onClick={navHandler}
+                                        onPointerDown={onTriggerPointerDown}
+                                        onClick={onTriggerClick}
+                                        onKeyDown={onTriggerKeyDown}
                                         className={isActive(link.href) || isOpen ? 'active' : undefined}
                                         style={navLinkStyle}
+                                        // It behaves as a disclosure button now
+                                        // (plain click never navigates), so it
+                                        // announces as one.
+                                        role="button"
+                                        aria-haspopup="true"
+                                        aria-expanded={isOpen}
                                     >
                                         <EditableText path={`header.navLinks.${i}.label`} placeholder="Link">
                                             {link.label || ''}
                                         </EditableText>
                                     </a>
+                                    {/* No role="menu": that role expects
+                                        `menuitem` children and application-
+                                        menu arrow-key semantics. This is a
+                                        panel of ordinary links, and saying
+                                        otherwise made screen readers
+                                        announce a menu with no items. */}
                                     {isMega ? (
-                                        <div className="nav-mega" role="menu">
+                                        <div className="nav-mega">
                                             <div className="nav-mega-grid">
                                                 {dropdown.columns.map((col, ci) => (
                                                     <div className="nav-mega-col" key={ci}>
@@ -207,7 +290,9 @@ export default function Header({ data }) {
                                                                         style={navLinkStyle}
                                                                     >
                                                                         {mi.icon ? (
-                                                                            <span className="nav-mega-item-icon" aria-hidden="true">{mi.icon}</span>
+                                                                            <span className="nav-mega-item-icon" aria-hidden="true">
+                                                                                <NavIcon icon={mi.icon} />
+                                                                            </span>
                                                                         ) : null}
                                                                         <span className="nav-mega-item-text">
                                                                             <span className="nav-mega-item-label">
@@ -258,7 +343,7 @@ export default function Header({ data }) {
                         })}
                     </nav>
                     <div className="header-actions">
-                        <LanguageSwitcher />
+                        {showLanguageSwitcher ? <LanguageSwitcher /> : null}
                         {(data.ctas || []).map((cta, i) => {
                             // Per-button label styling. The Button component
                             // owns the variant background / border / radius;
@@ -296,97 +381,14 @@ export default function Header({ data }) {
                     </div>
                 </div>
             </header>
-            <div className={`mobile-nav ${mobileOpen ? 'active' : ''}`}>
-                <div className="mobile-nav-inner">
-                    {navItems.map((link, i) => {
-                        const dropdown = readDropdown(link);
-                        // Mobile: tap parent to toggle the accordion; if
-                        // there's no dropdown, the parent link navigates.
-                        const rowExpanded = mobileOpenIdx === i;
-                        const onParentClick = (e) => {
-                            if (dropdown) {
-                                e.preventDefault();
-                                setMobileOpenIdx(rowExpanded ? null : i);
-                                return;
-                            }
-                            navHandler(e);
-                            setMobileOpen(false);
-                        };
-                        return (
-                            <React.Fragment key={i}>
-                                <a
-                                    href={link.href}
-                                    target={link.target}
-                                    rel={link.rel}
-                                    onClick={onParentClick}
-                                    className={(isActive(link.href) || rowExpanded) ? 'active' : undefined}
-                                    style={navLinkStyle}
-                                    aria-expanded={dropdown ? rowExpanded : undefined}
-                                >
-                                    {link.label}
-                                </a>
-                                {/* Mobile dropdown — accordion. For columns
-                                    layout we render each column's heading
-                                    as a small caption followed by its items.
-                                    For list layout we render the items flat
-                                    (same as before). */}
-                                {dropdown && rowExpanded ? (
-                                    <div className="mobile-nav-children">
-                                        {dropdown.kind === 'columns' ? (
-                                            dropdown.columns.map((col, ci) => (
-                                                <React.Fragment key={ci}>
-                                                    {col.heading ? (
-                                                        <div className="mobile-nav-heading">{col.heading}</div>
-                                                    ) : null}
-                                                    {(col.items || []).map((mi, mj) => (
-                                                        <a
-                                                            key={`${ci}-${mj}`}
-                                                            href={mi.href}
-                                                            target={mi.target}
-                                                            rel={mi.rel}
-                                                            onClick={(e) => { navHandler(e); setMobileOpen(false); }}
-                                                            className={isActive(mi.href) ? 'active' : undefined}
-                                                            style={navLinkStyle}
-                                                        >
-                                                            {mi.icon ? <span aria-hidden="true" style={{ marginRight: 8 }}>{mi.icon}</span> : null}
-                                                            {mi.label}
-                                                        </a>
-                                                    ))}
-                                                </React.Fragment>
-                                            ))
-                                        ) : (
-                                            dropdown.items.map((child, j) => (
-                                                <a
-                                                    key={j}
-                                                    href={child.href}
-                                                    target={child.target}
-                                                    rel={child.rel}
-                                                    onClick={(e) => { navHandler(e); setMobileOpen(false); }}
-                                                    className={isActive(child.href) ? 'active' : undefined}
-                                                    style={navLinkStyle}
-                                                >
-                                                    {child.label}
-                                                </a>
-                                            ))
-                                        )}
-                                    </div>
-                                ) : null}
-                            </React.Fragment>
-                        );
-                    })}
-                    {(data.ctas || []).map((cta, i) => (
-                        <a
-                            key={cta.id || i}
-                            href={cta.href || '/app'}
-                            target={cta.target}
-                            rel={cta.rel}
-                            onClick={(e) => { navHandler(e); setMobileOpen(false); }}
-                        >
-                            {cta.label || ''}
-                        </a>
-                    ))}
-                </div>
-            </div>
+            <MobileNav
+                open={mobileOpen}
+                onClose={() => setMobileOpen(false)}
+                navItems={navItems}
+                ctas={data.ctas}
+                isActive={isActive}
+                navLinkStyle={navLinkStyle}
+            />
         </SectionFrame>
     );
 }

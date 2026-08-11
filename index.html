@@ -8,9 +8,17 @@
        /BeeFlow-logo-Icon-2026.svg reference 404'd → no tab icon (BFSF-242).
        public/app-icon.svg is byte-identical to that brand icon. -->
   <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Lora:wght@400;700&family=Source+Sans+3:wght@400;600;700&family=Nunito:wght@400;600;700&family=Poppins:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <!-- No font requests here at all — the shell's two families (Inter for UI
+       text, Fira Code for code) are self-hosted variable WOFF2s under
+       public/fonts/, declared via @font-face in the bundled CSS
+       (src/marketing/self-hosted-fonts.css). This head used to carry a Google
+       Fonts stylesheet (via the non-blocking print-media swap) plus three
+       preconnects; on a product whose pitch is that visitor data stays off
+       third-party infrastructure, every anonymous marketing pageview was
+       still pinging Google. Same-origin files need no preconnect, honour our
+       cache headers, and the CMS runtime loader (ensureFontsLink in
+       marketing/ProductWebsite.jsx) still fetches any NON-standard family an
+       editor picks — from its own CDN, only on sites that actually use one. -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="referrer" content="no-referrer-when-downgrade" />
   <title>Bee Flow - AI</title>
@@ -18,6 +26,25 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
+  <!-- Single-React contract for runtime-loaded modules (see
+       src/moduleRuntime/sharedRuntime.js). Externalized module bundles import
+       bare `react*` specifiers; this map points them at the static shims under
+       public/module-shims/ (regenerated on every build/dev via the
+       generate-module-shims.mjs prebuild/predev hook) which re-export the host's
+       single React instance from window.__BEEFLOW_SHARED__. The app's own code
+       never uses bare specifiers at runtime — Vite resolves those at build time —
+       so this map only affects dynamically-imported module bundles. It must
+       precede the /src/main.jsx module script below. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "/module-shims/react.js",
+        "react-dom": "/module-shims/react-dom.js",
+        "react-dom/client": "/module-shims/react-dom-client.js",
+        "react/jsx-runtime": "/module-shims/react-jsx-runtime.js"
+      }
+    }
+  </script>
 </head>
 
 <body>
@@ -59,15 +86,13 @@
             while (b64.length % 4) b64 += '=';
             var payload = JSON.parse(atob(b64));
             applyTheme(payload, root);
-            console.log('[Theme] preview bootstrap applied:', payload);
           }
           return;
         }
         var cached = localStorage.getItem('beeflow:theme:bootstrap');
-        if (!cached) { console.log('[Theme] bootstrap: no localStorage cache'); return; }
+        if (!cached) return;
         var t = JSON.parse(cached);
         applyTheme(t, root);
-        console.log('[Theme] bootstrap applied:', t);
       } catch (e) { console.warn('[Theme] bootstrap failed', e); }
     })();
   </script>

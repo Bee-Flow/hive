@@ -1,0 +1,85 @@
+/* Compare-table block — owned by CompareTable.jsx (imported there, NOT part
+   of marketing.css: new-component styles live next to their component).
+
+   Scoped under .marketing-root so every token (tokens.css + the alias layer
+   in marketing.css) resolves without hard fallbacks, and re-derives inside
+   band/dark scopes exactly like the built-in sections. */
+
+.marketing-root .compare-table-scroll {
+    /* Mobile: the TABLE scrolls inside its own wrapper — the page body
+       must never scroll horizontally. */
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-base, 12px);
+    background: var(--surface-0);
+}
+
+.marketing-root .compare-table {
+    width: 100%;
+    /* Below this the columns crush into unreadable slivers; the wrapper
+       takes over with a horizontal scroll instead. */
+    min-width: 560px;
+    border-collapse: collapse;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    color: var(--text-primary);
+}
+
+.marketing-root .compare-table th,
+.marketing-root .compare-table td {
+    padding: 14px 18px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--hairline);
+}
+
+.marketing-root .compare-table tbody tr:last-child th,
+.marketing-root .compare-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Column heads — the product names. The left (own-product) column carries
+   a whisper of accent tint down the whole column so the comparison reads
+   at a glance, without shouting. */
+.marketing-root .compare-table thead th {
+    font-size: var(--text-small);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--hairline-strong);
+}
+
+.marketing-root .compare-table .compare-table-col--left {
+    background: var(--accent-tint-08);
+}
+.marketing-root .compare-table thead th.compare-table-col--left {
+    /* Head cell layers the accent tint over the head band. */
+    background: var(--accent-tint-14);
+}
+
+/* Row heads — the aspect being compared. */
+.marketing-root .compare-table tbody th[scope='row'] {
+    font-weight: 600;
+    font-size: var(--text-small);
+    color: var(--text-secondary);
+    width: 24%;
+}
+
+.marketing-root .compare-table td {
+    color: var(--text-secondary);
+}
+
+.marketing-root .compare-table-footnote {
+    margin-top: var(--space-3);
+    font-size: var(--text-small);
+    color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+    .marketing-root .compare-table th,
+    .marketing-root .compare-table td {
+        padding: 12px 14px;
+    }
+}

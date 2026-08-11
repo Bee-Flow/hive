@@ -108,6 +108,21 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
     const [hasWhisperxUrl, setHasWhisperxUrl] = useState(false);
     const [hasWhisperxToken, setHasWhisperxToken] = useState(false);
     const [savingWhisperx, setSavingWhisperx] = useState(false);
+    // Scaleway Whisper (hybrid: cloud transcription + local diarization)
+    const [scalewayApiKey, setScalewayApiKey] = useState('');
+    const [hasScalewayKey, setHasScalewayKey] = useState(false);
+    const [savingScaleway, setSavingScaleway] = useState(false);
+    // pyannoteAI (all-in-one diarization + transcription)
+    const [pyannoteApiKey, setPyannoteApiKey] = useState('');
+    const [hasPyannoteKey, setHasPyannoteKey] = useState(false);
+    const [savingPyannote, setSavingPyannote] = useState(false);
+    // '' = automatic (best model per meeting language); otherwise a pinned model.
+    const [pyannoteTranscriptionModel, setPyannoteTranscriptionModel] = useState('');
+    const [savingPyannoteModel, setSavingPyannoteModel] = useState(false);
+    // Per-person voiceprint speaker identification (pyannote only)
+    const [voiceprintMatchingEnabled, setVoiceprintMatchingEnabled] = useState(true);
+    const [pyannoteIdentifyThreshold, setPyannoteIdentifyThreshold] = useState(50);
+    const [savingVoiceprint, setSavingVoiceprint] = useState(false);
 
     // Service Email (Gmail API via OAuth)
     const [serviceEmailAddress, setServiceEmailAddress] = useState(''); // connected account (read-only)
@@ -171,6 +186,13 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                 // WhisperX
                 setHasWhisperxUrl(!!configData.hasWhisperxUrl);
                 setHasWhisperxToken(!!configData.hasWhisperxToken);
+                // Scaleway (hybrid)
+                setHasScalewayKey(!!configData.hasScalewayKey);
+                // pyannoteAI
+                setHasPyannoteKey(!!configData.hasPyannoteKey);
+                setPyannoteTranscriptionModel(configData.pyannoteTranscriptionModel || '');
+                setVoiceprintMatchingEnabled(configData.voiceprintMatchingEnabled !== false);
+                if (configData.pyannoteIdentifyThreshold != null) setPyannoteIdentifyThreshold(configData.pyannoteIdentifyThreshold);
                 // Service Email
                 setHasServiceEmail(!!configData.hasServiceEmail);
                 if (configData.serviceEmailAddress) setServiceEmailAddress(configData.serviceEmailAddress);
@@ -209,6 +231,61 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
             setMessage({ type: 'error', text: 'Failed to save' });
         }
         setSaving(false);
+        setTimeout(() => setMessage(null), 3000);
+    };
+
+    // ── pyannoteAI speech model ──────────────────────────────────────────────
+    const saveTranscriptionModel = async (model) => {
+        const prev = pyannoteTranscriptionModel;
+        setPyannoteTranscriptionModel(model);
+        setSavingPyannoteModel(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pyannoteTranscriptionModel: model }),
+            });
+            if (res.ok) {
+                setMessage({ type: 'success', text: model ? 'Speech model pinned' : 'Speech model set to automatic' });
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setPyannoteTranscriptionModel(prev);
+                setMessage({ type: 'error', text: err.error || 'Failed to save the speech model' });
+            }
+        } catch (_) {
+            setPyannoteTranscriptionModel(prev);
+            setMessage({ type: 'error', text: 'Failed to save the speech model' });
+        }
+        setSavingPyannoteModel(false);
+        setTimeout(() => setMessage(null), 3000);
+    };
+
+    // ── Voiceprint speaker identification ────────────────────────────────────
+    // Optimistic: the toggle should feel instant, and a failed write is
+    // reported and rolled back rather than silently kept.
+    const saveVoiceprintSettings = async (patch) => {
+        const prev = { voiceprintMatchingEnabled, pyannoteIdentifyThreshold };
+        if (patch.voiceprintMatchingEnabled !== undefined) setVoiceprintMatchingEnabled(patch.voiceprintMatchingEnabled);
+        if (patch.pyannoteIdentifyThreshold !== undefined) setPyannoteIdentifyThreshold(patch.pyannoteIdentifyThreshold);
+        setSavingVoiceprint(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                setVoiceprintMatchingEnabled(prev.voiceprintMatchingEnabled);
+                setPyannoteIdentifyThreshold(prev.pyannoteIdentifyThreshold);
+                setMessage({ type: 'error', text: err.error || 'Failed to save speaker-identification settings' });
+            }
+        } catch (_) {
+            setVoiceprintMatchingEnabled(prev.voiceprintMatchingEnabled);
+            setPyannoteIdentifyThreshold(prev.pyannoteIdentifyThreshold);
+            setMessage({ type: 'error', text: 'Failed to save speaker-identification settings' });
+        }
+        setSavingVoiceprint(false);
         setTimeout(() => setMessage(null), 3000);
     };
 
@@ -1316,6 +1393,28 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                 requires: 'Self-hosted server URL (optional — CPU whisper.cpp runs without it)',
                                 ready: hasWhisperxUrl,
                             },
+                            {
+                                id: 'scaleway',
+                                name: 'Scaleway (hybrid)',
+                                badge: 'Cloud + local',
+                                emoji: '🇪🇺',
+                                catalogId: 'integration.fast',
+                                badgeColor: '#7c3aed',
+                                desc: 'Fast GDPR-EU cloud transcription (Whisper large-v3) with speaker labels from your local WhisperX diarizer. Audio is sent to your Scaleway EU project.',
+                                requires: 'Scaleway API key' + (hasWhisperxUrl ? '' : ' + WhisperX URL (for speakers)'),
+                                ready: hasScalewayKey,
+                            },
+                            {
+                                id: 'pyannote',
+                                name: 'pyannoteAI',
+                                badge: 'Diarization + STT',
+                                emoji: '🎯',
+                                catalogId: 'integration.cloud',
+                                badgeColor: '#6d28d9',
+                                desc: 'Premium speaker diarization + speaker-attributed transcription (precision-2) in one call. Best-in-class multi-speaker separation. Audio is uploaded to pyannoteAI temporary storage (24h) — no self-hosted diarizer or RustFS/public URL needed.',
+                                requires: 'pyannoteAI API key',
+                                ready: hasPyannoteKey,
+                            },
                         ].map((p) => (
                             <button
                                 key={p.id}
@@ -1602,6 +1701,219 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                 CPU-only: replace <code>latest-cuda</code> with <code>latest-cpu</code>. Diarization requires a Hugging Face token — see the{' '}
                                 <a href="https://github.com/fedirz/faster-whisper-server" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent-primary)' }}>faster-whisper-server docs</a>.
                             </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── Provider 4: Scaleway Whisper (hybrid) ────────────────────────── */}
+                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                            🇪🇺 Scaleway Whisper
+                            <span className="text-xs px-2 py-0.5 rounded-full font-normal" style={{ background: '#7c3aed18', color: '#7c3aed' }}>Hybrid · EU</span>
+                            {transcriptionProvider === 'scaleway' && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">Active</span>}
+                            {hasScalewayKey && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>Key saved 🔒</span>}
+                        </h3>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Fast GDPR-EU cloud transcription (Whisper large-v3) with speaker labels from your local WhisperX diarizer.</p>
+                    </div>
+                    <div className="p-6 space-y-4">
+                        <div>
+                            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--text-primary)' }}>Scaleway API Key</label>
+                            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Secret key from the Scaleway console → Generative APIs → Generate API key</p>
+                            <input
+                                type="password"
+                                value={scalewayApiKey}
+                                onChange={e => setScalewayApiKey(e.target.value)}
+                                placeholder={hasScalewayKey ? '••••••••••••••••' : 'Paste your Scaleway secret key'}
+                                autoComplete="new-password"
+                                className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                            />
+                            <button
+                                onClick={async () => {
+                                    if (!scalewayApiKey.trim()) return;
+                                    setSavingScaleway(true);
+                                    try {
+                                        const res = await authFetch(`${API_BASE}/ai/config`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ scalewayApiKey: scalewayApiKey.trim() }),
+                                        });
+                                        if (res.ok) {
+                                            setHasScalewayKey(true);
+                                            setScalewayApiKey('');
+                                            setMessage({ type: 'success', text: 'Scaleway API key saved securely' });
+                                        } else {
+                                            const err = await res.json().catch(() => ({}));
+                                            setMessage({ type: 'error', text: err.error || 'Failed to save Scaleway key' });
+                                        }
+                                    } catch (e) {
+                                        setMessage({ type: 'error', text: 'Failed to save Scaleway key' });
+                                    }
+                                    setSavingScaleway(false);
+                                    setTimeout(() => setMessage(null), 3000);
+                                }}
+                                disabled={savingScaleway || !scalewayApiKey.trim()}
+                                className="mt-3 px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                style={{ background: 'var(--accent-primary)', color: '#fff' }}
+                            >
+                                {savingScaleway ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                Save API key
+                            </button>
+                        </div>
+                        {/* Capabilities */}
+                        <div className="rounded-xl p-4" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                            <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Capabilities</p>
+                            <ul className="text-xs space-y-1" style={{ color: 'var(--text-muted)' }}>
+                                <li>✅ Fast cloud transcription — GPU Whisper large-v3, far quicker than local CPU</li>
+                                <li>✅ Speaker diarization <em>via your local WhisperX diarizer</em> (needs the WhisperX URL above set)</li>
+                                <li>✅ Runs in an EU region (GDPR) — your own Scaleway project</li>
+                                <li>⚠️ Audio is sent to your Scaleway EU project for transcription — not zero-egress like pure WhisperX</li>
+                                <li>🔒 Key stored encrypted (AES-256-GCM)</li>
+                            </ul>
+                        </div>
+                        {!hasWhisperxUrl && (
+                            <div className="rounded-xl p-4 text-xs" style={{ background: 'var(--bg-primary)', border: '1px solid #f59e0b44', color: 'var(--text-muted)' }}>
+                                ⚠️ No WhisperX URL configured. Scaleway will transcribe but every segment will be one speaker until you set the WhisperX/diarizer URL above.
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* ── Provider 5: pyannoteAI (all-in-one diarization + transcription) ── */}
+                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                            🎯 pyannoteAI
+                            <span className="text-xs px-2 py-0.5 rounded-full font-normal" style={{ background: '#6d28d918', color: '#6d28d9' }}>Diarization + STT</span>
+                            {transcriptionProvider === 'pyannote' && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">Active</span>}
+                            {hasPyannoteKey && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>Key saved 🔒</span>}
+                        </h3>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Best-in-class speaker diarization with speaker-attributed transcription, in a single call.</p>
+                    </div>
+                    <div className="p-6 space-y-4">
+                        <div>
+                            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--text-primary)' }}>pyannoteAI API Key</label>
+                            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Create a key at dashboard.pyannote.ai → API keys</p>
+                            <input
+                                type="password"
+                                value={pyannoteApiKey}
+                                onChange={e => setPyannoteApiKey(e.target.value)}
+                                placeholder={hasPyannoteKey ? '••••••••••••••••' : 'Paste your pyannoteAI API key'}
+                                autoComplete="new-password"
+                                className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                            />
+                            <button
+                                onClick={async () => {
+                                    if (!pyannoteApiKey.trim()) return;
+                                    setSavingPyannote(true);
+                                    try {
+                                        const res = await authFetch(`${API_BASE}/ai/config`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ pyannoteApiKey: pyannoteApiKey.trim() }),
+                                        });
+                                        if (res.ok) {
+                                            setHasPyannoteKey(true);
+                                            setPyannoteApiKey('');
+                                            setMessage({ type: 'success', text: 'pyannoteAI API key saved securely' });
+                                        } else {
+                                            const err = await res.json().catch(() => ({}));
+                                            setMessage({ type: 'error', text: err.error || 'Failed to save pyannoteAI key' });
+                                        }
+                                    } catch (e) {
+                                        setMessage({ type: 'error', text: 'Failed to save pyannoteAI key' });
+                                    }
+                                    setSavingPyannote(false);
+                                    setTimeout(() => setMessage(null), 3000);
+                                }}
+                                disabled={savingPyannote || !pyannoteApiKey.trim()}
+                                className="mt-3 px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                style={{ background: 'var(--accent-primary)', color: '#fff' }}
+                            >
+                                {savingPyannote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                Save API key
+                            </button>
+                        </div>
+                        {/* Speech model */}
+                        <div className="rounded-xl p-4" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Speech-to-text model</p>
+                            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                                Speaker separation always uses <strong>precision-2</strong>, pyannoteAI&rsquo;s most accurate model.
+                                For the words themselves, neither available model wins everywhere:
+                                <strong> Parakeet v3</strong> is the more accurate of the two (6.34% vs 7.83% average word error rate
+                                on English) and covers 25 European languages including Dutch;
+                                <strong> Whisper large-v3-turbo</strong> is a little weaker but covers 99, so it is the only option for
+                                Japanese, Chinese, Korean, Arabic and Turkish. Automatic picks the best one per meeting language.
+                            </p>
+                            <select
+                                value={pyannoteTranscriptionModel}
+                                onChange={e => saveTranscriptionModel(e.target.value)}
+                                disabled={savingPyannoteModel}
+                                className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                            >
+                                <option value="">Automatic — best model per meeting language (recommended)</option>
+                                <option value="parakeet-tdt-0.6b-v3">Always Parakeet v3 — most accurate, European languages only</option>
+                                <option value="faster-whisper-large-v3-turbo">Always Whisper large-v3-turbo — widest language coverage</option>
+                            </select>
+                        </div>
+                        {/* Voiceprint speaker identification */}
+                        <div className="rounded-xl p-4" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Recognise speakers by voice</p>
+                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        Colleagues record a personal voice profile in Settings → Preferences (only they can record their own),
+                                        after which their real name is put on their turns automatically.
+                                        pyannoteAI cannot transcribe and identify in one job, so a <strong>second job per meeting</strong> is
+                                        submitted — but only when someone in that organisation actually has a voice profile.
+                                        Turn this off to stop identification everywhere without anyone deleting theirs.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={voiceprintMatchingEnabled}
+                                    onClick={() => saveVoiceprintSettings({ voiceprintMatchingEnabled: !voiceprintMatchingEnabled })}
+                                    disabled={savingVoiceprint}
+                                    className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-1"
+                                    style={{ background: voiceprintMatchingEnabled ? 'var(--accent-primary)' : 'var(--border-default)', opacity: savingVoiceprint ? 0.6 : 1 }}
+                                >
+                                    <div className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"
+                                        style={{ transform: voiceprintMatchingEnabled ? 'translateX(20px)' : 'translateX(0)' }} />
+                                </button>
+                            </div>
+                            {voiceprintMatchingEnabled && (
+                                <div className="mt-3 pt-3 flex items-center gap-3" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                                    <label className="text-xs flex-1" style={{ color: 'var(--text-muted)' }}>
+                                        Match confidence threshold — how sure pyannoteAI must be before a voice counts as a match.
+                                        Higher means fewer names, but never the wrong one. Default 50.
+                                    </label>
+                                    <input
+                                        type="number" min={0} max={100}
+                                        value={pyannoteIdentifyThreshold}
+                                        onChange={e => setPyannoteIdentifyThreshold(e.target.value)}
+                                        onBlur={() => saveVoiceprintSettings({ pyannoteIdentifyThreshold: Number(pyannoteIdentifyThreshold) })}
+                                        disabled={savingVoiceprint}
+                                        className="w-20 px-3 py-1.5 rounded-lg border outline-none text-sm"
+                                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                        {/* Capabilities */}
+                        <div className="rounded-xl p-4" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                            <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Capabilities</p>
+                            <ul className="text-xs space-y-1" style={{ color: 'var(--text-muted)' }}>
+                                <li>✅ Premium speaker diarization (precision-2) — strong multi-speaker separation</li>
+                                <li>✅ Speaker-attributed transcription in the same call — no separate diarizer</li>
+                                <li>✅ Per-meeting speaker count honoured (set “Number of speakers” at upload)</li>
+                                <li>✅ Optional per-person voiceprints — real names without an attendee list</li>
+                                <li>✅ Audio uploaded to pyannoteAI temporary storage (24h) — no RustFS/public URL needed</li>
+                                <li>🔒 Key + voice profiles stored encrypted (AES-256-GCM)</li>
+                            </ul>
                         </div>
                     </div>
                 </div>

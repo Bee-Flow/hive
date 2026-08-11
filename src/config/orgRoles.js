@@ -20,6 +20,28 @@ export const ORG_ROLES = [
         ],
     },
     {
+        id: 'dpo',
+        label: 'Data Protection Officer',
+        name: 'Data Protection Officer',
+        description: 'Compliance oversight — access the Compliance Center and Usage & Monitoring without full organisation admin rights.',
+        color: '#3b82f6',
+        permissions: [
+            { label: 'Compliance Center', desc: 'Run and review GDPR / AI Act compliance checks and settings' },
+            { label: 'Usage & Monitoring', desc: 'View organisation usage and activity monitoring' },
+        ],
+    },
+    {
+        id: 'isms_auditor',
+        label: 'ISMS Internal Auditor',
+        name: 'ISMS Internal Auditor',
+        description: 'Independent internal auditor (ISO 27001 clause 9.2) — reviews compliance evidence and records audit findings without operational admin rights.',
+        color: '#0ea5e9',
+        permissions: [
+            { label: 'Compliance Center', desc: 'Review checks, evidence, SoA and record internal-audit findings' },
+            { label: 'Usage & Monitoring', desc: 'View organisation usage and activity monitoring' },
+        ],
+    },
+    {
         id: 'agent_admin',
         label: 'Agent Admin',
         name: 'Agent Admin',

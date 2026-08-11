@@ -20,8 +20,14 @@ import {
 import { isTextblock, isAtom, isCode } from '../model/schema.js';
 import { node, emptyParagraph } from '../model/nodes.js';
 import { hasMark } from '../model/marks.js';
+import { insertAfterTable, tableContext } from './tables.js';
 
 const st = (doc, selection, storedMarks) => ({ doc, selection, storedMarks: storedMarks || null });
+
+/** True when the selection is a non-collapsed text range (i.e. replaceable). */
+export function isTextRange(state) {
+  return isText(state.selection) && !isCollapsed(state.selection);
+}
 
 /* ── Text insertion ─────────────────────────────────────── */
 
@@ -292,6 +298,67 @@ function selectedTextblockRanges(doc, from, to) {
   return out;
 }
 
+/**
+ * Locate an inline node (math, formula, inline image) by object identity.
+ *
+ * Block atoms are indexed in the view's nodeToPath map, but inline ones live
+ * inside a textblock's token stream and cannot be addressed by a block path.
+ * Node identity is stable because the doc is immutable with structural sharing,
+ * so a walk is exact. Returns { path, offset } — the token offset within the
+ * block — or null.
+ */
+export function findInlineNode(doc, target) {
+  if (!target) return null;
+  let found = null;
+  const walk = (n, p) => {
+    if (found) return;
+    if (isTextblock(n.type)) {
+      const toks = inlineToTokens(n.content);
+      const i = toks.findIndex((t) => t.node === target);
+      if (i >= 0) found = { path: p, offset: i };
+      return;
+    }
+    (n.content || []).forEach((c, i) => walk(c, [...p, i]));
+  };
+  walk(doc, []);
+  return found;
+}
+
+/** Merge attrs into the inline node occupying token `offset` of block `path`. */
+export function updateInlineNodeAttrs(state, path, offset, attrs) {
+  const block = getNode(state.doc, path);
+  if (!block) return state;
+  const toks = inlineToTokens(block.content);
+  const tok = toks[offset];
+  if (!tok?.node) return state;
+  const out = toks.slice();
+  out[offset] = { node: { ...tok.node, attrs: { ...(tok.node.attrs || {}), ...attrs } } };
+  return st(updateAt(state.doc, path, (b) => ({ ...b, content: tokensToInline(out) })), state.selection);
+}
+
+/**
+ * The selected content as a standalone doc AST.
+ *
+ * Used by copy/cut: the clipboard must carry the SELECTION, not the document.
+ * Blocks fully inside the range keep their type and attrs; the first and last
+ * are truncated to the selected token sub-range. Returns null for a collapsed
+ * or non-text selection.
+ */
+export function sliceSelection(doc, sel) {
+  if (!isText(sel) || isCollapsed(sel)) return null;
+  const { from, to } = selRange(sel);
+  const ranges = selectedTextblockRanges(doc, from, to);
+  const content = [];
+  for (const r of ranges) {
+    const block = getNode(doc, r.path);
+    if (!block) continue;
+    const toks = inlineToTokens(block.content).slice(r.lo, r.hi);
+    // A fully-deselected block (hi <= lo) still contributes its line break.
+    content.push({ ...block, content: tokensToInline(toks) });
+  }
+  return { type: 'doc', content };
+}
+
 function applyMarkToRanges(doc, ranges, type, attrs, add) {
   let doc2 = doc;
   for (const r of ranges) {
@@ -365,30 +432,126 @@ export function setTextAlign(state, align) {
   return st(doc2, sel);
 }
 
-/* ── Lists & blockquote (single-block toggle) ───────────── */
+/* ── Lists & blockquote ─────────────────────────────────── */
 
+/** Path of a node by object identity (structural sharing makes this exact). */
+function pathOfNode(doc, target) {
+  let found = null;
+  const walk = (n, p) => {
+    if (found) return;
+    if (n === target) { found = p; return; }
+    (n.content || []).forEach((c, i) => walk(c, [...p, i]));
+  };
+  walk(doc, []);
+  return found;
+}
+
+const itemTypeFor = (listType) => (listType === 'taskList' ? 'taskItem' : 'listItem');
+const makeItem = (itemType, block) => node(itemType, itemType === 'taskItem' ? { checked: false } : null, [block]);
+
+/** Change a list (and its items) to another list type in place. */
+function convertList(state, listPath, listType) {
+  const itemType = itemTypeFor(listType);
+  const doc2 = updateAt(state.doc, listPath, (list) => ({
+    ...list,
+    type: listType,
+    attrs: listType === 'orderedList' ? { start: 1, tight: true } : null,
+    content: (list.content || []).map((it) => (
+      it.type === itemType ? it : { ...it, type: itemType, attrs: itemType === 'taskItem' ? { checked: false } : null }
+    )),
+  }));
+  // Depth is unchanged, so the selection paths still address the same blocks.
+  return st(doc2, state.selection);
+}
+
+/**
+ * Wrap every selected block in one list — or lift them out if they are already
+ * in a list of this type.
+ *
+ * This used to read `sel.anchor.path` only, so it converted a single line no
+ * matter how much was selected, and it always created a FRESH list wrapper with
+ * no merging — which is why each converted line rendered as its own <ol> and
+ * every one of them restarted at "1." (BFSF-315). Merging into an adjacent list
+ * is done here rather than in normalizeLight because that pass is contractually
+ * selection-safe and merging shifts block indices.
+ */
 export function toggleList(state, listType) {
   const sel = state.selection;
   if (!isText(sel)) return state;
-  const path = sel.anchor.path;
-  const parent = getNode(state.doc, parentPath(path));
-  const grand = getNode(state.doc, parentPath(parentPath(path)));
-  // Already in a list of this type → lift the item out.
-  if ((parent.type === 'listItem' || parent.type === 'taskItem') && grand?.type === listType) {
-    return liftListItem(state);
+  const { from, to } = selRange(sel);
+  const itemType = itemTypeFor(listType);
+
+  const anchorParent = getNode(state.doc, parentPath(from.path));
+  if (anchorParent && (anchorParent.type === 'listItem' || anchorParent.type === 'taskItem')) {
+    const listPath = parentPath(parentPath(from.path));
+    const list = getNode(state.doc, listPath);
+    // Same type → toggle off (every selected item, not just the anchor's).
+    if (list?.type === listType) return liftListRange(state);
+    // Different type → convert in place. Falling through to the wrap branch
+    // spliced the new list INSIDE the existing <li>, producing <ul><li><ol>….
+    if (list) return convertList(state, listPath, listType);
   }
-  const block = getNode(state.doc, path);
-  if (!isTextblock(block.type)) return state;
-  const itemType = listType === 'taskList' ? 'taskItem' : 'listItem';
-  const item = node(itemType, itemType === 'taskItem' ? { checked: false } : null, [block]);
-  const list = node(listType, null, [item]);
-  const doc2 = updateAt(state.doc, parentPath(path), (par) => {
+
+  const pPath = parentPath(from.path);
+  // Cross-container selections (e.g. paragraph → table cell) can't share one
+  // list; wrap the anchor block alone rather than corrupt the structure.
+  const a = lastIndex(from.path);
+  const b = eqPath(pPath, parentPath(to.path)) ? lastIndex(to.path) : a;
+  const parent = getNode(state.doc, pPath);
+  const kids = parent?.content || [];
+  if (!kids.length) return state;
+
+  const fromBlock = getNode(state.doc, from.path);
+  const toBlock = getNode(state.doc, [...pPath, b]);
+  if (!isTextblock(fromBlock?.type)) return state;
+
+  // Build the replacement run. A non-textblock in the middle (a table, an
+  // image) breaks the list in two rather than being swallowed by it.
+  const replacement = [];
+  let openList = null;
+  for (let i = a; i <= b; i++) {
+    const blk = kids[i];
+    if (!blk) continue;
+    if (!isTextblock(blk.type)) { replacement.push(blk); openList = null; continue; }
+    const item = makeItem(itemType, blk);
+    if (openList) {
+      const merged = { ...openList.list, content: [...openList.list.content, item] };
+      replacement[openList.at] = merged;
+      openList.list = merged;
+    } else {
+      openList = { list: node(listType, null, [item]), at: replacement.length };
+      replacement.push(openList.list);
+    }
+  }
+  if (!replacement.length) return state;
+
+  // Merge with an adjacent list of the same type so re-applying to the next
+  // lines continues the numbering instead of starting a second list at 1.
+  let start = a;
+  let end = b;
+  const prev = a > 0 ? kids[a - 1] : null;
+  if (prev?.type === listType && replacement[0]?.type === listType) {
+    replacement[0] = { ...prev, content: [...(prev.content || []), ...replacement[0].content] };
+    start = a - 1;
+  }
+  const next = kids[b + 1];
+  const lastIdx = replacement.length - 1;
+  if (next?.type === listType && replacement[lastIdx]?.type === listType) {
+    replacement[lastIdx] = { ...replacement[lastIdx], content: [...replacement[lastIdx].content, ...(next.content || [])] };
+    end = b + 1;
+  }
+
+  const doc2 = updateAt(state.doc, pPath, (par) => {
     const content = par.content.slice();
-    content.splice(lastIndex(path), 1, list);
+    content.splice(start, end - start + 1, ...replacement);
     return { ...par, content };
   });
-  const newPath = [...parentPath(path), lastIndex(path), 0, 0];
-  return st(doc2, textSelection(pos(newPath, sel.anchor.offset)));
+
+  // The wrapped blocks are the same objects, so identity gives exact new paths.
+  const newFrom = pathOfNode(doc2, fromBlock);
+  const newTo = pathOfNode(doc2, toBlock) || newFrom;
+  if (!newFrom) return st(doc2, sel);
+  return st(doc2, textSelection(pos(newFrom, from.offset), pos(newTo, to.offset)));
 }
 
 export function toggleBlockquote(state) {
@@ -405,6 +568,44 @@ export function toggleBlockquote(state) {
     return { ...par, content };
   });
   return st(doc2, textSelection(pos([...parentPath(path), lastIndex(path), 0], sel.anchor.offset)));
+}
+
+/** Lift every list item touched by the selection out of its list. */
+function liftListRange(state) {
+  const sel = state.selection;
+  const { from, to } = selRange(sel);
+  const fromItemPath = parentPath(from.path);
+  const toItemPath = parentPath(to.path);
+  const listPath = parentPath(fromItemPath);
+  // Only meaningful when both ends are items of the same list.
+  if (!eqPath(listPath, parentPath(toItemPath))) return liftListItem(state);
+  const i = lastIndex(fromItemPath);
+  const j = lastIndex(toItemPath);
+  if (j <= i) return liftListItem(state);
+
+  const list = getNode(state.doc, listPath);
+  const items = list.content || [];
+  const before = items.slice(0, i);
+  const after = items.slice(j + 1);
+  const lifted = [];
+  for (let k = i; k <= j; k++) lifted.push(...(items[k]?.content || []));
+
+  const replacement = [];
+  if (before.length) replacement.push({ ...list, content: before });
+  replacement.push(...lifted);
+  if (after.length) replacement.push({ ...list, content: after });
+
+  const fromBlock = getNode(state.doc, from.path);
+  const toBlock = getNode(state.doc, to.path);
+  const doc2 = updateAt(state.doc, parentPath(listPath), (par) => {
+    const content = par.content.slice();
+    content.splice(lastIndex(listPath), 1, ...replacement);
+    return { ...par, content };
+  });
+  const nf = pathOfNode(doc2, fromBlock);
+  const nt = pathOfNode(doc2, toBlock) || nf;
+  if (!nf) return st(doc2, sel);
+  return st(doc2, textSelection(pos(nf, from.offset), pos(nt, to.offset)));
 }
 
 export function liftListItem(state) {
@@ -516,11 +717,35 @@ export function insertInline(state, inlineNodes) {
   return st(doc2, textSelection(pos(path, offset + ins.length)));
 }
 
+/** True when `path` (or any of its ancestors) sits inside a tableCell. */
+export function insideTableCell(doc, path) {
+  for (let i = 1; i <= path.length; i++) {
+    if (getNode(doc, path.slice(0, i))?.type === 'tableCell') return true;
+  }
+  return false;
+}
+
+/** Route a table insert that would land inside a cell to AFTER the host table
+ *  (nested tables corrupt geometry, serialization and formulas — S8). */
+function insertTableOutsideCell(state, blockNode) {
+  const s2 = insertAfterTable(state, blockNode);
+  if (s2 === state) return state;
+  // insertAfterTable node-selects the inserted block; for a table, drop the
+  // caret into its first cell instead so editing continues naturally.
+  if (isNode(s2.selection)) {
+    return st(s2.doc, textSelection(pos(firstTextblockUnder(s2.doc, s2.selection.path), 0)));
+  }
+  return s2;
+}
+
 /** Insert a block node after the current block (or replace an empty block). A
  *  trailing textblock invariant is guaranteed by normalize() afterwards. */
 export function insertBlockNode(state, blockNode) {
   const sel = state.selection;
   const path = isText(sel) ? sel.anchor.path : isNode(sel) ? sel.path : [0];
+  if (blockNode?.type === 'table' && insideTableCell(state.doc, path)) {
+    return insertTableOutsideCell(state, blockNode);
+  }
   const block = getNode(state.doc, path);
   const pPath = parentPath(path);
   const idx = lastIndex(path);
@@ -568,24 +793,34 @@ export function setMarkAttrs(state, type, patch) {
     if (Object.keys(merged).length) next = [...next, { type, attrs: merged }];
     return { doc: state.doc, selection: sel, storedMarks: next };
   }
+  // A selection spanning several blocks used to hit `return state` here, so
+  // colour and font silently did nothing on any multi-paragraph selection —
+  // while bold and highlight worked, because those go through toggleMark/setMark
+  // which already walk selectedTextblockRanges (BFSF-313).
   const { from, to } = selRange(sel);
-  if (!eqPath(from.path, to.path)) return state;
-  const doc2 = updateAt(state.doc, from.path, (b) => {
-    const toks = inlineToTokens(b.content);
-    const out = toks.slice();
-    for (let i = from.offset; i < to.offset; i++) {
-      const t = out[i];
-      if (t.node) continue;
-      const existing = (t.marks || []).find((m) => m.type === type);
-      const merged = { ...(existing?.attrs || {}), ...patch };
-      for (const k of Object.keys(merged)) if (merged[k] == null) delete merged[k];
-      let marks = (t.marks || []).filter((m) => m.type !== type);
-      if (Object.keys(merged).length) marks = [...marks, { type, attrs: merged }];
-      out[i] = { ch: t.ch, marks };
-    }
-    return { ...b, content: tokensToInline(out) };
-  });
+  const ranges = selectedTextblockRanges(state.doc, from, to);
+  let doc2 = state.doc;
+  for (const r of ranges) {
+    if (r.hi <= r.lo) continue;
+    doc2 = updateAt(doc2, r.path, (b) => ({ ...b, content: tokensToInline(mergeAttrsInRange(inlineToTokens(b.content), r.lo, r.hi, type, patch)) }));
+  }
   return st(doc2, sel);
+}
+
+/** Merge `patch` into each token's mark of `type` over [lo, hi). */
+function mergeAttrsInRange(toks, lo, hi, type, patch) {
+  const out = toks.slice();
+  for (let i = lo; i < hi && i < out.length; i++) {
+    const t = out[i];
+    if (!t || t.node) continue;
+    const existing = (t.marks || []).find((m) => m.type === type);
+    const merged = { ...(existing?.attrs || {}), ...patch };
+    for (const k of Object.keys(merged)) if (merged[k] == null) delete merged[k];
+    let marks = (t.marks || []).filter((m) => m.type !== type);
+    if (Object.keys(merged).length) marks = [...marks, { type, attrs: merged }];
+    out[i] = { ch: t.ch, marks };
+  }
+  return out;
 }
 
 /** Update attrs of the currently node-selected atom (image/mermaid/math). */
@@ -608,6 +843,25 @@ export function insertBlocks(state, blocks) {
   if (!blocks || !blocks.length) return state;
   const sel = state.selection;
   const path = isText(sel) ? sel.anchor.path : isNode(sel) ? sel.path : [0];
+  // A paste inside a cell that contains a table anywhere in it routes ALL the
+  // blocks after the host table — splitting the batch would scatter content
+  // between the cell and the document (S8).
+  if (insideTableCell(state.doc, path) && blocks.some((b) => b?.type === 'table')) {
+    const ctx = tableContext(state.doc, path);
+    if (ctx) {
+      const pPath = parentPath(ctx.tablePath);
+      const idx = lastIndex(ctx.tablePath);
+      const doc2 = updateAt(state.doc, pPath, (par) => {
+        const content = par.content.slice();
+        content.splice(idx + 1, 0, ...blocks);
+        return { ...par, content };
+      });
+      const lastPath = [...pPath, idx + blocks.length];
+      const last = getNode(doc2, lastPath);
+      if (isAtom(last.type)) return st(doc2, nodeSelection(lastPath));
+      return st(doc2, textSelection(pos(firstTextblockUnder(doc2, lastPath), 0)));
+    }
+  }
   const block = getNode(state.doc, path);
   const pPath = parentPath(path);
   const idx = lastIndex(path);

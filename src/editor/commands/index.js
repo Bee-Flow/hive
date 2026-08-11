@@ -9,7 +9,8 @@
 import * as T from '../engine/transforms.js';
 import * as Tbl from '../engine/tables.js';
 import { markdownToAst } from '../serialization/mdToAst.js';
-import { isTextblock } from '../model/schema.js';
+import { htmlToAst } from '../serialization/htmlToAst.js';
+import { looksLikeHtml } from '../serialization/util.js';
 
 const id = (s) => s;
 
@@ -47,6 +48,7 @@ export const commands = {
   insertMermaidDiagram: (code) => (s) => T.insertBlockNode(s, { type: 'mermaid', attrs: { code } }),
   insertHorizontalRule: () => (s) => T.insertBlockNode(s, { type: 'horizontalRule' }),
   setHorizontalRule: () => (s) => T.insertBlockNode(s, { type: 'horizontalRule' }),
+  insertInlineNode: (inlineNode) => (s) => T.insertInlineNode(s, inlineNode),
   updateAttributes: (_name, attrs) => (s) => T.updateNodeAttrs(s, attrs),
 
   /* tables */
@@ -59,6 +61,7 @@ export const commands = {
   appendColumn: () => Tbl.appendColumn,
   toggleHeaderRow: () => Tbl.toggleHeaderRow,
   setCellFormula: (src) => (s) => Tbl.setCellFormula(s, src),
+  addColumnTotal: (tablePath, col) => (s) => Tbl.addColumnTotal(s, tablePath, col),
   insertAfterTable: (blockNode) => (s) => Tbl.insertAfterTable(s, blockNode),
   deleteRow: () => Tbl.deleteRow,
   deleteColumn: () => Tbl.deleteColumn,
@@ -76,19 +79,41 @@ export const commands = {
   run: () => id,
 };
 
+/**
+ * Insert content at the caret, replacing the selection.
+ *
+ * The single-textblock case goes through insertInline so a couple of pasted
+ * words land AT the caret. `onPaste` used to call T.insertBlocks directly for
+ * the text/html branch, which ignores the caret offset entirely and appends a
+ * new block after the current one — so pasting two styled words from Word into
+ * the middle of a sentence created a new paragraph below it, and pasting over a
+ * selection kept the original.
+ */
 export function insertContentCmd(state, content) {
   if (content == null) return state;
+  // Replace the selection first; every branch below inserts at the caret.
+  const s0 = T.isTextRange(state) ? T.deleteSelection(state) : state;
   if (typeof content === 'string') {
-    const ast = markdownToAst(content);
-    const blocks = ast.content || [];
-    if (blocks.length === 1 && isTextblock(blocks[0].type)) return T.insertInline(state, blocks[0].content || []);
-    return T.insertBlocks(state, blocks);
+    // DOCX import and "insert to document" pass HTML; parsing it as Markdown
+    // rendered the tags as literal text (TipTap-era assumption).
+    const ast = looksLikeHtml(content) ? htmlToAst(content) : markdownToAst(content);
+    return insertBlocksOrInline(s0, ast.content || []);
   }
-  if (Array.isArray(content)) return T.insertBlocks(state, content);
-  if (content.type === 'doc') return T.insertBlocks(state, content.content || []);
+  if (Array.isArray(content)) return insertBlocksOrInline(s0, content);
+  if (content.type === 'doc') return insertBlocksOrInline(s0, content.content || []);
   // single node
-  if (isTextblock(content.type) === false && content.type !== 'text') {
-    return content.content ? T.insertBlocks(state, [content]) : T.insertBlockNode(state, content);
+  if (content.type !== 'paragraph' && content.type !== 'text') {
+    return content.content ? T.insertBlocks(s0, [content]) : T.insertBlockNode(s0, content);
   }
-  return T.insertInline(state, [content]);
+  return content.type === 'paragraph' ? T.insertInline(s0, content.content || []) : T.insertInline(s0, [content]);
+}
+
+/**
+ * One paragraph pastes inline (at the caret); anything else pastes as blocks.
+ * Paragraph only — not any textblock: a lone heading/code block routed through
+ * the inline path was flattened into the current paragraph, losing its type.
+ */
+function insertBlocksOrInline(state, blocks) {
+  if (blocks.length === 1 && blocks[0].type === 'paragraph') return T.insertInline(state, blocks[0].content || []);
+  return T.insertBlocks(state, blocks);
 }

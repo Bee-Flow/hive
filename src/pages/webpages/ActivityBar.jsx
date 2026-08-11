@@ -1,11 +1,12 @@
 import React from 'react';
-import { Files, Database, BookOpen, History } from 'lucide-react';
+import { Files, Database, BookOpen, History, AppWindow } from 'lucide-react';
 
 const ITEMS = [
-    { id: 'files',     Icon: Files,    title: 'Files' },
-    { id: 'database',  Icon: Database, title: 'Database' },
-    { id: 'knowledge', Icon: BookOpen, title: 'Knowledge' },
-    { id: 'history',   Icon: History,  title: 'Version history' },
+    { id: 'files',     Icon: Files,     title: 'Files' },
+    { id: 'database',  Icon: Database,  title: 'Database' },
+    { id: 'knowledge', Icon: BookOpen,  title: 'Knowledge' },
+    { id: 'apps',      Icon: AppWindow, title: 'Apps & data' },
+    { id: 'history',   Icon: History,   title: 'Version history' },
 ];
 
 export default function ActivityBar({ active, onSelect }) {
@@ -20,6 +21,8 @@ export default function ActivityBar({ active, onSelect }) {
                     <button
                         key={id}
                         title={title}
+                        aria-label={title}
+                        aria-pressed={isActive}
                         onClick={() => onSelect(id)}
                         className="flex items-center justify-center w-12 h-12 transition-colors"
                         style={{

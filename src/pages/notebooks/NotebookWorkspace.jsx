@@ -10,7 +10,7 @@
  */
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
-    ArrowLeft, Loader2, AlertCircle, CheckCircle2,
+    ArrowLeft, Loader2, AlertCircle, CheckCircle2, Circle,
     PanelLeft, MessageSquare, Command as CommandIcon,
 } from 'lucide-react';
 import useTranslation from '../../hooks/useTranslation';
@@ -24,7 +24,7 @@ import buildCommands from './shell/buildCommands';
 const LEFT_WIDTH = 248;
 
 /* ── Save-state indicator (extracted from both pages) ─────────── */
-function SaveStateIndicator({ saveState, lastSavedAt, onRetry, t }) {
+function SaveStateIndicator({ saveState, lastSavedAt, onRetry, dirty, t }) {
     if (saveState === 'saving') {
         return (
             <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
@@ -37,6 +37,16 @@ function SaveStateIndicator({ saveState, lastSavedAt, onRetry, t }) {
             <button onClick={onRetry} className="flex items-center gap-1 text-xs text-red-500 hover:underline" title={t('notebooks.retry', 'Retry')}>
                 <AlertCircle className="w-3 h-3" />{t('notebooks.save_failed_retry', 'Save failed — retry')}
             </button>
+        );
+    }
+    // Typed but not yet sent. The editor debounces for 2 s before it even asks
+    // for a save, and nothing represented that window — "Saved" from the
+    // previous save just lingered while newer edits sat unpersisted.
+    if (dirty) {
+        return (
+            <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                <Circle className="w-2 h-2 fill-current" />{t('notebooks.unsaved_changes', 'Unsaved changes')}
+            </span>
         );
     }
     if (saveState === 'idle' && lastSavedAt && (Date.now() - lastSavedAt < 4000)) {
@@ -76,6 +86,7 @@ export default function NotebookWorkspace({
     saveState,
     lastSavedAt,
     onRetrySave,
+    dirty,
     headerActions,
     headerExtras = [],          // [{ id, icon, label, active, disabled, onClick }]
     leftDrawer,                 // { label, icon, node } | null
@@ -155,7 +166,7 @@ export default function NotebookWorkspace({
                 </div>
 
                 <div className="shrink-0 flex items-center">
-                    <SaveStateIndicator saveState={saveState} lastSavedAt={lastSavedAt} onRetry={onRetrySave} t={t} />
+                    <SaveStateIndicator saveState={saveState} lastSavedAt={lastSavedAt} onRetry={onRetrySave} dirty={dirty} t={t} />
                 </div>
 
                 {/* View toggles */}

@@ -23,19 +23,27 @@ import LegalConsentSection from './settings/LegalConsentSection';
 import LearningCenterSection from './settings/LearningCenterSection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
 import OrgAzureConfigPanel from '../components/admin/OrgAzureConfigPanel';
-import { Users, Link2, BarChart2, Cloud, CreditCard, Shield, FolderGit2, Palette, Sparkles, LifeBuoy, GraduationCap, ArrowLeft } from 'lucide-react';
+import ComplianceHub from '../components/admin/ComplianceHub';
+import { RequireTier } from '../components/LicenseContext';
+import usePermissionCheck from '../hooks/usePermissionCheck';
+import { rewriteComplianceNav, rewriteAdminEscape } from './settings/complianceNavAdapter';
+import { Users, Link2, BarChart2, Cloud, CreditCard, Shield, FolderGit2, Palette, Sparkles, LifeBuoy, GraduationCap, ArrowLeft, FileText, ShieldCheck } from 'lucide-react';
 
 /* ── Org sub-items (use labelKey for i18n) ────────────────────────────────── */
 const BASE_ORG_SUB_ITEMS = [
     ...ORG_SECTIONS,                                            // license, auth, privacy, info — already use labelKey
     { id: 'org_usage', labelKey: 'settings.usage_monitoring', icon: BarChart2, color: '#f59e0b' },
+    { id: 'org_compliance', labelKey: 'settings.compliance', icon: ShieldCheck, color: '#10b981' },
     { id: 'org_users', labelKey: 'settings.users_groups', icon: Users, color: '#3b82f6' },
     { id: 'org_academy', labelKey: 'settings.academy', icon: GraduationCap, color: '#059669' },
     { id: 'org_integrations', labelKey: 'settings.integrations', icon: Link2, color: '#0ea5e9' },
     { id: 'org_github_sync', labelKey: 'settings.github_sync', icon: FolderGit2, color: '#8b5cf6' },
     { id: 'org_nextcloud_sync', labelKey: 'settings.nextcloud_sync', icon: Cloud, color: '#0082C9' },
+    { id: 'org_meeting_templates', labelKey: 'settings.meeting_templates', icon: FileText, color: '#a855f7' },
 ];
 const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', icon: Cloud, color: '#0078D4' };
+// Stable identity for usePermissionCheck (its memo keys on the array reference).
+const COMPLIANCE_PERMS = ['admin_compliance'];
 
 /* ── URL ⟷ activeTab mapping ──────────────────────────────────────────────
  * Top-level segments live at /app/settings/{section}.
@@ -65,13 +73,16 @@ const ORG_ID_TO_URL = {
     license: 'license',
     auth: 'auth',
     privacy: 'privacy',
+    encryption: 'encryption',
     info: 'info',
     org_usage: 'usage',
+    org_compliance: 'compliance',
     org_users: 'users',
     org_academy: 'academy',
     org_integrations: 'integrations',
     org_github_sync: 'github-sync',
     org_nextcloud_sync: 'nextcloud-sync',
+    org_meeting_templates: 'meeting-templates',
     org_azure: 'azure',
 };
 const ORG_URL_TO_ID = Object.fromEntries(Object.entries(ORG_ID_TO_URL).map(([id, url]) => [url, id]));
@@ -106,6 +117,16 @@ function urlForTab(tabId) {
     const urlName = ORG_ID_TO_URL[tabId];
     if (urlName) return `/app/settings/organisation/${urlName}`;
     return '/app/settings';
+}
+
+/* Org deep segments: /app/settings/organisation/<sub>/<seg1>/<seg2>.
+ * readTabFromUrl only resolves the sub-tab (parts[3]); these two extra segments
+ * drive ComplianceHub's activeSection / focusCheckId, UsageSection's
+ * initialReport (usage/safety). */
+function readOrgDeepSegsFromUrl() {
+    const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/');
+    if (parts[0] !== 'app' || parts[1] !== 'settings' || parts[2] !== 'organisation') return { seg1: '', seg2: '' };
+    return { seg1: parts[4] || '', seg2: parts[5] ? decodeURIComponent(parts[5]) : '' };
 }
 
 export const AvatarDisplay = ({ user, size = 40, className = '' }) => {
@@ -255,8 +276,11 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
     // State is kept in sync with the URL: /app/settings/{section} or
     // /app/settings/organisation/{sub}. Back/forward buttons just work.
     const [activeTab, setActiveTabState] = useState(() => readTabFromUrl() || 'preferences');
+    // Extra path segments below the Compliance sub-tab (section + check id).
+    const [orgDeepSegs, setOrgDeepSegs] = useState(readOrgDeepSegsFromUrl);
     const setActiveTab = useCallback((id) => {
         setActiveTabState(id);
+        setOrgDeepSegs({ seg1: '', seg2: '' });
         const url = urlForTab(id);
         if (window.location.pathname !== url) {
             window.history.pushState({}, '', url);
@@ -266,6 +290,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
         const onPop = () => {
             const tab = readTabFromUrl();
             if (tab) setActiveTabState(tab);
+            setOrgDeepSegs(readOrgDeepSegsFromUrl());
         };
         window.addEventListener('popstate', onPop);
         return () => window.removeEventListener('popstate', onPop);
@@ -281,6 +306,14 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
     // `learning_center`). Hide its nav item + page when the org's plan doesn't
     // include it; the /ai/learning API is gated server-side too.
     const canUseLearning = useCan('learning_center');
+    // Compliance Center — RBAC (org_admin / dpo / custom roles carrying
+    // admin_compliance) AND the enterprise licence capability. The capability is
+    // implicitly granted to all members of an enterprise org (non-groupTogglable
+    // core cap), so useCan is a precise per-org licence gate. Server-side the
+    // /api/compliance mount enforces the same pair.
+    const canSeeCompliance = usePermissionCheck(user, COMPLIANCE_PERMS);
+    const canUseCompliance = useCan('compliance_hub_gdpr');
+    const showComplianceNav = canSeeCompliance && canUseCompliance;
 
     const canManageUsers = perms.includes('all') || perms.includes('manage_users') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
@@ -360,6 +393,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
     const [agents, setAgents] = useState([]);
     const [statuses, setStatuses] = useState({
         hasFirefliesKey: false, hasYouTrackConfig: false, hasGammaKey: false, hasAfasConfig: false,
+        hasVplanConfig: false,
         hasNmbrsConfig: false, nmbrsApiMode: 'soap', nmbrsSubdomain: '', nmbrsEmail: '', nmbrsEnv: 'production',
         hasN8nConfig: false, linkedInConnected: false, linkedInName: null, hasLinkedInConfig: false,
         hasNextcloudAppPassword: false, isNextcloudUser: false,
@@ -371,6 +405,11 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
     const [orgAuthLocked, setOrgAuthLocked] = useState(false);
     const orgSubItems = useMemo(() => {
         const items = BASE_ORG_SUB_ITEMS.filter(s => {
+            // Non-org-admins see only the entries their own permission grants:
+            // Compliance for pure-DPO users.
+            if (!canSeeOrg && s.id !== 'org_compliance') return false;
+            // Hidden below Enterprise (deep links still land on UpgradePrompt).
+            if (s.id === 'org_compliance') return showComplianceNav;
             // Self-hosted: licensing is governed server-wide from the admin
             // dashboard ("Server licence"), not per-org. Drop the per-org
             // "License & Usage" entry entirely.
@@ -408,7 +447,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
             items.push(AZURE_SUB_ITEM);
         }
         return items;
-    }, [canSeeOrg, canManageUsers, canUseLearning, isSelfHosted, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected, orgAuthLocked]);
+    }, [canSeeOrg, canManageUsers, canUseLearning, showComplianceNav, isSelfHosted, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected, orgAuthLocked]);
 
     // The per-org "License & Usage" section is hidden on self-hosted (see the
     // orgSubItems filter above). A default/deep-link can still resolve activeTab
@@ -457,7 +496,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
             const res = await authFetch(`${API_BASE}/ai/user-settings`);
             if (res.ok) {
                 const data = await res.json();
-                setStatuses({ hasFirefliesKey: !!data.hasFirefliesKey, hasYouTrackConfig: !!data.hasYouTrackConfig, hasGammaKey: !!data.hasGammaKey, hasAfasConfig: !!data.hasAfasConfig, hasNmbrsConfig: !!data.hasNmbrsConfig, nmbrsApiMode: data.nmbrsApiMode || 'soap', nmbrsSubdomain: data.nmbrsSubdomain || '', nmbrsEmail: data.nmbrsEmail || '', nmbrsEnv: data.nmbrsEnv || 'production', hasN8nConfig: !!data.hasN8nConfig, hasLinkedInConfig: !!data.hasLinkedInConfig });
+                setStatuses({ hasFirefliesKey: !!data.hasFirefliesKey, hasYouTrackConfig: !!data.hasYouTrackConfig, hasGammaKey: !!data.hasGammaKey, hasAfasConfig: !!data.hasAfasConfig, hasVplanConfig: !!data.hasVplanConfig, hasNmbrsConfig: !!data.hasNmbrsConfig, nmbrsApiMode: data.nmbrsApiMode || 'soap', nmbrsSubdomain: data.nmbrsSubdomain || '', nmbrsEmail: data.nmbrsEmail || '', nmbrsEnv: data.nmbrsEnv || 'production', hasN8nConfig: !!data.hasN8nConfig, hasLinkedInConfig: !!data.hasLinkedInConfig });
             }
         } catch (e) { console.error(e); }
         try {
@@ -484,6 +523,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
         // optimistically forcing true (which would show "Connected" after a
         // disconnect, or after a token-only save that isn't fully configured).
         if (key === 'afas-profit') fetchSettingsStatuses();
+        if (key === 'vplan') fetchSettingsStatuses();
         if (key === 'nmbrs') fetchSettingsStatuses();
         if (key === 'linkedin') fetchSettingsStatuses();
         if (key === 'nextcloud') fetchSettingsStatuses();
@@ -495,8 +535,39 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
 
     // Map org sub-tab ids to the activeSection prop OrganisationSection expects
     const orgActiveSection = isOrgSubTab
-        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_academy' ? 'academy' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab === 'org_azure' ? 'azure' : activeTab === 'org_github_sync' ? 'github_sync' : activeTab === 'org_nextcloud_sync' ? 'nextcloud_sync' : activeTab)
+        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_academy' ? 'academy' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab === 'org_azure' ? 'azure' : activeTab === 'org_github_sync' ? 'github_sync' : activeTab === 'org_nextcloud_sync' ? 'nextcloud_sync' : activeTab === 'org_meeting_templates' ? 'meeting_templates' : activeTab)
         : 'license';
+
+    // Admin-dashboard destinations that have an organisation-settings
+    // equivalent (Privacy for guardrails/DLP, Usage → Safety for monitoring)
+    // stay on the settings surface — but only when this user can see the
+    // target tab; otherwise the caller falls through to the app router,
+    // which is today's admin-dashboard behavior.
+    const applyAdminEscape = useCallback((path) => {
+        const esc = rewriteAdminEscape(path);
+        if (!esc) return false;
+        if (!canSeeOrg) return false;
+        setOrgDeepSegs({ seg1: esc.seg1 || '', seg2: '' });
+        setActiveTabState(esc.tab);
+        if (window.location.pathname !== esc.url) window.history.pushState({}, '', esc.url);
+        return true;
+    }, [canSeeOrg]);
+
+    // ComplianceHub always emits admin-dashboard paths. Keep compliance-internal
+    // navigation on the settings surface (deep URL incl. section/check id),
+    // land remediation links on their settings equivalents where possible, and
+    // forward the rest to the app router.
+    const handleComplianceNavigate = useCallback((path) => {
+        const hit = rewriteComplianceNav(path);
+        if (hit) {
+            setOrgDeepSegs({ seg1: hit.section, seg2: hit.checkId });
+            setActiveTabState('org_compliance');
+            if (window.location.pathname !== hit.url) window.history.pushState({}, '', hit.url);
+            return;
+        }
+        if (applyAdminEscape(path)) return;
+        onNavigate?.(path);
+    }, [onNavigate, applyAdminEscape]);
 
     const renderContent = () => {
         // Mobile: never render a hidden section's panel (covers the one frame
@@ -505,8 +576,23 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
         if (isMobile && !MOBILE_VISIBLE_TAB_SET.has(activeTab) && !(activeTab === 'license' && !hasActiveSub)) {
             return null;
         }
+        // Compliance is reachable for pure-DPO users too (admin_compliance
+        // without org-admin), so it must not sit behind the canSeeOrg branch.
+        // Below-enterprise deep links get the standard UpgradePrompt.
+        if (activeTab === 'org_compliance') {
+            if (!canSeeCompliance) return null;
+            return (
+                <RequireTier tier="enterprise" feature="compliance_hub_gdpr">
+                    <ComplianceHub
+                        activeSection={orgDeepSegs.seg1 || 'overview'}
+                        focusCheckId={orgDeepSegs.seg2 || null}
+                        onNavigate={handleComplianceNavigate}
+                    />
+                </RequireTier>
+            );
+        }
         if (activeTab === 'org_azure' && canSeeOrg) return <OrgAzureConfigPanel user={user} />;
-        if (isOrgSubTab && canSeeOrg) return <OrganisationSection user={user} activeSection={orgActiveSection} />;
+        if (isOrgSubTab && canSeeOrg) return <OrganisationSection user={user} activeSection={orgActiveSection} usageInitialReport={activeTab === 'org_usage' ? (orgDeepSegs.seg1 || '') : ''} />;
         // Consumer account tabs
         if (activeTab === 'consumer_license' && isConsumerAccount) return <ConsumerLicenseSection user={user} />;
         if (activeTab === 'consumer_privacy' && isConsumerAccount) return <ConsumerPrivacySection user={user} />;
@@ -579,7 +665,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
                     onClick={() => { if (mobileInDetail) setMobileDetail(false); else handleClose(); }}
                     className="md:hidden -ml-2 mr-0.5 p-1.5 rounded-lg"
                     style={{ color: 'var(--text-secondary)' }}
-                    aria-label={t('common.back') || 'Back'}
+                    aria-label={t('common.back', 'Back')}
                 >
                     <ArrowLeft className="w-5 h-5" />
                 </button>
@@ -672,8 +758,10 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
                         )}
 
                         {/* Organisation accordion — only if permitted. Hidden on
-                            mobile: phones show user settings only. */}
-                        {!isSimpleMode && !isMobile && canSeeOrg && (
+                            mobile: phones show user settings only. Pure-DPO users
+                            (showComplianceNav without canSeeOrg) get the group
+                            with just the Compliance entry. */}
+                        {!isSimpleMode && !isMobile && (canSeeOrg || showComplianceNav) && (
                             <>
                                 <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '6px 8px' }} />
                                 <p className="text-[9px] font-semibold uppercase tracking-widest px-3 pb-1 pt-1" style={{ color: 'var(--text-muted)' }}>
@@ -717,39 +805,39 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
                             <>
                                 <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '6px 8px' }} />
                                 <p className="text-[9px] font-semibold uppercase tracking-widest px-3 pb-1 pt-1" style={{ color: 'var(--text-muted)' }}>
-                                    {t('settings.account_section') || 'Account'}
+                                    {t('settings.account_section', 'Account')}
                                 </p>
                                 <NavItem
                                     id="consumer_license"
-                                    label={t('settings.license_usage') || 'License & Usage'}
+                                    label={t('settings.license_usage', 'License & Usage')}
                                     icon={<CreditCard style={{ width: '15px', height: '15px' }} />}
                                     isActive={activeTab === 'consumer_license'}
                                     onClick={handleNavClick}
                                 />
                                 <NavItem
                                     id="consumer_privacy"
-                                    label={t('settings.privacy_shield') || 'Privacy Shield'}
+                                    label={t('settings.privacy_shield', 'Privacy Shield')}
                                     icon={<Shield style={{ width: '15px', height: '15px' }} />}
                                     isActive={activeTab === 'consumer_privacy'}
                                     onClick={handleNavClick}
                                 />
                                 <NavItem
                                     id="consumer_usage"
-                                    label={t('settings.usage_monitoring') || 'Usage & Monitoring'}
+                                    label={t('settings.usage_monitoring', 'Usage & Monitoring')}
                                     icon={<BarChart2 style={{ width: '15px', height: '15px' }} />}
                                     isActive={activeTab === 'consumer_usage'}
                                     onClick={handleNavClick}
                                 />
                                 <NavItem
                                     id="consumer_integrations"
-                                    label={t('settings.integrations') || 'Integrations'}
+                                    label={t('settings.integrations', 'Integrations')}
                                     icon={<Link2 style={{ width: '15px', height: '15px' }} />}
                                     isActive={activeTab === 'consumer_integrations'}
                                     onClick={handleNavClick}
                                 />
                                 <NavItem
                                     id="consumer_beta"
-                                    label={t('settings.beta_features') || 'Beta features'}
+                                    label={t('settings.beta_features', 'Beta features')}
                                     icon={<Sparkles style={{ width: '15px', height: '15px' }} />}
                                     isActive={activeTab === 'consumer_beta'}
                                     onClick={handleNavClick}
@@ -774,7 +862,9 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
                 <div className={`flex-1 overflow-auto ${mobileDetail ? 'block' : 'hidden md:block'}`} style={{ background: 'var(--bg-primary)' }}>
                     <div
                         className={`mx-auto py-6 md:py-8 px-4 md:px-8 ${(isOrgSubTab || activeTab === 'consumer_usage' || activeTab === 'consumer_integrations') ? 'max-w-5xl' : 'max-w-[640px]'}`}
-                        style={activeTab === 'org_usage' ? { maxWidth: '100%', padding: '24px 32px 32px' } : undefined}
+                        style={activeTab === 'org_usage' ? { maxWidth: '100%', padding: '24px 32px 32px' }
+                            : activeTab === 'org_compliance' ? { maxWidth: '100%', padding: 0, height: '100%' }
+                            : undefined}
                     >
                         {renderContent()}
                     </div>

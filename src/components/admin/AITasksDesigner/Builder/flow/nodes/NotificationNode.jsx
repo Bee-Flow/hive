@@ -1,11 +1,17 @@
 import React from 'react';
 import { Bell } from 'lucide-react';
+import { nodeDefaultLabel, nodeHelp, nodeTypeLabel } from '../nodeDefs';
 import StepNodeBase, { NodeChip, ForEachBadge } from './StepNodeBase';
 import { humanizeExpression } from '../displayHelpers';
+import { CHANNEL_LABELS } from '../../notificationDefaults';
 
 export default function NotificationNode({ id, data }) {
     const { step, runStep, issues, onAddAfter, stepLabelById } = data;
-    const channels = Array.isArray(step.channels) ? step.channels : ['notification'];
+    // The chip used to read the raw key — a node whose only badge said
+    // "notification" told the author nothing about where the message lands
+    // (BFSF-350).
+    const channels = (Array.isArray(step.channels) && step.channels.length ? step.channels : ['notification'])
+        .map(c => CHANNEL_LABELS[c] || c);
     const title = step.title || '';
     const bodyText = step.body || '';
     const friendlyTitle = humanizeExpression(title, stepLabelById);
@@ -14,7 +20,7 @@ export default function NotificationNode({ id, data }) {
     const body = (
         <div>
             <div className="font-semibold truncate" title={title}>
-                {friendlyTitle || step.label || 'Notification'}
+                {friendlyTitle || step.label || nodeDefaultLabel('notification')}
             </div>
             {bodyText && (
                 <div className="mt-0.5 text-[var(--text-secondary)] line-clamp-2" title={bodyText}>
@@ -33,7 +39,7 @@ export default function NotificationNode({ id, data }) {
 
     const hoverDetail = (
         <div>
-            <div className="font-semibold mb-1">{step.label || 'Notification'}</div>
+            <div className="font-semibold mb-1">{step.label || nodeDefaultLabel('notification')}</div>
             {title && <div className="font-semibold">{title}</div>}
             {bodyText && <div className="mt-0.5 whitespace-pre-wrap text-[var(--text-secondary)]">{bodyText.slice(0, 280)}</div>}
             <div className="mt-1 flex items-center gap-1 flex-wrap">
@@ -45,7 +51,8 @@ export default function NotificationNode({ id, data }) {
     return (
         <StepNodeBase
             icon={<Bell size={14} />}
-            typeLabel="Notification"
+            typeLabel={nodeTypeLabel('notification')}
+            help={nodeHelp('notification')}
             body={body}
             badges={badges}
             hoverDetail={hoverDetail}

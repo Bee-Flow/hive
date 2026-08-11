@@ -214,7 +214,7 @@ const KBMarketplace = ({
             name: kb.name,
             icon: kb.icon,
             description: kb.description,
-            categoryLabel: kb.category_id ? (TYPE_MAP[`cat_${kb.category_id}`] || t('kb_store.badge_kb') || 'Knowledge Base') : (t('kb_store.badge_kb') || 'Knowledge Base'),
+            categoryLabel: kb.category_id ? (TYPE_MAP[`cat_${kb.category_id}`] || t('kb_store.badge_kb', 'Knowledge Base')) : (t('kb_store.badge_kb', 'Knowledge Base')),
             isPublished: !!kb.is_published,
             isFavorite: favorites.includes(kb.id),
             isOwner,
@@ -237,7 +237,7 @@ const KBMarketplace = ({
             <div className="px-6 pt-5 pb-4 border-b" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}>
                 <div className="flex items-center justify-between mb-3">
                     <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('kb_store.title') || 'Knowledge Bases'}</h1>
+                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('kb_store.title', 'Knowledge Bases')}</h1>
                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                             {t('kb_store.count', { visible: filtered.length, total: kbs.length }) || `${filtered.length} of ${kbs.length} knowledge bases`}
                         </p>
@@ -251,7 +251,7 @@ const KBMarketplace = ({
                                 data-testid="kb-marketplace-create"
                             >
                                 <Plus className="w-3.5 h-3.5" />
-                                {t('kb_store.kb_editor') || 'New Knowledge Base'}
+                                {t('kb_store.kb_editor', 'New Knowledge Base')}
                             </button>
                         )}
                         {onClose && (
@@ -266,7 +266,7 @@ const KBMarketplace = ({
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                     <input
                         type="text"
-                        placeholder={t('kb_store.search_placeholder') || 'Search knowledge bases...'}
+                        placeholder={t('kb_store.search_placeholder', 'Search knowledge bases...')}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="w-full pl-9 pr-4 py-2 rounded-lg border text-sm focus:outline-none transition-all"
@@ -300,7 +300,7 @@ const KBMarketplace = ({
                     style={{ color: hasActiveFilters ? 'var(--accent-primary)' : 'var(--text-muted)' }}
                 >
                     {showFilters ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                    {t('kb_store.advanced') || 'Advanced'}
+                    {t('kb_store.advanced', 'Advanced')}
                 </button>
 
                 {showFilters && (
@@ -349,7 +349,7 @@ const KBMarketplace = ({
                 <div className="px-6 py-5 space-y-5">
                     <div>
                         <h2 className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
-                            {isSearching ? (t('kb_store.results') || 'Results') : (CATEGORIES.find(c => c.key === activeCategory)?.label || (t('kb_store.title') || 'Knowledge Bases'))}
+                            {isSearching ? (t('kb_store.results', 'Results')) : (CATEGORIES.find(c => c.key === activeCategory)?.label || (t('kb_store.title', 'Knowledge Bases')))}
                             <span className="font-normal ml-1 normal-case tracking-normal">({filtered.length})</span>
                         </h2>
 
@@ -379,10 +379,10 @@ const KBMarketplace = ({
                             <div className="py-16 flex flex-col items-center justify-center">
                                 <div className="text-3xl mb-3">📚</div>
                                 <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                                    {t('kb_store.no_kbs') || 'No knowledge bases yet'}
+                                    {t('kb_store.no_kbs', 'No knowledge bases yet')}
                                 </h3>
                                 <p className="text-xs text-center max-w-xs" style={{ color: 'var(--text-muted)' }}>
-                                    {t('kb_store.no_kbs_hint') || 'Create your first KB and add documents to ground your agents.'}
+                                    {t('kb_store.no_kbs_hint', 'Create your first KB and add documents to ground your agents.')}
                                 </p>
                                 {canManageKBs && onEditKB && (
                                     <button
@@ -390,7 +390,7 @@ const KBMarketplace = ({
                                         className="mt-4 px-4 py-1.5 rounded-lg text-white text-xs font-semibold hover:opacity-90"
                                         style={{ background: 'var(--accent-primary)' }}
                                     >
-                                        {t('kb_store.kb_editor') || 'New Knowledge Base'}
+                                        {t('kb_store.kb_editor', 'New Knowledge Base')}
                                     </button>
                                 )}
                             </div>

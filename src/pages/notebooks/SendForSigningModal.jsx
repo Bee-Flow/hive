@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Plus, Trash2, PenTool, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import useTranslation from '../../hooks/useTranslation';
 
 // Stable id for signer rows so React can track focus/IME state across reorders.
 // crypto.randomUUID is supported in all modern browsers; the fallback handles
@@ -11,7 +12,8 @@ const makeSignerId = () =>
 
 const blankSigner = () => ({ _uid: makeSignerId(), email: '', first_name: '', last_name: '' });
 
-export default function SendForSigningModal({ open, onClose, onSend, sending, notebookTitle }) {
+export default function SendForSigningModal({ open, onClose, onSend, sending, notebookTitle, error, onClearError }) {
+    const { t } = useTranslation();
     const [signers, setSigners] = useState(() => [blankSigner()]);
     const [subject, setSubject] = useState('');
     const [message, setMessage] = useState('');
@@ -22,11 +24,28 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
     useEffect(() => {
         if (open) {
             setSigners([blankSigner()]);
-            setSubject(notebookTitle ? `Signature requested: ${notebookTitle}` : '');
+            // This string is the SUBJECT LINE of the email the signer receives,
+            // so a hardcoded English default reached real recipients regardless
+            // of the sender's language.
+            setSubject(notebookTitle ? t('notebooks.sign_subject_default', { title: notebookTitle }) : '');
             setMessage('');
             setResult(null);
+            onClearError?.();
         }
-    }, [open, notebookTitle]);
+    }, [open, notebookTitle, t]);
+
+    // Escape to dismiss + restore focus to whatever opened it. This modal had
+    // neither, so it could only be closed with the mouse.
+    useEffect(() => {
+        if (!open) return undefined;
+        const opener = document.activeElement;
+        const onKey = (e) => { if (e.key === 'Escape' && !sending) { e.stopPropagation(); onClose?.(); } };
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('keydown', onKey);
+            try { opener?.focus?.(); } catch (_) { /* element may be gone */ }
+        };
+    }, [open, sending, onClose]);
 
     if (!open) return null;
 
@@ -60,9 +79,14 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
             ref={overlayRef}
             className="fixed inset-0 z-50 flex items-center justify-center"
             style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-            onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+            // onMouseDown, not onClick: a text-selection drag that happens to
+            // end on the backdrop should not dismiss the dialog.
+            onMouseDown={(e) => { if (e.target === overlayRef.current) onClose(); }}
         >
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={t('notebooks.send_for_signing', 'Send for signing')}
                 className="w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden"
                 style={{
                     background: 'var(--bg-secondary)',
@@ -77,14 +101,15 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                     </div>
                     <div className="flex-1 min-w-0">
                         <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-                            Send for Signing
+                            {t('notebooks.send_for_signing', 'Send for signing')}
                         </h3>
                         <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                            via SignRequest · {notebookTitle}
+                            {t('notebooks.via_signrequest', 'via SignRequest')} · {notebookTitle}
                         </p>
                     </div>
                     <button
                         onClick={onClose}
+                        aria-label={t('notebooks.close', 'Close')}
                         className="p-1.5 rounded-lg hover:bg-black/5 transition-colors"
                     >
                         <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
@@ -98,10 +123,10 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                         <div className="flex flex-col items-center gap-3 py-6">
                             <CheckCircle className="w-12 h-12" style={{ color: '#22c55e' }} />
                             <h4 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                Document Sent for Signing!
+                                {t('notebooks.sign_sent_title', 'Document sent for signing!')}
                             </h4>
                             <p className="text-sm text-center" style={{ color: 'var(--text-secondary)' }}>
-                                {result.message || 'Your document has been sent to the signer(s).'}
+                                {result.message || t('notebooks.sign_sent_body', 'Your document has been sent to the signer(s).')}
                             </p>
                             {result.signers?.length > 0 && (
                                 <div className="w-full mt-2 rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -112,7 +137,7 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                             </span>
                                             <span className="text-[11px] px-2 py-0.5 rounded-full font-medium"
                                                 style={{ background: 'rgba(234,179,8,0.1)', color: '#ca8a04' }}>
-                                                {s.status || 'Pending'}
+                                                {s.status || t('notebooks.sign_pending', 'Pending')}
                                             </span>
                                         </div>
                                     ))}
@@ -125,7 +150,7 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                             {/* Signers */}
                             <div>
                                 <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                                    Signers
+                                    {t('notebooks.signers', 'Signers')}
                                 </label>
                                 <div className="space-y-2 mt-2">
                                     {signers.map((signer) => (
@@ -133,7 +158,8 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                             <div className="flex-1 grid grid-cols-3 gap-2">
                                                 <input
                                                     type="email"
-                                                    placeholder="Email *"
+                                                    placeholder={t('notebooks.signer_email', 'Email *')}
+                                                    aria-label={t('notebooks.signer_email', 'Email *')}
                                                     value={signer.email}
                                                     onChange={e => updateSigner(signer._uid, 'email', e.target.value)}
                                                     className="col-span-3 sm:col-span-1 px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
@@ -141,7 +167,8 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                                 />
                                                 <input
                                                     type="text"
-                                                    placeholder="First name"
+                                                    placeholder={t('notebooks.signer_first_name', 'First name')}
+                                                    aria-label={t('notebooks.signer_first_name', 'First name')}
                                                     value={signer.first_name}
                                                     onChange={e => updateSigner(signer._uid, 'first_name', e.target.value)}
                                                     className="px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
@@ -149,7 +176,8 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                                 />
                                                 <input
                                                     type="text"
-                                                    placeholder="Last name"
+                                                    placeholder={t('notebooks.signer_last_name', 'Last name')}
+                                                    aria-label={t('notebooks.signer_last_name', 'Last name')}
                                                     value={signer.last_name}
                                                     onChange={e => updateSigner(signer._uid, 'last_name', e.target.value)}
                                                     className="px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
@@ -161,7 +189,8 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                                     onClick={() => removeSigner(signer._uid)}
                                                     className="p-2 rounded-lg hover:bg-[rgba(239,68,68,0.1)] transition-colors mt-0.5"
                                                     style={{ color: 'var(--error)' }}
-                                                    title="Remove signer"
+                                                    title={t('notebooks.remove_signer', 'Remove signer')}
+                                                    aria-label={t('notebooks.remove_signer', 'Remove signer')}
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
                                                 </button>
@@ -174,20 +203,20 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                     className="flex items-center gap-1.5 mt-2 text-[12px] font-medium px-2 py-1 rounded-lg hover:bg-black/5 transition-colors"
                                     style={{ color: 'var(--accent-primary)' }}
                                 >
-                                    <Plus className="w-3.5 h-3.5" /> Add signer
+                                    <Plus className="w-3.5 h-3.5" /> {t('notebooks.add_signer', 'Add signer')}
                                 </button>
                             </div>
 
                             {/* Subject */}
                             <div>
                                 <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                                    Email Subject
+                                    {t('notebooks.email_subject', 'Email subject')}
                                 </label>
                                 <input
                                     type="text"
                                     value={subject}
                                     onChange={e => setSubject(e.target.value)}
-                                    placeholder="e.g. Contract for review and signature"
+                                    placeholder={t('notebooks.email_subject_placeholder', 'e.g. Contract for review and signature')}
                                     className="w-full mt-1.5 px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                                 />
@@ -196,12 +225,12 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                             {/* Message */}
                             <div>
                                 <label className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                                    Message (optional)
+                                    {t('notebooks.message_optional', 'Message (optional)')}
                                 </label>
                                 <textarea
                                     value={message}
                                     onChange={e => setMessage(e.target.value)}
-                                    placeholder="Add a personal message to the signers..."
+                                    placeholder={t('notebooks.message_placeholder', 'Add a personal message to the signers…')}
                                     rows={3}
                                     className="w-full mt-1.5 px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors resize-none"
                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
@@ -211,6 +240,16 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                     )}
                 </div>
 
+                {/* Inline error — the page-level banner is behind this
+                    modal's backdrop, so a failure here was invisible. */}
+                {error && !result && (
+                    <div className="mx-6 mb-3 flex items-start gap-2 px-3 py-2 rounded-lg text-[12px]"
+                        style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--error, #ef4444)' }} role="alert">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
+                        <span className="flex-1">{error}</span>
+                    </div>
+                )}
+
                 {/* Footer */}
                 <div className="px-6 py-3 border-t flex items-center justify-end gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
                     {result ? (
@@ -219,7 +258,7 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                             className="px-5 py-2 rounded-xl text-[13px] font-medium text-white"
                             style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
                         >
-                            Done
+                            {t('notebooks.done', 'Done')}
                         </button>
                     ) : (
                         <>
@@ -228,7 +267,7 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                 className="px-4 py-2 rounded-xl text-[13px] font-medium transition-colors"
                                 style={{ color: 'var(--text-secondary)', background: 'var(--bg-primary)', border: '1px solid var(--border-default)' }}
                             >
-                                Cancel
+                                {t('common.cancel', 'Cancel')}
                             </button>
                             <button
                                 onClick={handleSend}
@@ -239,12 +278,12 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                 {sending ? (
                                     <>
                                         <Loader2 className="w-4 h-4 animate-spin" />
-                                        Sending…
+                                        {t('notebooks.sending', 'Sending…')}
                                     </>
                                 ) : (
                                     <>
                                         <PenTool className="w-4 h-4" />
-                                        Send for Signing
+                                        {t('notebooks.send_for_signing', 'Send for signing')}
                                     </>
                                 )}
                             </button>

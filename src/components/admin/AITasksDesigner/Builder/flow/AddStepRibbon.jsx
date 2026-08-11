@@ -1,10 +1,14 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, Search, Wand2, ChevronsUpDown, LayoutGrid, Boxes, Home, Undo2, Redo2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, Search, Wand2, ChevronsUpDown, LayoutGrid, Boxes, Home, Undo2, Redo2, Webhook } from 'lucide-react';
 import AddStepMenu from './AddStepMenu';
 import IntegrationLogo from './nodes/IntegrationLogo';
 import Tabs from '../../../../shared/Tabs';
-import { buildStepGroups, orderedAppCategories, AI_STEP, TRIGGERS } from './stepPalette';
+import RibbonCluster from '../../../../shared/ribbon/RibbonCluster';
+import CmdButton from '../../../../shared/ribbon/CmdButton';
+import RibbonDropdown from '../../../../shared/ribbon/RibbonDropdown';
+import InlineButton from '../../../../shared/ribbon/InlineButton';
+import { buildStepGroups, orderedAppCategories, AI_STEP, TRIGGERS, additionalTriggerItems } from './stepPalette';
+import { stepDragProps } from './stepDrag';
 import scopedStorage from '../../../../../utils/scopedStorage';
 
 /**
@@ -27,6 +31,10 @@ import scopedStorage from '../../../../../utils/scopedStorage';
  *   autoMapEnabled / onToggleAutoMap — the auto-map-inputs toggle
  *   embedded  — render bare (no bar chrome / collapse) for the header slot
  */
+// Shown as its own line in the screen tip rather than glued onto the end of
+// the description, where it used to run the two together.
+const DRAG_HINT = 'Click to add, or drag it onto the canvas.';
+
 export default function AddStepRibbon({
     scope = {},
     hasTrigger = true,
@@ -62,7 +70,7 @@ export default function AddStepRibbon({
             // The dropdown panel is portalled to <body>, so it's outside rowRef.
             // Ignore clicks landing inside it, or item-selection unmounts the
             // portal before the click registers.
-            if (e.target.closest && e.target.closest('[data-addstep-dropdown]')) return;
+            if (e.target.closest && e.target.closest('[data-ribbon-dropdown]')) return;
             setOpenKey(null);
         };
         const onKey = (e) => { if (e.key === 'Escape') setOpenKey(null); };
@@ -85,18 +93,24 @@ export default function AddStepRibbon({
 
     const groups = useMemo(() => buildStepGroups(scope), [scope]);
     const add = (payload) => { onAddNode?.(payload); setOpenKey(null); };
+    // Every command is also a drag source: dropping it on a connection splices
+    // it in, dropping it on a node wires it from there, dropping it on empty
+    // canvas leaves it loose (see flow/stepDrag.js + DiagramPane's onDrop).
 
     // Bar chrome only in standalone mode; embedded is bare so it sits flush
     // inside the header row.
     const barChrome = embedded ? '' : 'px-3 py-1.5 border-b border-[var(--border-default)] bg-[var(--bg-secondary)]/40';
 
     // Trigger state: no trigger yet → offer the trigger choices.
+    // This branch returns before the embedded layout, so it can't lean on
+    // `barChrome` (empty when embedded) for its padding — without the explicit
+    // row padding the caption sat flush against the pane edge (BFSF-327).
     if (!hasTrigger) {
         return (
-            <div ref={rowRef} className={`flex items-center gap-1.5 flex-wrap ${barChrome} ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div ref={rowRef} className={`flex items-center gap-1.5 flex-wrap px-3 py-2 border-b border-[var(--border-default)] bg-[var(--bg-secondary)]/40 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)] mr-1">Start with a trigger</span>
                 {TRIGGERS.map(t => (
-                    <InlineButton key={t.id} icon={t.icon} label={t.label} onClick={() => add(t.payload)} />
+                    <InlineButton key={t.id} icon={t.icon} label={t.label} onClick={() => add(t.payload)} {...stepDragProps(t.payload)} />
                 ))}
             </div>
         );
@@ -120,22 +134,51 @@ export default function AddStepRibbon({
 
     // Dropdown groups (skip 'ai' — the one inline shortcut). Everything else,
     // including If / Loop / Edit fields, lives in the consolidated Flow menu.
-    const dropdownGroups = groups.filter(g => g.key !== 'ai');
+    // 'triggers' is skipped too: the ribbon already has a dedicated "+ Trigger"
+    // cluster below, and the group exists for the edge-drop popover's browse
+    // list, which has no such cluster.
+    const dropdownGroups = groups.filter(g => g.key !== 'ai' && g.key !== 'triggers');
 
     // The three control clusters, shared by both layouts.
-    const aiButton = <InlineButton icon={AI_STEP.icon} label="AI step" onClick={() => add(AI_STEP.payload)} />;
+    const aiButton = <InlineButton icon={AI_STEP.icon} label="AI step" onClick={() => add(AI_STEP.payload)} {...stepDragProps(AI_STEP.payload)} />;
     const stepDropdowns = dropdownGroups.map(g => (
-        <Dropdown
+        <RibbonDropdown
             key={g.key}
             label={g.title}
             open={openKey === g.key}
             onToggle={() => setOpenKey(k => (k === g.key ? null : g.key))}
         >
             <AddStepMenu scope={scope} group={g} showSearch={false} onAdd={add} onAfterAdd={() => setOpenKey(null)} />
-        </Dropdown>
+        </RibbonDropdown>
     ));
+    // The "+ Trigger" cluster. Webhook/app_event are APPENDED to
+    // definition.triggers[]; the other five can only be the one primary
+    // trigger, so picking one replaces it (BuildTab.addStepAt confirms first).
+    // See DiagramPane.jsx's buildStepFromPayload/applyAddNode
+    // (asSecondaryTrigger → __addTrigger) and automation/validate.js's
+    // `triggers[]` rules (schedule/manual rejected there).
+    //
+    // It used to list only the two additive kinds, which — together with a
+    // search that returned no triggers at all — left five of the seven with no
+    // way in on an existing routine (BFSF-325).
+    //
+    // NOT inside a flowlet or a reusable Step (C8): triggers[] is root-only —
+    // the validator rejects it on a layer graph (`triggers.not_supported_here`),
+    // so offering the cluster there wrote an instantly-unsaveable definition.
+    const allowTriggers = !scope?.inLayer && !scope?.isBlockRoot;
+    const addTriggerGroup = { key: 'add_trigger', title: 'Trigger', items: additionalTriggerItems() };
+    const addTriggerDropdown = (
+        <RibbonDropdown
+            label="+ Trigger"
+            icon={Webhook}
+            open={openKey === '__addTrigger'}
+            onToggle={() => setOpenKey(k => (k === '__addTrigger' ? null : '__addTrigger'))}
+        >
+            <AddStepMenu scope={scope} group={addTriggerGroup} showSearch={false} onAdd={add} onAfterAdd={() => setOpenKey(null)} />
+        </RibbonDropdown>
+    );
     const searchDropdown = (
-        <Dropdown
+        <RibbonDropdown
             label="Search"
             icon={Search}
             open={openKey === '__search'}
@@ -144,7 +187,7 @@ export default function AddStepRibbon({
             width={340}
         >
             <AddStepMenu scope={scope} showSearch autoFocus onAdd={add} onAfterAdd={() => setOpenKey(null)} />
-        </Dropdown>
+        </RibbonDropdown>
     );
     const autoMapToggle = onToggleAutoMap ? (
         <label
@@ -241,25 +284,59 @@ export default function AddStepRibbon({
                                         <CmdButton
                                             key={`${it.key}:${it.label}`}
                                             icon={it.Icon}
-                                            integrationId={it.integrationId}
-                                            tool={it.tool}
+                                            glyph={<IntegrationLogo integrationId={it.integrationId} tool={it.tool} size={14} />}
                                             label={it.label}
-                                            title={`Add ${it.label} — you use this a lot`}
+                                            desc={it.secondary || 'You use this a lot.'}
+                                            tipFooter={DRAG_HINT}
                                             onClick={() => add(it.payload)}
+                                            grabbable
+                                            {...stepDragProps(it.payload)}
                                         />
                                     ))}
                                 </RibbonCluster>
                             )}
                             <RibbonCluster caption="AI" single>
-                                <CmdButton big accent icon={AI_STEP.icon} label="AI step" title={AI_STEP.desc} onClick={() => add(AI_STEP.payload)} />
+                                <CmdButton big accent icon={AI_STEP.icon} label={AI_STEP.label} desc={AI_STEP.desc} tipFooter={DRAG_HINT} onClick={() => add(AI_STEP.payload)} grabbable {...stepDragProps(AI_STEP.payload)} />
                             </RibbonCluster>
                             {flowSections.map(sec => (
                                 <RibbonCluster key={sec.key || sec.title} caption={sec.title}>
                                     {sec.items.map(item => (
-                                        <CmdButton key={item.id} icon={item.icon} label={item.label} title={item.desc} onClick={() => add(item.payload)} />
+                                        // A step this graph can't accept stays on the
+                                        // ribbon, greyed, with the reason as its tooltip —
+                                        // and isn't draggable either (BFSF-348).
+                                        <CmdButton
+                                            key={item.id}
+                                            icon={item.icon}
+                                            label={item.label}
+                                            desc={item.disabled ? item.disabledReason : item.desc}
+                                            tipFooter={item.disabled ? null : DRAG_HINT}
+                                            onClick={() => add(item.payload)}
+                                            disabled={!!item.disabled}
+                                            grabbable={!item.disabled}
+                                            {...(item.disabled ? null : stepDragProps(item.payload))}
+                                        />
                                     ))}
                                 </RibbonCluster>
                             ))}
+                            {/* One button, not seven. A routine already HAS a
+                                trigger by the time this ribbon shows, so
+                                changing or adding one is a rare act — laying
+                                all seven out cost a whole second ribbon row
+                                for something nobody reaches for daily. The
+                                full list is one click away here, and search
+                                and browse both carry it too (BFSF-325). */}
+                            {allowTriggers && (
+                                <RibbonCluster caption="Trigger" single>
+                                    <RibbonDropdown
+                                        label="Change or add"
+                                        icon={Webhook}
+                                        open={openKey === '__addTrigger'}
+                                        onToggle={() => setOpenKey(k => (k === '__addTrigger' ? null : '__addTrigger'))}
+                                    >
+                                        <AddStepMenu scope={scope} group={addTriggerGroup} showSearch={false} onAdd={add} onAfterAdd={() => setOpenKey(null)} />
+                                    </RibbonDropdown>
+                                </RibbonCluster>
+                            )}
                         </>
                     )}
 
@@ -278,14 +355,27 @@ export default function AddStepRibbon({
                             {flowletGroup && (flowletGroup.items || []).length > 0 && (
                                 <RibbonCluster caption="Flowlets">
                                     {flowletGroup.items.map(item => (
-                                        <CmdButton key={item.id} icon={item.icon} label={item.label} title={item.desc} onClick={() => add(item.payload)} />
+                                        <CmdButton key={item.id} icon={item.icon} label={item.label} desc={item.desc} tipFooter={DRAG_HINT} onClick={() => add(item.payload)} grabbable {...stepDragProps(item.payload)} />
                                     ))}
                                 </RibbonCluster>
                             )}
                             {stepSections.map(sec => (
                                 <RibbonCluster key={sec.key || sec.title} caption={sec.title}>
                                     {sec.items.map(item => (
-                                        <CmdButton key={item.id} icon={item.icon} label={item.label} title={item.desc} onClick={() => add(item.payload)} />
+                                        // A step this graph can't accept stays on the
+                                        // ribbon, greyed, with the reason as its tooltip —
+                                        // and isn't draggable either (BFSF-348).
+                                        <CmdButton
+                                            key={item.id}
+                                            icon={item.icon}
+                                            label={item.label}
+                                            desc={item.disabled ? item.disabledReason : item.desc}
+                                            tipFooter={item.disabled ? null : DRAG_HINT}
+                                            onClick={() => add(item.payload)}
+                                            disabled={!!item.disabled}
+                                            grabbable={!item.disabled}
+                                            {...(item.disabled ? null : stepDragProps(item.payload))}
+                                        />
                                     ))}
                                 </RibbonCluster>
                             ))}
@@ -304,6 +394,7 @@ export default function AddStepRibbon({
             {aiButton}
             <span className="mx-1 h-5 w-px bg-[var(--border-default)]" />
             {stepDropdowns}
+            {allowTriggers && addTriggerDropdown}
             <div className="ml-auto flex items-center gap-1.5">
                 {searchDropdown}
                 {autoMapToggle}
@@ -353,7 +444,7 @@ export function RibbonSearch({ scope = {}, onAdd, disabled = false }) {
     useEffect(() => {
         if (!open) return undefined;
         const onDown = (e) => {
-            if (e.target.closest && (e.target.closest('[data-ribbon-search]') || e.target.closest('[data-addstep-dropdown]'))) return;
+            if (e.target.closest && (e.target.closest('[data-ribbon-search]') || e.target.closest('[data-ribbon-dropdown]'))) return;
             setOpen(false);
         };
         const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
@@ -364,8 +455,7 @@ export function RibbonSearch({ scope = {}, onAdd, disabled = false }) {
     const add = (p) => { onAdd?.(p); setOpen(false); };
     return (
         <span data-ribbon-search className={disabled ? 'opacity-50 pointer-events-none' : ''}>
-            <Dropdown
-                variant="cmd"
+            <RibbonDropdown
                 label="Search"
                 icon={Search}
                 align="right"
@@ -374,71 +464,8 @@ export function RibbonSearch({ scope = {}, onAdd, disabled = false }) {
                 onToggle={() => setOpen(o => !o)}
             >
                 <AddStepMenu scope={scope} showSearch autoFocus onAdd={add} onAfterAdd={() => setOpen(false)} />
-            </Dropdown>
+            </RibbonDropdown>
         </span>
-    );
-}
-
-/**
- * One Office-ribbon group: a bordered, rounded panel whose commands sit in a
- * compact 2-row grid (filling top-to-bottom, then wrapping into the next
- * column) with a small caption beneath — the classic Word/Excel ribbon group.
- * The border makes each category visually distinct. `single` centres a lone
- * headline command (AI step) over the full height instead of gridding it.
- */
-function RibbonCluster({ caption, children, single = false }) {
-    return (
-        <div className="flex flex-col shrink-0 rounded-lg border border-[var(--border-default)] bg-[var(--bg-primary)]/60 px-1.5 pt-1 pb-0.5">
-            {single ? (
-                <div className="flex flex-1 items-center justify-center">{children}</div>
-            ) : (
-                <div className="grid grid-rows-2 grid-flow-col auto-cols-max content-start gap-x-0.5 gap-y-0.5 flex-1">
-                    {children}
-                </div>
-            )}
-            <div className="mt-0.5 text-center text-[10px] uppercase tracking-wide text-[var(--text-tertiary)] select-none">
-                {caption}
-            </div>
-        </div>
-    );
-}
-
-/**
- * A single ribbon command button: icon (lucide component) or integration logo
- * + label. `big` renders the headline vertical style (icon over label);
- * otherwise a compact icon-left row that packs into the cluster's 2-row grid.
- */
-function CmdButton({ icon: Icon, integrationId, tool, label, title, onClick, big = false, accent = false }) {
-    const glyph = Icon
-        ? <Icon size={big ? 18 : 14} />
-        : <IntegrationLogo integrationId={integrationId} tool={tool} size={big ? 18 : 14} />;
-    if (big) {
-        return (
-            <button
-                type="button"
-                onClick={onClick}
-                title={title}
-                className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-md text-[11px] font-medium transition ${
-                    accent
-                        ? 'text-[var(--accent)] hover:bg-[var(--accent)]/10'
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
-                }`}
-            >
-                {glyph}
-                <span>{label}</span>
-            </button>
-        );
-    }
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            title={title}
-            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition"
-        >
-            {glyph}
-            <span className="truncate max-w-[8rem]">{label}</span>
-        </button>
     );
 }
 
@@ -452,7 +479,7 @@ function AppCommand({ app, openKey, setOpenKey, onAdd }) {
     if (actions.length === 1) {
         const a = actions[0];
         const payload = { kind: 'integration_action', tool: a.tool, label: app.label, appId: a.integrationId, sideEffect: a.sideEffect };
-        return <CmdButton integrationId={app.integrationId} label={app.label} title={`Add ${app.label}`} onClick={() => onAdd(payload)} />;
+        return <CmdButton glyph={<IntegrationLogo integrationId={app.integrationId} size={14} />} label={app.label} desc={`Actions from ${app.label}.`} tipFooter={DRAG_HINT} onClick={() => onAdd(payload)} grabbable {...stepDragProps(payload)} />;
     }
     const key = `app:${app.id}`;
     return (
@@ -471,16 +498,15 @@ function AppCommand({ app, openKey, setOpenKey, onAdd }) {
  */
 function AppButton({ app, open, onToggle, onAdd }) {
     return (
-        <Dropdown
-            variant="logo"
-            logo={{ integrationId: app.integrationId }}
+        <RibbonDropdown
+            glyph={<IntegrationLogo integrationId={app.integrationId} size={16} />}
             label={app.label}
             width={260}
             open={open}
             onToggle={onToggle}
         >
             <AppActionsList app={app} onAdd={onAdd} />
-        </Dropdown>
+        </RibbonDropdown>
     );
 }
 
@@ -501,7 +527,8 @@ function AppActionsList({ app, onAdd }) {
                         key={action.tool}
                         type="button"
                         onClick={() => onAdd(payload)}
-                        title={action.description || action.label}
+                        {...stepDragProps(payload)}
+                        desc={action.description || `Runs ${action.label}.`} tipFooter={DRAG_HINT}
                         className="w-full text-left flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--bg-secondary)] transition"
                     >
                         <span className="shrink-0 h-6 w-6 rounded-md bg-[var(--bg-secondary)] flex items-center justify-center">
@@ -515,74 +542,3 @@ function AppActionsList({ app, onAdd }) {
     );
 }
 
-function InlineButton({ icon: Icon, label, onClick }) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition"
-        >
-            {Icon && <Icon size={14} />} {label}
-        </button>
-    );
-}
-
-function Dropdown({ label, icon: Icon, logo = null, open, onToggle, children, align = 'left', width = 300, variant = 'chip' }) {
-    const btnRef = useRef(null);
-    const [pos, setPos] = useState(null);
-
-    // Position the panel against the trigger and render it in a portal on
-    // <body>. The ribbon lives inside the builder header / React-Flow canvas,
-    // both of which create stacking contexts (and may clip overflow) — an
-    // in-flow absolute panel ends up trapped behind the canvas or cut off.
-    // A fixed, body-portalled panel escapes every ancestor.
-    useLayoutEffect(() => {
-        if (!open || !btnRef.current) return undefined;
-        const place = () => {
-            const r = btnRef.current.getBoundingClientRect();
-            const left = align === 'right' ? r.right - width : r.left;
-            const clampedLeft = Math.max(8, Math.min(left, window.innerWidth - width - 8));
-            setPos({ top: r.bottom + 4, left: clampedLeft });
-        };
-        place();
-        window.addEventListener('resize', place);
-        window.addEventListener('scroll', place, true);
-        return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
-    }, [open, align, width]);
-
-    // The trigger differs only by its leading glyph: an integration logo for
-    // 'logo' (Apps tab), otherwise the supplied lucide icon. Same pill styling
-    // and a visible label in every case so apps read "🟥 Gmail ▾".
-    const glyph = variant === 'logo'
-        ? <IntegrationLogo integrationId={logo?.integrationId} tool={logo?.tool} size={16} />
-        : (Icon ? <Icon size={14} /> : null);
-    return (
-        <div className="relative">
-            <button
-                ref={btnRef}
-                type="button"
-                onClick={onToggle}
-                aria-expanded={open}
-                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition ${
-                    open
-                        ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
-                }`}
-            >
-                {glyph}
-                <span className="truncate max-w-[8rem]">{label}</span>
-                <ChevronDown size={12} className="opacity-60" />
-            </button>
-            {open && pos && createPortal(
-                <div
-                    data-addstep-dropdown
-                    style={{ position: 'fixed', top: pos.top, left: pos.left, width }}
-                    className="z-[1000] max-h-[60vh] flex flex-col rounded-lg border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl overflow-hidden"
-                >
-                    {children}
-                </div>,
-                document.body,
-            )}
-        </div>
-    );
-}

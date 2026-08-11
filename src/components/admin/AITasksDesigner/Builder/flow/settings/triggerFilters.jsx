@@ -2,12 +2,12 @@
 // FilterShell + TicketAssistantConnectionPicker are internal helpers.
 import React, { useState, useEffect } from 'react';
 import useAutomationApi from '../../../../../../hooks/useAutomationApi';
-import { inputClass, FormRow } from './formPrimitives';
+import { inputClass, sectionHeaderClass, FormRow } from './formPrimitives';
 
 export function GmailFilterFields({ filter, setFilter }) {
     return (
-        <div className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-3">
-            <div className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">Gmail filter (all optional, AND across keys)</div>
+        <div className="rounded-md border border-[var(--border-subtle)] p-3 space-y-3">
+            <div className={sectionHeaderClass()}>Gmail filter (all optional, AND across keys)</div>
             <FormRow label="From contains">
                 <input type="text" value={filter.from || ''} onChange={(e) => setFilter('from', e.target.value || undefined)}
                     placeholder="boss@example.com" className={inputClass()} />
@@ -56,8 +56,8 @@ export function GmailFilterFields({ filter, setFilter }) {
 
 function FilterShell({ title, children }) {
     return (
-        <div className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-3">
-            <div className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">{title}</div>
+        <div className="rounded-md border border-[var(--border-subtle)] p-3 space-y-3">
+            <div className={sectionHeaderClass()}>{title}</div>
             {children}
         </div>
     );
@@ -398,3 +398,84 @@ export function TicketAssistantSyncFilterFields({ filter, setFilter }) {
         </FilterShell>
     );
 }
+
+export function SupportTicketResolvedFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Support Inbox ticket.resolved filter (all optional)">
+            <FormRow label="Inbox id" hint="Restrict to one support inbox. Leave empty to match every inbox.">
+                <input type="text" value={filter.inboxId || ''} onChange={(e) => setFilter('inboxId', e.target.value || undefined)}
+                    className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Category equals" hint="The AI-classified category. Free text — no enum yet.">
+                <input type="text" value={filter.categoryEquals || ''} onChange={(e) => setFilter('categoryEquals', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Priority equals">
+                <select
+                    value={filter.priorityEquals || ''}
+                    onChange={(e) => setFilter('priorityEquals', e.target.value || undefined)}
+                    className={inputClass()}
+                >
+                    <option value="">Any</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="urgent">urgent</option>
+                </select>
+            </FormRow>
+            <FormRow label="Tag includes" hint="Fires only when the ticket carries this tag.">
+                <input type="text" value={filter.tagIncludes || ''} onChange={(e) => setFilter('tagIncludes', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Resolved by">
+                <select
+                    value={filter.resolvedBy || ''}
+                    onChange={(e) => setFilter('resolvedBy', e.target.value || undefined)}
+                    className={inputClass()}
+                >
+                    <option value="">Any</option>
+                    <option value="ai">ai</option>
+                    <option value="staff">staff</option>
+                </select>
+            </FormRow>
+            <FormRow label="Min messages" hint="Skip tickets with fewer messages than this.">
+                <input
+                    type="number"
+                    min={1}
+                    value={filter.minMessages ?? ''}
+                    onChange={(e) => setFilter('minMessages', e.target.value === '' ? undefined : Number(e.target.value))}
+                    className={inputClass()}
+                />
+            </FormRow>
+            <FormRow label="Require genuine contact" hint="Default on: only real customer conversations fire. Unchecking also matches tickets without verified customer contact.">
+                <label className="inline-flex items-center gap-2 text-sm">
+                    <input
+                        type="checkbox"
+                        checked={filter.requireGenuineContact !== false}
+                        onChange={(e) => setFilter('requireGenuineContact', e.target.checked ? undefined : false)}
+                    />
+                    Only genuine customer conversations
+                </label>
+            </FormRow>
+        </FilterShell>
+    );
+}
+
+// Lookup used by AppEventFields — `<provider>.<event>` → filter sub-form.
+// Unmapped combos render no filter form (the runtime still applies the DSL
+// filter via applyDslFilter). Individual exports above stay for tests.
+export const FILTER_FORM_BY_KEY = {
+    'gmail.mail.new': GmailFilterFields,
+    'gmail.label.added': GmailLabelFilterFields,
+    'google-calendar.event.changed': CalendarChangedFilterFields,
+    'google-calendar.event.upcoming': CalendarUpcomingFilterFields,
+    'google-drive.file.new': DriveFileNewFilterFields,
+    'nextcloud.file.new': NextcloudFileFilterFields,
+    'nextcloud.file.changed': NextcloudFileFilterFields,
+    'nextcloud.share.received': NextcloudShareFilterFields,
+    'nextcloud.activity.new': NextcloudActivityFilterFields,
+    'nextcloud.notification.new': NextcloudNotificationFilterFields,
+    'ticket-assistant.ticket.new': TicketAssistantTicketFilterFields,
+    'ticket-assistant.sync.completed': TicketAssistantSyncFilterFields,
+    'support.ticket.resolved': SupportTicketResolvedFilterFields,
+};

@@ -1,18 +1,20 @@
 import React from 'react';
-import { BookMarked, ChevronRight } from 'lucide-react';
+import { BookMarked } from 'lucide-react';
+import useTranslation from '../../hooks/useTranslation';
 
 /**
- * NotebookTOC — Table of Contents sidebar panel
+ * NotebookTOC — Table of Contents sidebar panel.
  *
- * Receives `items` from the TipTap @tiptap/extension-table-of-contents onUpdate callback.
- * Each item: { id, level, textContent, isActive, isScrolledOver, itemIndex }
+ * `items` comes from the editor's TOC emitter; each item is
+ * { id, level, textContent, isActive, isScrolledOver, itemIndex }.
  */
 export default function NotebookTOC({ items = [], onClose }) {
+    const { t } = useTranslation();
     if (!items || items.length === 0) {
         return (
             <div className="flex flex-col h-full items-center justify-center gap-2 px-4" style={{ color: 'var(--text-tertiary)' }}>
                 <BookMarked className="w-8 h-8 opacity-30" />
-                <p className="text-[11px] text-center">Add headings to your document to generate a Table of Contents.</p>
+                <p className="text-[11px] text-center">{t('notebooks.toc_empty', 'Add headings to your document to generate a Table of Contents.')}</p>
             </div>
         );
     }
@@ -31,13 +33,15 @@ export default function NotebookTOC({ items = [], onClose }) {
                 <div className="flex items-center gap-1.5">
                     <BookMarked className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} />
                     <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
-                        Contents
+                        {t('notebooks.contents', 'Contents')}
                     </span>
                 </div>
                 {onClose && (
                     <button
                         onClick={onClose}
                         className="p-1 rounded hover:bg-[var(--bg-tertiary)] transition-colors text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                        aria-label={t('notebooks.close', 'Close')}
+                        title={t('notebooks.close', 'Close')}
                     >
                         ×
                     </button>

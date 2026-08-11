@@ -1,9 +1,10 @@
 import { Repeat, ChevronRight, ChevronDown, Check } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
-import { suggestItemVar } from './upstream';
+import { collectArrayPaths, suggestItemVar } from './upstream';
 import { previewValue } from '../../../../../utils/bindingHelpers';
 import { useVariablePickerContext } from './VariablePickerContext';
 import { humanizeExpression } from '../flow/displayHelpers';
+import { denseInputClass } from '../flow/settings/formStyles';
 
 /**
  * Picker for a Loop / forEach step's `overRef`. Surfaces the upstream
@@ -21,8 +22,12 @@ export default function LoopOverPicker({
     groups = [],
     onFocusField,
 }) {
-    const { stepLabelById } = useVariablePickerContext();
-    const arrayFields = useMemo(() => collectArrayFields(groups), [groups]);
+    const { stepLabelById, previewSample } = useVariablePickerContext();
+    // Same source as CollectionArrayRefField's quick-picks: group fields
+    // (incl. `[*]` children) PLUS arrays present only in real-run/pinned
+    // output — so "Lists you can repeat over" and the source-list picker
+    // never disagree about which lists exist.
+    const arrayFields = useMemo(() => collectArrayPaths(groups, previewSample), [groups, previewSample]);
     const [advanced, setAdvanced] = useState(false);
 
     const pick = (path, suggestedVar) => {
@@ -84,10 +89,16 @@ export default function LoopOverPicker({
                     value={itemVar || 'item'}
                     onChange={onTypedVar}
                     placeholder="item"
-                    className="w-full px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                    className={denseInputClass('w-full')}
                 />
+                {/* `loop.` is not decoration — it is the binding. This line
+                    used to say the item arrives as plain `item`, so anyone who
+                    followed it wrote `item.x` in a body step and got nothing
+                    back, silently. The canvas node and the loop settings panel
+                    both said `loop.item` correctly; only the picker, the one
+                    place you are actually naming the thing, did not. */}
                 <div className="text-[10px] text-[var(--text-tertiary)]">
-                    Each item is available to the steps below as <span className="font-medium">{itemVar || 'item'}</span>.
+                    Each item is available to the steps below as <span className="font-medium font-mono">loop.{itemVar || 'item'}</span>.
                 </div>
             </div>
 
@@ -107,7 +118,7 @@ export default function LoopOverPicker({
                         onChange={onTypedPath}
                         onFocus={() => onFocusField?.({ id: 'overRef', label: 'iterate over', insert: (path) => onChange?.({ overRef: path, itemVar }) })}
                         placeholder="steps.s1.output.results"
-                        className="w-full px-2 py-1.5 text-xs font-mono rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                        className={denseInputClass('w-full font-mono')}
                     />
                 </div>
             )}
@@ -115,16 +126,3 @@ export default function LoopOverPicker({
     );
 }
 
-function collectArrayFields(groups) {
-    const out = [];
-    const seen = new Set();
-    for (const g of groups || []) {
-        for (const f of (g.fields || [])) {
-            if (Array.isArray(f.sample) && !seen.has(f.path)) {
-                seen.add(f.path);
-                out.push({ key: f.key, path: f.path, sample: f.sample });
-            }
-        }
-    }
-    return out;
-}

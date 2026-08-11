@@ -178,6 +178,26 @@ function renderSlot(code) {
 // the snippet reports over the `lc-resize` postMessage contract (see the
 // file header). The frame is opaque-origin under `allow-scripts`, so the
 // parent can't read its document — the snippet must measure itself.
+// Ensure the snippet carries a mobile viewport meta. Without it, a sandboxed
+// srcDoc iframe lays its content out against a desktop-width fallback viewport
+// (commonly ~980px) even when the iframe element is only ~350px wide on a
+// phone — so the snippet's own `@media (max-width: …)` rules never fire and a
+// desktop layout renders, then overflows and is clipped by the frame. Adding
+// `width=device-width` makes the iframe's internal viewport equal its real
+// (responsive, width:100%) pixel width, which is what lets a responsive embed
+// actually reflow to a mobile layout. We only inject when the snippet hasn't
+// already declared its own viewport, so author-provided settings win.
+function withViewportMeta(code) {
+    if (/<meta\s[^>]*name=["']?viewport/i.test(code)) return code;
+    const meta = '<meta name="viewport" content="width=device-width, initial-scale=1">';
+    // Prefer slotting it inside an existing <head>; otherwise prepend so the
+    // parser still hoists it into the head of the generated document.
+    if (/<head[^>]*>/i.test(code)) {
+        return code.replace(/<head[^>]*>/i, (m) => m + meta);
+    }
+    return meta + code;
+}
+
 function LiveFrame({ code }) {
     const iframeRef = useRef(null);
 
@@ -200,7 +220,7 @@ function LiveFrame({ code }) {
     return (
         <iframe
             ref={iframeRef}
-            srcDoc={code}
+            srcDoc={withViewportMeta(code)}
             title="Live Component"
             sandbox="allow-scripts"
             scrolling="no"

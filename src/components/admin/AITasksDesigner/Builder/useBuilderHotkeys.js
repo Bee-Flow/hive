@@ -63,6 +63,15 @@ export default function useBuilderHotkeys({
             }
             if (key === 'enter') {
                 if (!onDryRun) return;
+                // Cmd/Ctrl+Enter inside a text field universally means "submit
+                // this field" (the AI chat composer, the flowlet composer,
+                // etc.), NOT "dry-run the whole automation". Those composers
+                // handle the key locally but don't stopPropagation, so firing
+                // onDryRun here too launched an unintended dry-run alongside
+                // the submit. Only undo/redo/save stay global inside inputs.
+                const t = e.target;
+                const tag = t?.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || t?.isContentEditable) return;
                 e.preventDefault();
                 onDryRun();
             }

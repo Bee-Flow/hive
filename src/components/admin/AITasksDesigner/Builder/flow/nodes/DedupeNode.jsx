@@ -1,21 +1,23 @@
 import React from 'react';
 import { Copy } from 'lucide-react';
 import StepNodeBase from './StepNodeBase';
+import NodeSummaryLine from './NodeSummaryLine';
+import { dedupeSummary } from '../nodeSummaries';
+import { nodeDefaultLabel, nodeHelp, nodeTypeLabel } from '../nodeDefs';
 
 export default function DedupeNode({ id, data }) {
-    const { step, runStep, issues, onAddAfter } = data;
+    const { step, runStep, issues, onAddAfter, stepLabelById } = data;
     const body = (
         <div>
-            <div className="font-semibold truncate">{step.label || 'Remove duplicates'}</div>
-            <div className="mt-0.5 text-[10px] text-[var(--text-secondary)] truncate">
-                {step.keyField ? `by ${step.keyField}` : 'by deep-equal'}
-            </div>
+            <div className="font-semibold truncate">{step.label || nodeDefaultLabel('dedupe')}</div>
+            <NodeSummaryLine summary={dedupeSummary(step, { stepLabelById })} title={step.arrayRef} />
         </div>
     );
     return (
         <StepNodeBase
             icon={<Copy size={14} />}
-            typeLabel="Dedupe"
+            typeLabel={nodeTypeLabel('dedupe')}
+            help={nodeHelp('dedupe')}
             body={body}
             runStep={runStep}
             issues={issues}

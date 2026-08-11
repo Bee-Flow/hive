@@ -18,8 +18,12 @@ import OutputView from '../OutputView';
  *   error         — top-level error message from the run, if any
  *   remediation   — short "what to do next" hint for the error, if any
  *   onCopyPath(p) — clipboard hook for "copy path as binding"
+ *   compact       — drop the standing hint footer. The quick dialog stacks this
+ *                   under the settings in a few hundred pixels; a permanent line
+ *                   of advice there costs more than it teaches, and the JSON
+ *                   toggle it points at is already on screen.
  */
-export default function StepOutputTab({ stepId, liveOutput, error, remediation, onCopyPath }) {
+export default function StepOutputTab({ stepId, liveOutput, error, remediation, onCopyPath, compact = false }) {
     const basePath = stepId ? `steps.${stepId}.output` : '';
 
     return (
@@ -46,10 +50,12 @@ export default function StepOutputTab({ stepId, liveOutput, error, remediation, 
                     emptyMessage="No output recorded yet. Run or dry-run this step to capture one."
                 />
             </div>
-            <footer className="px-3 py-1.5 border-t border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] flex items-center gap-1.5">
-                <CopyIcon size={10} />
-                Switch to JSON to see the raw data.
-            </footer>
+            {!compact && (
+                <footer className="px-3 py-1.5 border-t border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] flex items-center gap-1.5">
+                    <CopyIcon size={10} />
+                    Switch to JSON to see the raw data.
+                </footer>
+            )}
         </div>
     );
 }

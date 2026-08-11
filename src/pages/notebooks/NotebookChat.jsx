@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { FileText, ArrowDown, MessageSquare, Sparkles } from 'lucide-react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { FileText, ArrowDown, Info, MessageSquare, Sparkles } from 'lucide-react';
 import MessageItem from '../../components/chat/MessageItem';
 import InputArea from '../../components/InputArea';
 import EmptyState from '../../components/shared/EmptyState';
@@ -11,6 +11,7 @@ export default function NotebookChat({
     messages, isLoading, onSend, onStop, onRetry, onEdit,
     modelTiers, selectedTier, onTierChange,
     onInsertToDocument, kbSourcesLookup, onCitationClick,
+    locked = false,
 }) {
     const { t } = useTranslation();
     const endRef = useRef(null);
@@ -18,10 +19,33 @@ export default function NotebookChat({
     const [copied, setCopied] = useState(false);
     const [chatInput, setChatInput] = useState('');
 
-    // Auto-scroll
+    /**
+     * Follow the stream, but only while the user is already at the bottom.
+     *
+     * This fired on every `messages` change — i.e. every streamed token — with
+     * no check, so scrolling back to re-read an earlier answer yanked you to
+     * the bottom again a few milliseconds later. `containerRef` existed for
+     * exactly this and was unused.
+     */
+    const stickToBottomRef = useRef(true);
+    const onScroll = useCallback(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        // 40px of slack so a smooth-scroll landing just short still counts.
+        stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    }, []);
+
     useEffect(() => {
+        if (!stickToBottomRef.current) return;
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
+
+    // A new turn always scrolls down, wherever the user was reading.
+    useEffect(() => {
+        if (!isLoading) return;
+        stickToBottomRef.current = true;
+        endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [isLoading]);
 
     const handleCopy = (content) => {
         navigator.clipboard.writeText(content).catch(() => {});
@@ -41,8 +65,21 @@ export default function NotebookChat({
             </div>
 
             {/* Messages */}
-            <div ref={containerRef} className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3 space-y-3">
-                {messages.length === 0 && (
+            <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3 space-y-3">
+                {/* Encrypted history without a session key: say so, instead of
+                    implying an empty thread. Sending is blocked too — the
+                    server would refuse to persist over the locked envelope. */}
+                {locked && (
+                    <div
+                        className="flex items-start gap-2 px-3 py-2 rounded-xl border text-xs"
+                        style={{ background: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.25)', color: 'var(--text-secondary)' }}
+                        role="status"
+                    >
+                        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#3b82f6' }} />
+                        <span>{t('notebooks.history_locked', 'Chat history is locked — sign in again to continue this conversation.')}</span>
+                    </div>
+                )}
+                {messages.length === 0 && !locked && (
                     <EmptyState
                         icon={<Sparkles className="w-7 h-7" strokeWidth={2} />}
                         title={t('notebooks.chat_empty_title', 'Ask me anything')}
@@ -81,12 +118,19 @@ export default function NotebookChat({
                 <div ref={endRef} />
             </div>
 
-            {/* Input */}
-            <div className="shrink-0 px-2 py-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+            {/* Input — inert while the history is locked (InputArea has no
+                disabled prop; pointer-events blocks the mouse, the guard in
+                onSendMessage blocks Enter from an already-focused textarea). */}
+            <div
+                className="shrink-0 px-2 py-2 border-t"
+                style={{ borderColor: 'var(--border-subtle)', ...(locked ? { opacity: 0.55, pointerEvents: 'none' } : {}) }}
+                aria-disabled={locked || undefined}
+            >
                 <InputArea
                     input={chatInput}
                     setInput={setChatInput}
                     onSendMessage={(text, attachments) => {
+                        if (locked) return;
                         onSend(text, attachments);
                         setChatInput('');
                     }}

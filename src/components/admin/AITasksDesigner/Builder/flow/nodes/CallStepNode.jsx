@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, SquareArrowOutUpRight } from 'lucide-react';
+import { nodeHelp, nodeTypeLabel } from '../nodeDefs';
 import StepNodeBase from './StepNodeBase';
 import { useNodeRuntime } from '../NodeRuntimeContext';
 import { STEP_NODE_DEFAULT } from '../stepMeta';
@@ -40,7 +41,8 @@ export default function CallStepNode({ id, data }) {
     return (
         <StepNodeBase
             icon={<Box size={14} />}
-            typeLabel={STEP_NODE_DEFAULT}
+            typeLabel={nodeTypeLabel('call_block')}
+            help={nodeHelp('call_block')}
             body={body}
             runStep={runStep}
             issues={issues}

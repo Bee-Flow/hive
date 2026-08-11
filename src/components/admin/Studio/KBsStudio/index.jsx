@@ -113,7 +113,7 @@ export default function KBsStudio({ user, initialKbId = null, onNavigate, hasPer
                             onChange={e => setCategoryFilter(e.target.value)}
                             className="w-full px-2 py-1.5 rounded-lg text-xs border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-secondary)] outline-none"
                         >
-                            <option value="all">{t('kb_studio.category_filter_all') || 'All categories'}</option>
+                            <option value="all">{t('kb_studio.category_filter_all', 'All categories')}</option>
                             {visibleCategories.map(c => (
                                 <option key={c.id} value={c.id}>{`${c.icon || '📚'} ${c.name}`}</option>
                             ))}
@@ -129,7 +129,7 @@ export default function KBsStudio({ user, initialKbId = null, onNavigate, hasPer
                     )}
                     {!loading && kbs.length > 0 && visibleKbs.length === 0 && (
                         <div className="text-xs text-[var(--text-tertiary)] p-4 text-center">
-                            {t('kb_studio.category_filter_empty') || 'No knowledge bases in this category'}
+                            {t('kb_studio.category_filter_empty', 'No knowledge bases in this category')}
                         </div>
                     )}
                     {/* "New KB" placeholder when in create mode */}

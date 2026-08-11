@@ -13,8 +13,21 @@ const isPreview = () =>
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).has('preview');
 
-export default function Button({ variant = 'primary', href, onClick, children, ...rest }) {
-    const className = variantClass[variant] || 'btn';
+/**
+ * `size` ('sm' | 'md' | 'lg') is a PER-INSTANCE override — site-wide button
+ * sizing comes from the theme's `components.buttonSize` token instead, so
+ * most call sites should omit it.
+ *
+ * `className` is merged rather than spread-overwritten: it used to be set
+ * before {...rest}, so any caller passing className silently replaced
+ * "btn btn-primary" and the button lost all of its styling.
+ */
+export default function Button({ variant = 'primary', size, href, onClick, className, children, ...rest }) {
+    const cls = [
+        variantClass[variant] || 'btn',
+        size ? `btn--${size}` : '',
+        className || '',
+    ].filter(Boolean).join(' ');
     const handleClick = (e) => {
         // Suppress navigation during preview so the iframe stays on the
         // marketing page and admins can keep editing.
@@ -23,10 +36,10 @@ export default function Button({ variant = 'primary', href, onClick, children, .
     };
     if (href) {
         return (
-            <a href={href} className={className} onClick={handleClick} {...rest}>
+            <a href={href} className={cls} onClick={handleClick} {...rest}>
                 {children}
             </a>
         );
     }
-    return <button type="button" className={className} onClick={handleClick} {...rest}>{children}</button>;
+    return <button type="button" className={cls} onClick={handleClick} {...rest}>{children}</button>;
 }

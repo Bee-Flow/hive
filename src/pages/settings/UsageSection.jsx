@@ -3,7 +3,7 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import {
     Bot, Filter, X, Cpu, Users, ChevronDown, Activity, BarChart3,
-    Shield, AlertTriangle, Globe, ThumbsUp,
+    AlertTriangle, ThumbsUp,
 } from 'lucide-react';
 import OrgFeedbackPanel from './OrgFeedbackPanel';
 import OrgTerminationsPanel from './OrgTerminationsPanel';
@@ -14,14 +14,13 @@ import { shortModel } from './usage/format';
 import { getSourceDetails } from './usage/widgets';
 import RangeControl, { defaultRange } from './usage/RangeControl';
 import OverviewTab from './usage/OverviewTab';
-import SafetyTab from './usage/SafetyTab';
-import IntegrationsTab from './usage/IntegrationsTab';
 
 /* ── Report tabs ─────────────────────────────────────────────────────────── */
+// Safety & Integrations moved to Settings → Organisation → Privacy Shield →
+// "What happened" (?tab=activity) — they are shield monitoring, not
+// consumption reporting. This page keeps the money/usage reports.
 const REPORT_TABS = [
     { id: 'overview', labelKey: 'usage.tab_overview', icon: BarChart3, color: '#0ea5e9' },
-    { id: 'safety', labelKey: 'usage.tab_safety', icon: Shield, color: '#ef4444' },
-    { id: 'integrations', labelKey: 'usage.tab_integrations', icon: Globe, color: '#0ea5e9' },
     { id: 'feedback', labelKey: 'usage.tab_feedback', icon: ThumbsUp, color: '#10b981' },
     { id: 'terminations', labelKey: 'usage.tab_terminations', icon: AlertTriangle, color: '#f43f5e' },
 ];
@@ -73,7 +72,7 @@ const FilterPill = ({ icon: Icon, value, onChange, options, placeholder }) => (
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  MAIN CONTAINER                                                            */
 /* ═══════════════════════════════════════════════════════════════════════════ */
-const UsageSection = () => {
+const UsageSection = ({ initialReport = '' }) => {
     const { t } = useTranslation();
     const { hasFeature: hasLicenseFeature } = useLicenseContext();
     const { isSelfHosted } = useDeploymentMode();
@@ -88,7 +87,17 @@ const UsageSection = () => {
     const [range, setRange] = useState(() => defaultRange('30d'));
     const rangeParams = useMemo(() => deriveRangeParams(range), [range]);
     const [loading, setLoading] = useState(true);
-    const [activeReport, setActiveReport] = useState('overview');
+    // initialReport lets deep links open a specific report tab. Unknown values
+    // — including the RETIRED 'safety'/'integrations' ids from old bookmarks —
+    // fall back to overview; the license bounce below still wins for
+    // non-Enterprise orgs. (Those reports now live on the Privacy Shield's
+    // Activity tab: /app/settings/organisation/privacy?tab=activity.)
+    const [activeReport, setActiveReport] = useState(() =>
+        REPORT_TABS.some(tab => tab.id === initialReport) ? initialReport : 'overview');
+
+    useEffect(() => {
+        if (initialReport && REPORT_TABS.some(tab => tab.id === initialReport)) setActiveReport(initialReport);
+    }, [initialReport]);
 
     useEffect(() => {
         if (!canSeeAdvancedUsage && activeReport !== 'overview') setActiveReport('overview');
@@ -146,8 +155,6 @@ const UsageSection = () => {
     const clearFilters = () => { setFilterUser(null); setFilterAgent(null); setFilterModel(null); setFilterSource(null); };
 
     const [data, setData] = useState({ summary: null, timeline: [], users: [], sources: [], agents: [], models: [], modelsByAgent: [], modelsByUser: [] });
-    const [guardrails, setGuardrails] = useState({ summary: null, timeline: [], byUser: [], byCategory: [], byAction: [], recent: [] });
-    const [integData, setIntegData] = useState({ summary: null, byType: [], byTool: [], piiSummary: [], servers: [], recent: [], egress: [], operators: [], timeline: [], sovereignty: { user: [], integration: [], agent: [], pii: [] } });
     const [azureServices, setAzureServices] = useState({ summary: null, byType: [], byUser: [] });
 
     // Backend redacts token/call counts for cloud non-admin customers and swaps
@@ -196,46 +203,10 @@ const UsageSection = () => {
                     modelsByUser: await sa(results[7]),
                 });
 
-                const gEps = ['guardrails/summary', 'guardrails/timeline', 'guardrails/by-user', 'guardrails/by-category', 'guardrails/by-action', 'guardrails/recent'];
-                const gResults = await Promise.all(gEps.map(ep => authFetch(`${API_BASE}/api/usage/${ep}?${qs}`)));
-                setGuardrails({
-                    summary: await sj(gResults[0], {}),
-                    timeline: await sa(gResults[1]),
-                    byUser: await sa(gResults[2]),
-                    byCategory: await sa(gResults[3]),
-                    byAction: await sa(gResults[4]),
-                    recent: await sa(gResults[5]),
-                });
-
-                const iEps = [
-                    'integrations/summary', 'integrations/by-type', 'integrations/by-tool', 'integrations/pii-summary',
-                    'integrations/servers', 'integrations/recent', 'integrations/egress?limit=200', 'integrations/operator-summary',
-                    `integrations/timeline?interval=${rangeParams.interval}`,
-                    'integrations/sovereignty?dimension=user', 'integrations/sovereignty?dimension=integration',
-                    'integrations/sovereignty?dimension=agent', 'integrations/sovereignty?dimension=pii',
-                ];
-                const iResults = await Promise.all(iEps.map(ep => {
-                    const sep = ep.includes('?') ? '&' : '?';
-                    return authFetch(`${API_BASE}/api/usage/${ep}${sep}${qs}`);
-                }));
-                setIntegData({
-                    summary: await sj(iResults[0], {}),
-                    byType: await sa(iResults[1]),
-                    byTool: await sa(iResults[2]),
-                    piiSummary: await sa(iResults[3]),
-                    servers: await sa(iResults[4]),
-                    recent: await sa(iResults[5]),
-                    egress: await sa(iResults[6]),
-                    operators: await sa(iResults[7]),
-                    timeline: await sa(iResults[8]),
-                    sovereignty: {
-                        user: await sa(iResults[9]),
-                        integration: await sa(iResults[10]),
-                        agent: await sa(iResults[11]),
-                        pii: await sa(iResults[12]),
-                    },
-                });
-
+                // The guardrails/integrations blocks (19 requests) left with
+                // the Safety & Integrations tabs — see the Privacy Shield
+                // Activity tab, which fetches its two consolidated overviews
+                // only when it is actually open.
                 const azEps = ['azure-services/summary', 'azure-services/by-type', 'azure-services/by-user'];
                 const azResults = await Promise.all(azEps.map(ep => authFetch(`${API_BASE}/api/usage/${ep}?${qs}`)));
                 setAzureServices({
@@ -247,7 +218,7 @@ const UsageSection = () => {
             setLoading(false);
         };
         fetchUsage();
-    }, [buildQS, rangeParams.interval]);
+    }, [buildQS]);
 
     // Filter dropdown options
     const userOptions = useMemo(() => data.users.map(u => ({ value: u.user_id, label: u.display_name || u.user_id })), [data.users]);
@@ -310,8 +281,6 @@ const UsageSection = () => {
                             setFilterUser={setFilterUser} setFilterModel={setFilterModel} setFilterSource={setFilterSource}
                         />
                     )}
-                    {activeReport === 'safety' && <SafetyTab t={t} guardrails={guardrails} />}
-                    {activeReport === 'integrations' && <IntegrationsTab t={t} integData={integData} />}
                     {activeReport === 'feedback' && <OrgFeedbackPanel rangeParams={rangeParams} showTokens={showTokens} />}
                     {activeReport === 'terminations' && <OrgTerminationsPanel rangeParams={rangeParams} showTokens={showTokens} />}
                 </>

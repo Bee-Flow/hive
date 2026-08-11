@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useLayoutEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import AppIcon from '../../AppIcon';
+import IconPicker from './controls/IconPicker';
+import AssetPickerDialog from './dialogs/AssetPickerDialog';
 
 /**
  * Optional context for "+ Create new page…" inside any LinkField. The
@@ -163,13 +165,26 @@ export function Toggle({ value, onChange, label }) {
     );
 }
 
+/**
+ * IconField — value is a Lucide PascalCase name string, onChange(name).
+ * The preview tile doubles as a button opening the IconPicker modal
+ * (curated grid + search + free-text fallback); the raw text input stays
+ * for power users. API unchanged from the plain-input version.
+ */
 export function IconField({ value, onChange, label }) {
+    const [pickerOpen, setPickerOpen] = useState(false);
     return (
         <FieldRow label={label} hint="Lucide icon name (PascalCase) — e.g. ShieldCheck, Mail, Brain">
             <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-md flex items-center justify-center bg-[var(--bg-tertiary)] border border-[var(--border-default)] text-[var(--accent-primary)]">
+                <button
+                    type="button"
+                    onClick={() => setPickerOpen(true)}
+                    title="Browse icons…"
+                    aria-label={`${label || 'Icon'} — browse icons`}
+                    className="w-9 h-9 shrink-0 rounded-md flex items-center justify-center bg-[var(--bg-tertiary)] border border-[var(--border-default)] text-[var(--accent-primary)] hover:border-[var(--accent-primary)] transition-colors cursor-pointer"
+                >
                     {value ? <AppIcon name={value} className="w-5 h-5" /> : <span className="text-xs text-[var(--text-muted)]">?</span>}
-                </div>
+                </button>
                 <input
                     type="text"
                     className={inputClass}
@@ -178,8 +193,31 @@ export function IconField({ value, onChange, label }) {
                     placeholder="ShieldCheck"
                 />
             </div>
+            {pickerOpen ? (
+                <IconPicker
+                    value={value || ''}
+                    onSelect={(name) => { onChange(name); setPickerOpen(false); }}
+                    onClose={() => setPickerOpen(false)}
+                />
+            ) : null}
         </FieldRow>
     );
+}
+
+/**
+ * Resolve a stored image value to a displayable URL: full http(s) URLs and
+ * absolute paths pass through, bare CMS asset keys ("cms/…") map to the
+ * asset route. Mirror of the renderer-side resolveAssetUrl in
+ * marketing/ProductWebsite.jsx — kept separate so the admin bundle doesn't
+ * import the marketing renderer.
+ */
+export function resolveCmsAssetUrl(urlOrKey) {
+    if (!urlOrKey) return '';
+    if (urlOrKey.startsWith('http://') || urlOrKey.startsWith('https://') || urlOrKey.startsWith('/')) return urlOrKey;
+    if (urlOrKey.startsWith('cms/')) {
+        return `/api/cms/asset/${urlOrKey.split('/').map(encodeURIComponent).join('/')}`;
+    }
+    return urlOrKey;
 }
 
 export function ImageField({
@@ -198,9 +236,15 @@ export function ImageField({
     // user knows what kind of file is expected.
     uploadLabel,
     placeholder,
+    // Optional — hides the "Browse" media-library entry point. On by
+    // default: every ImageField call site lives in the CMS admin, and the
+    // button hides itself anyway when the library is unavailable.
+    allowBrowse = true,
 }) {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState(null);
+    const [browsing, setBrowsing] = useState(false);
+    const libraryAvailable = useAssetLibraryAvailable(allowBrowse);
 
     const handleFile = async (file) => {
         if (!file) return;
@@ -233,9 +277,9 @@ export function ImageField({
                 <div className="w-16 h-16 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-default)] overflow-hidden flex items-center justify-center text-xs text-[var(--text-muted)]">
                     {value ? (
                         previewIsVideo ? (
-                            <video src={value} muted autoPlay loop playsInline className="w-full h-full object-contain" />
+                            <video src={resolveCmsAssetUrl(value)} muted autoPlay loop playsInline className="w-full h-full object-contain" />
                         ) : (
-                            <img src={value} alt="" className="w-full h-full object-contain" />
+                            <img src={resolveCmsAssetUrl(value)} alt="" className="w-full h-full object-contain" />
                         )
                     ) : '—'}
                 </div>
@@ -258,6 +302,15 @@ export function ImageField({
                                 onChange={(e) => handleFile(e.target.files?.[0])}
                             />
                         </label>
+                        {libraryAvailable ? (
+                            <button
+                                type="button"
+                                onClick={() => setBrowsing(true)}
+                                className="px-3 py-1.5 text-xs rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-default)] hover:border-[var(--accent-primary)] transition-colors text-[var(--text-secondary)]"
+                            >
+                                Browse…
+                            </button>
+                        ) : null}
                         {value ? (
                             <button
                                 type="button"
@@ -271,8 +324,46 @@ export function ImageField({
                     {error ? <span className="text-xs text-red-400">{error}</span> : null}
                 </div>
             </div>
+            {browsing ? (
+                <AssetPickerDialog
+                    accept={previewIsVideo ? 'video' : 'image'}
+                    onPick={onChange}
+                    onClose={() => setBrowsing(false)}
+                />
+            ) : null}
         </FieldRow>
     );
+}
+
+// Probes the asset-library route once per session and caches the verdict
+// module-side, so N image fields on one page don't each fire a request.
+// `false` (route missing, storage in local-fs mode, or not an admin) hides
+// every Browse button — the picker is pure convenience over upload/paste.
+let assetLibraryProbe = null;
+function useAssetLibraryAvailable(enabled) {
+    const [available, setAvailable] = useState(
+        () => (assetLibraryProbe?.settled ? assetLibraryProbe.value : false));
+    useEffect(() => {
+        if (!enabled) return undefined;
+        if (!assetLibraryProbe) {
+            assetLibraryProbe = { settled: false, value: false };
+            assetLibraryProbe.promise = authFetch(`${API_BASE}/api/cms/admin/assets`)
+                .then(r => (r.ok ? r.json() : null))
+                .then(data => (data && data.unavailable !== true))
+                .catch(() => false)
+                .then(v => {
+                    assetLibraryProbe.settled = true;
+                    assetLibraryProbe.value = v;
+                    return v;
+                });
+        }
+        let cancelled = false;
+        Promise.resolve(assetLibraryProbe.promise).then(v => {
+            if (!cancelled) setAvailable(v);
+        });
+        return () => { cancelled = true; };
+    }, [enabled]);
+    return enabled && available;
 }
 
 /**
@@ -391,9 +482,14 @@ export function RepeatableList({ items = [], onChange, renderItem, makeNew, labe
                                 ) : null}
                             </span>
                             <div className="flex items-center gap-1 shrink-0">
+                                {/* Bare arrow glyphs have no useful accessible
+                                    name — a screen reader announced "button, up
+                                    arrow" with no idea what moves. */}
                                 <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0}
+                                        aria-label={`Move item ${idx + 1} up`} title="Move up"
                                         className="px-2 py-0.5 text-xs rounded hover:bg-[var(--bg-tertiary)] disabled:opacity-30">↑</button>
                                 <button type="button" onClick={() => move(idx,  1)} disabled={idx === items.length - 1}
+                                        aria-label={`Move item ${idx + 1} down`} title="Move down"
                                         className="px-2 py-0.5 text-xs rounded hover:bg-[var(--bg-tertiary)] disabled:opacity-30">↓</button>
                                 {typeof duplicateItem === 'function' ? (
                                     <button type="button" onClick={() => duplicate(idx)}

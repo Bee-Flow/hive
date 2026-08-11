@@ -51,16 +51,51 @@ export function Btn({ onClick, active, icon: Icon, title, disabled }) {
 // The menu is rendered in a portal to <body> with fixed positioning so it can
 // never be clipped by an ancestor's overflow (the toolbar scrolls horizontally)
 // or sit behind the document. It's anchored to the trigger's screen rect.
+const MENU_MARGIN = 8;
+
 export function Dropdown({ trigger, children, align = 'left' }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
+  const [placement, setPlacement] = useState(null); // { top, left, maxHeight }
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
 
   const measure = () => { const el = triggerRef.current; if (el) setRect(el.getBoundingClientRect()); };
 
   // Re-measure right before paint when opening, so the menu never flashes at (0,0).
-  useLayoutEffect(() => { if (open) measure(); }, [open]);
+  useLayoutEffect(() => { if (open) measure(); else setPlacement(null); }, [open]);
+
+  /**
+   * Position against the viewport: flip up when there is not enough room below,
+   * and cap the height so the panel is always fully reachable.
+   *
+   * This used to be an unconditional `top = rect.bottom + 4` with no height cap
+   * and no reference to window.innerHeight at all, so every menu opened near the
+   * bottom of the screen ran off it with no way to scroll (BFSF-314). It is one
+   * component, so the fix covers the toolbar AND the floating format bubble.
+   */
+  useLayoutEffect(() => {
+    if (!open || !rect) return;
+    const el = menuRef.current;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+    const width = el?.offsetWidth || 200;
+    const natural = el?.scrollHeight || 0;
+
+    const below = vh - rect.bottom - MENU_MARGIN * 2;
+    const above = rect.top - MENU_MARGIN * 2;
+    // Prefer below; flip only when it genuinely does not fit and above is roomier.
+    const flip = natural > below && above > below;
+    const maxHeight = Math.max(120, Math.floor(flip ? above : below));
+    const height = Math.min(natural || maxHeight, maxHeight);
+
+    const top = flip ? Math.max(MENU_MARGIN, Math.round(rect.top - MENU_MARGIN - height)) : Math.round(rect.bottom + 4);
+    const left = align === 'right'
+      ? Math.max(MENU_MARGIN, Math.round(rect.right - width))
+      : Math.max(MENU_MARGIN, Math.min(Math.round(rect.left), vw - width - MENU_MARGIN));
+
+    setPlacement((p) => (p && p.top === top && p.left === left && p.maxHeight === maxHeight ? p : { top, left, maxHeight }));
+  }, [open, rect, align]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -68,26 +103,37 @@ export function Dropdown({ trigger, children, align = 'left' }) {
       if (triggerRef.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
       setOpen(false);
     };
+    // Close when the PAGE scrolls (the anchor moves), but never when the menu's
+    // own content scrolls. This listener is capture-phase, so scrolling the font
+    // list inside the colour panel used to close the panel out from under the
+    // user (BFSF-313).
+    const onScroll = (e) => { if (menuRef.current?.contains(e.target)) return; setOpen(false); };
     const close = () => setOpen(false);
     document.addEventListener('mousedown', onDown);
     window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true); // any scroller closes the menu
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onDown);
       window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [open]);
 
   const toggle = (v) => setOpen((o) => (typeof v === 'function' ? v(o) : v));
 
-  let style = { position: 'fixed', zIndex: 10050, background: 'var(--bg-primary)', borderColor: 'var(--border-default)' };
-  if (rect) {
-    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
-    style.top = Math.round(rect.bottom + 4);
-    if (align === 'right') style.right = Math.max(8, Math.round(vw - rect.right));
-    else style.left = Math.max(8, Math.min(Math.round(rect.left), vw - 268));
-  }
+  const style = {
+    position: 'fixed',
+    zIndex: 10050,
+    background: 'var(--bg-primary)',
+    borderColor: 'var(--border-default)',
+    // Render off-screen for the first paint so the measuring pass above can read
+    // the natural height without the user seeing it in the wrong place.
+    top: placement ? placement.top : -9999,
+    left: placement ? placement.left : -9999,
+    maxHeight: placement ? placement.maxHeight : undefined,
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+  };
 
   return (
     <div className="relative" ref={triggerRef}>
@@ -149,17 +195,23 @@ export function TurnIntoItems({ editor, t, onDone }) {
   );
 }
 
-/** Text-alignment list. */
-export function AlignItems({ editor, t, onDone }) {
+/**
+ * Alignment list. `cell` targets table-cell alignment instead of the paragraph's.
+ *
+ * The Table menu rendered this with the paragraph command, which returns early
+ * for a cell-rectangle selection — so "Cell alignment" was a silent no-op even
+ * though setCellAlign existed and was never called from anywhere.
+ */
+export function AlignItems({ editor, t, onDone, cell = false, disabled = false }) {
   const tt = mkTt(t);
   const chain = () => editor.chain().focus();
   const align = (a) => editor.isActive({ align: a });
-  const run = (a) => { chain().setTextAlign(a).run(); onDone?.(); };
+  const run = (a) => { (cell ? chain().setCellAlign(a) : chain().setTextAlign(a)).run(); onDone?.(); };
   return (
     <>
-      <Item icon={AlignLeft} label={tt('notebooks.align_left', 'Align left')} active={align('left')} onClick={() => run('left')} />
-      <Item icon={AlignCenter} label={tt('notebooks.align_center', 'Center')} active={align('center')} onClick={() => run('center')} />
-      <Item icon={AlignRight} label={tt('notebooks.align_right', 'Align right')} active={align('right')} onClick={() => run('right')} />
+      <Item icon={AlignLeft} label={tt('notebooks.align_left', 'Align left')} active={align('left')} disabled={disabled} onClick={() => run('left')} />
+      <Item icon={AlignCenter} label={tt('notebooks.align_center', 'Center')} active={align('center')} disabled={disabled} onClick={() => run('center')} />
+      <Item icon={AlignRight} label={tt('notebooks.align_right', 'Align right')} active={align('right')} disabled={disabled} onClick={() => run('right')} />
     </>
   );
 }

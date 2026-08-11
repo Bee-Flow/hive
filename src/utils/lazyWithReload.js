@@ -1,4 +1,5 @@
 import { lazy as reactLazy } from 'react';
+import { ensureI18nDefaults } from '../hooks/useTranslation';
 
 // After a redeploy, browsers that loaded the old index.html still hold
 // references to the previous hashed chunk filenames (e.g. WorkspaceNotebook-
@@ -21,6 +22,21 @@ const isChunkLoadError = (err) => {
     const msg = String(err?.message || err);
     return /Failed to fetch dynamically imported module|Loading chunk|Loading CSS chunk|Importing a module script failed|error loading dynamically imported module/i.test(msg);
 };
+
+/**
+ * `lazy`, plus the English i18n catalogue.
+ *
+ * The EN defaults are no longer in the entry chunk (they were 55% of it —
+ * see hooks/useTranslation.jsx). Any lazy surface whose tree calls t()
+ * must be imported through THIS variant: it resolves the component chunk
+ * and the catalogue together, so no frame can render with a raw translation
+ * key. The two fetches run in parallel — this adds latency only if the
+ * catalogue is slower than the component chunk, which same-origin never is
+ * by more than the difference in file size.
+ */
+export function lazyWithI18n(importer) {
+    return lazy(() => Promise.all([importer(), ensureI18nDefaults()]).then(([m]) => m));
+}
 
 export function lazy(importer) {
     return reactLazy(async () => {

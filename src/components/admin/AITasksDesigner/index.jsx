@@ -3,6 +3,7 @@ import { Bot, Plus, Play, Pause, X, ArrowLeft, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import BuilderShell from './Builder/BuilderShell';
+import { describeCron } from './Builder/flow/scheduleBuilderUtils';
 import RoutineRow from '../Studio/RoutinesStudio/RoutineRow';
 import RoutinesEmptyState from '../Studio/RoutinesStudio/EmptyState';
 import QuickSwitcher from '../Studio/RoutinesStudio/QuickSwitcher';
@@ -32,6 +33,14 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
     // until BuilderShell lazily creates the row server-side. `liveAutomationId`
     // carries the id it reports back so the URL/refresh path can pick it up.
     const [liveAutomationId, setLiveAutomationId] = useState(null);
+    // Bumped every time the sidebar Plus opens a NEW builder. Part of the
+    // BuilderShell `key`: a brand-new build keeps builderAutomationId === ''
+    // for its whole life (the lazily-created id only lands in
+    // liveAutomationId, deliberately never in the key), so WITHOUT the nonce
+    // a second Plus while a new/just-finalized build is open re-used the same
+    // 'new' key — no remount — and the previous flow's chat + draft bled into
+    // the "new" automation.
+    const [newBuilderNonce, setNewBuilderNonce] = useState(0);
     // Automation list — fetched up here so the sidebar shares one source of truth
     // and we can power Cmd/Ctrl+K + the right-pane builder from the same data.
     const automationApi = useAutomationApi();
@@ -405,7 +414,15 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
             try {
                 const r = await automationApi.getActiveRuns?.();
                 if (!alive || !r) return;
-                setActiveRunIds(new Set((r.active || []).map(x => x.automationId)));
+                const nextIds = (r.active || []).map(x => x.automationId);
+                // Only replace the Set (and re-render the whole designer —
+                // sidebar + open builder) when the set of active runs actually
+                // CHANGED. Every 5s tick previously minted a fresh Set even
+                // when identical, forcing a full re-render on a timer.
+                setActiveRunIds(prev => {
+                    if (prev.size === nextIds.length && nextIds.every(id => prev.has(id))) return prev;
+                    return new Set(nextIds);
+                });
             } catch (_) { /* silent — non-critical */ }
         };
         tick();
@@ -512,7 +529,9 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
             kind: 'automation',
             kindLabel: 'Automation',
             title: it.title || 'Untitled automation',
-            subtitle: it.triggerType + (it.scheduleCron ? ` · ${it.scheduleCron}` : ''),
+            // Readable, not raw: `0 9 * * *` in a quick-switcher subtitle
+            // helps nobody pick the right routine.
+            subtitle: it.triggerType + (it.scheduleCron ? ` · ${describeCron(it.scheduleCron)}` : ''),
         }));
         const t = tasks.map(it => ({
             id: it.id,
@@ -708,6 +727,10 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
                 if (!automationsAllowed) return;
                 setBuilderAutomationId('');
                 setPresetChatInput('');
+                // Fresh mount for a fresh flow — never inherit the previous
+                // build's conversation/draft (see newBuilderNonce above).
+                setLiveAutomationId(null);
+                setNewBuilderNonce(n => n + 1);
             } else {
                 startNewTask();
             }
@@ -861,8 +884,11 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
                         // between automations in the sidebar — without it the
                         // builder reuses internal state from the previously-
                         // opened automation, which made the second click look
-                        // like a no-op.
-                        key={builderAutomationId || 'new'}
+                        // like a no-op. New builds key on a per-open nonce so
+                        // a second Plus never inherits the previous flow's
+                        // chat/draft (builderAutomationId stays '' for a new
+                        // build's whole life).
+                        key={builderAutomationId || `new:${newBuilderNonce}`}
                         automationId={builderAutomationId || null}
                         initialTab={builderInitialTab}
                         onBack={() => { setBuilderAutomationId(null); setBuilderInitialTab(null); setOpeningBuilder(false); setPresetChatInput(''); setAutoSendInput(null); }}

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Download } from 'lucide-react';
 import Modal from '../shared/Modal';
+import { useTranslation } from '../../hooks/useTranslation';
 
 /**
  * In-app invoice PDF viewer (BFSF-250). Fetches the invoice PDF through the
@@ -18,9 +19,11 @@ import Modal from '../shared/Modal';
  * }} props
  */
 export default function InvoicePdfModal({ open, onClose, invoice, pdfFetcher }) {
+    const { t } = useTranslation();
     const [url, setUrl] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [attempt, setAttempt] = useState(0); // bump to retry after a transient failure
     const urlRef = useRef(null);
 
     useEffect(() => {
@@ -32,14 +35,14 @@ export default function InvoicePdfModal({ open, onClose, invoice, pdfFetcher }) 
         (async () => {
             try {
                 const res = await pdfFetcher(invoice.id);
-                if (!res.ok) throw new Error(`Failed to load invoice (${res.status})`);
+                if (!res.ok) throw new Error(t('billing.invoice_pdf_failed', 'Failed to load the invoice PDF. Try again.'));
                 const blob = await res.blob();
                 if (!alive) return;
                 const objectUrl = URL.createObjectURL(blob);
                 urlRef.current = objectUrl;
                 setUrl(objectUrl);
             } catch (e) {
-                if (alive) setError(e?.message || 'Failed to load invoice PDF');
+                if (alive) setError(e?.message || t('billing.invoice_pdf_failed', 'Failed to load the invoice PDF. Try again.'));
             } finally {
                 if (alive) setLoading(false);
             }
@@ -48,7 +51,7 @@ export default function InvoicePdfModal({ open, onClose, invoice, pdfFetcher }) 
             alive = false;
             if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null; }
         };
-    }, [open, invoice?.id, pdfFetcher]);
+    }, [open, invoice?.id, pdfFetcher, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const label = invoice?.number || invoice?.id || 'document';
     const filename = `invoice-${label}.pdf`;
@@ -58,7 +61,7 @@ export default function InvoicePdfModal({ open, onClose, invoice, pdfFetcher }) 
             open={open}
             onClose={onClose}
             size="full"
-            title={invoice?.number ? `Invoice ${invoice.number}` : 'Invoice'}
+            title={invoice?.number ? `${t('billing.invoice', 'Invoice')} ${invoice.number}` : t('billing.invoice', 'Invoice')}
             className="w-[min(900px,95vw)] h-[90vh]"
             headerActions={url ? (
                 <a
@@ -66,7 +69,7 @@ export default function InvoicePdfModal({ open, onClose, invoice, pdfFetcher }) 
                     download={filename}
                     className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--accent-primary)] text-white hover:opacity-90"
                 >
-                    <Download className="w-3.5 h-3.5" /> Download
+                    <Download className="w-3.5 h-3.5" /> {t('billing.download', 'Download')}
                 </a>
             ) : null}
         >
@@ -76,7 +79,17 @@ export default function InvoicePdfModal({ open, onClose, invoice, pdfFetcher }) 
                         <Loader2 className="w-6 h-6 animate-spin" />
                     </div>
                 ) : error ? (
-                    <div className="px-2 py-6 text-sm text-rose-400">{error}</div>
+                    <div className="px-2 py-6 text-sm text-rose-400 space-y-3">
+                        <div>{error}</div>
+                        {/* Retry without forcing the user to close/reopen the modal */}
+                        <button
+                            type="button"
+                            onClick={() => setAttempt(a => a + 1)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
+                        >
+                            {t('billing.retry', 'Retry')}
+                        </button>
+                    </div>
                 ) : url ? (
                     <iframe
                         title={filename}

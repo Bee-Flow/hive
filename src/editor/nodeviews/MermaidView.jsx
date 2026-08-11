@@ -10,7 +10,10 @@ export default function MermaidView({ node, view, editable }) {
     <div className="notebook-mermaid-block" onMouseDown={() => view.selectAtom(node)}>
       <MermaidBlock
         code={node.attrs?.code || ''}
-        onCodeChange={(code) => view.updateAtom(node, { code })}
+        // 'type' so editing the diagram source coalesces in the undo stack —
+        // it used to cost one history entry and one whole-document
+        // re-serialization per keystroke.
+        onCodeChange={(code) => view.updateAtom(node, { code }, { kind: 'type' })}
         editable={!!editable}
       />
     </div>

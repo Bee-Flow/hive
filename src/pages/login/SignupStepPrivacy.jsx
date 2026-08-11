@@ -10,10 +10,14 @@ import PiiActionPicker from '../../components/privacy/PiiActionPicker';
  * a master enable toggle, the canonical PII-category picker, and the
  * tokenize/block action. Whatever the founder picks here is written to the
  * org's real shield config at signup, so it matches Settings → Privacy Shield.
+ *
+ * Personal accounts see the same step (BFSF-289) with first-person copy; their
+ * choices are written to `user_privacy_shield_${userId}` instead of the org's.
  */
 const SignupStepPrivacy = ({ signupData, setSignupData, handleSignupNext, setSignupStep, setError, embedded = false }) => {
     const { t } = useTranslation();
     const categories = piiCategoriesLocalized(t);
+    const isPersonal = signupData.signupType === 'consumer';
 
     const enabled = signupData.shieldEnabled !== false;
     const setShieldEnabled = (on) => setSignupData(p => ({ ...p, shieldEnabled: on }));
@@ -30,7 +34,11 @@ const SignupStepPrivacy = ({ signupData, setSignupData, handleSignupNext, setSig
                     </div>
                     <div>
                         <span className="text-sm font-medium text-[var(--text-primary)]">{t('signup.shield_enable', 'Privacy Shield')}</span>
-                        <p className="text-xs text-[var(--text-muted)]">{t('signup.shield_enable_desc', 'Scan messages for personal data and block or replace it before it reaches the AI.')}</p>
+                        <p className="text-xs text-[var(--text-muted)]">
+                            {isPersonal
+                                ? t('signup.shield_enable_desc_personal', 'Scan your messages for personal data and replace it before it reaches the AI. Recommended — you can change this later in Settings.')
+                                : t('signup.shield_enable_desc', 'Scan messages for personal data and block or replace it before it reaches the AI.')}
+                        </p>
                     </div>
                 </div>
                 <button type="button" onClick={() => setShieldEnabled(!enabled)}
@@ -45,18 +53,20 @@ const SignupStepPrivacy = ({ signupData, setSignupData, handleSignupNext, setSig
                         categories={categories}
                         value={signupData.piiCategories || []}
                         onChange={setCategories}
-                        label={t('signup.pii_categories', 'PII categories')}
+                        label={t('signup.pii_categories', 'Kinds of personal data')}
                         allLabel={t('common.all', 'All')}
                         noneLabel={t('common.none', 'None')}
                     />
 
                     <PiiActionPicker
-                        value={signupData.piiAction || 'block'}
+                        value={signupData.piiAction || (isPersonal ? 'tokenize' : 'block')}
                         onChange={setAction}
-                        tokenizeLabel={t('pii.action_tokenize', 'Tokenize & round-trip')}
-                        tokenizeHelp={t('pii.action_tokenize_help', 'Replace sensitive values with placeholders like [email_1] before the AI sees them. The real values are never sent to the model; they’re swapped back in the response.')}
-                        blockLabel={t('pii.action_block', 'Block the message')}
-                        blockHelp={t('pii.action_block_help', 'Reject the message before it leaves the organisation. The user is asked to rephrase without sensitive data.')}
+                        tokenizeLabel={t('pii.action_tokenize', 'Replace with placeholders')}
+                        tokenizeHelp={t('pii.action_tokenize_help', 'Sensitive details are swapped for labels like [email_1] before the message goes to the AI. The real values are never sent to the AI, and are put back in the answer.')}
+                        blockLabel={t('pii.action_block', 'Do not send the message')}
+                        blockHelp={isPersonal
+                            ? t('pii.action_block_help_personal', 'The message is stopped before it leaves your device, and you are asked to rewrite it without the personal data.')
+                            : t('pii.action_block_help', 'The message is stopped before it reaches the AI, and the person is asked to rewrite it without the personal data.')}
                     />
 
                     {/* EU-only models — a related org-level AI setting. */}
@@ -78,7 +88,11 @@ const SignupStepPrivacy = ({ signupData, setSignupData, handleSignupNext, setSig
                 </>
             )}
 
-            <p className="text-xs text-[var(--text-muted)] text-center mt-1">{t('signup.privacy_tune_later')}</p>
+            <p className="text-xs text-[var(--text-muted)] text-center mt-1">
+                {isPersonal
+                    ? t('signup.privacy_tune_later_personal', 'You can fine-tune these settings later in Settings → Privacy.')
+                    : t('signup.privacy_tune_later')}
+            </p>
 
             {/* Footer buttons — only standalone (legacy). Wizard shell owns nav. */}
             {!embedded && (

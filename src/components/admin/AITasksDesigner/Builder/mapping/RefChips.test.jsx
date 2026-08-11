@@ -15,6 +15,16 @@ describe('RefChips', () => {
         expect(container.textContent).not.toContain('ai_87e358');
     });
 
+    it('names the FIELD too, instead of echoing its path (BFSF-330)', () => {
+        const { container } = render(
+            <RefChips text="steps.ai_87e358.output.items[0].id" mode="expression" stepLabelById={labels} />,
+        );
+        expect(screen.getByText('▸ Id')).toBeTruthy();
+        expect(container.textContent).not.toContain('items[0]');
+        // …but the exact path is still one hover away.
+        expect(container.querySelector('[title="steps.ai_87e358.output.items[0].id"]')).toBeTruthy();
+    });
+
     it('shows a deleted step as a muted/missing chip carrying the id + tooltip', () => {
         const { container } = render(
             <RefChips text="steps.gone_1.output.x" mode="expression" stepLabelById={labels} />,

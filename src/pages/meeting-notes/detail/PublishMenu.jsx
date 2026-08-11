@@ -61,7 +61,7 @@ export default function PublishMenu({
             setOpen(false);
             onChange?.({ isPublished: finalPublished, sharedGroups: finalGroups });
         } catch (e) {
-            alert((t('meeting_notes.publish_failed') || 'Publish failed') + `: ${e.message}`);
+            alert((t('meeting_notes.publish_failed', 'Publish failed')) + `: ${e.message}`);
         } finally {
             setSaving(false);
         }
@@ -75,9 +75,9 @@ export default function PublishMenu({
         ? 'personal'
         : (sharedGroups.length === 0 ? 'org' : 'groups');
     const buttonLabel = mode === 'personal'
-        ? (t('kb_detail.visibility_personal') || 'Personal')
+        ? (t('kb_detail.visibility_personal', 'Personal'))
         : mode === 'org'
-            ? (t('kb_detail.published') || 'Published')
+            ? (t('kb_detail.published', 'Published'))
             : (t('kb_detail.published_n_groups', { count: sharedGroups.length }) || `Published (${sharedGroups.length})`);
 
     if (!canManage) {
@@ -118,8 +118,8 @@ export default function PublishMenu({
                     style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)' }}
                 >
                     <div className="p-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{t('kb_detail.publish_to') || 'Share with'}</p>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.publish_choose_who') || 'Choose who can see this meeting.'}</p>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{t('kb_detail.publish_to', 'Share with')}</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.publish_choose_who', 'Choose who can see this meeting.')}</p>
                     </div>
 
                     <button
@@ -131,8 +131,8 @@ export default function PublishMenu({
                             <Lock className="w-4 h-4 text-[var(--text-secondary)]" />
                         </div>
                         <div className="flex-1">
-                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('kb_detail.personal') || 'Personal'}</p>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.personal_desc') || 'Only you can see this meeting.'}</p>
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('kb_detail.personal', 'Personal')}</p>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.personal_desc', 'Only you can see this meeting.')}</p>
                         </div>
                         {mode === 'personal' && <Check className="w-4 h-4 text-emerald-500" />}
                     </button>
@@ -147,15 +147,15 @@ export default function PublishMenu({
                             <Building2 className="w-4 h-4 text-emerald-500" />
                         </div>
                         <div className="flex-1">
-                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('kb_detail.entire_org') || 'Entire organisation'}</p>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.entire_org_desc') || 'Everyone in your organisation can see this meeting.'}</p>
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('kb_detail.entire_org', 'Entire organisation')}</p>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.entire_org_desc', 'Everyone in your organisation can see this meeting.')}</p>
                         </div>
                         {mode === 'org' && <Check className="w-4 h-4 text-emerald-500" />}
                     </button>
 
                     {orgGroups.length > 0 && (
                         <div className="px-3 py-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-                            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.or_specific_groups') || 'Or specific groups'}</p>
+                            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.or_specific_groups', 'Or specific groups')}</p>
                         </div>
                     )}
 
@@ -199,7 +199,7 @@ export default function PublishMenu({
                             onClick={() => setOpen(false)}
                             className="w-full px-3 py-1.5 rounded-lg text-xs text-center"
                             style={{ color: 'var(--text-muted)' }}
-                        >{t('kb_detail.cancel') || 'Cancel'}</button>
+                        >{t('kb_detail.cancel', 'Cancel')}</button>
                     </div>
                 </div>
             )}

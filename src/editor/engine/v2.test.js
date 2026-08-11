@@ -10,6 +10,7 @@ import * as Tbl from './tables.js';
 import { astToMarkdown } from '../serialization/astToMd.js';
 import { astToHtml } from '../serialization/astToHtml.js';
 import { htmlToAst } from '../serialization/htmlToAst.js';
+import { normalizeDeep, normalizeLight } from './normalize.js';
 
 const hasBold = (block) => (block.content || []).some((n) => n.type === 'text' && (n.marks || []).some((m) => m.type === 'bold'));
 
@@ -161,12 +162,24 @@ describe('V2: table cell selection + column ops', () => {
     s = { ...s, selection: textSelection(pos(cellPath(0, 1).concat(0), 0)) };
     s = applyTransform(s, (x) => Tbl.setColumnWidth(x, 1, 250));
     expect(s.doc.content[0].content[0].content[1].attrs.colwidth).toBe(250);
-    // HTML carries the width; markdown drops it (GFM can't express it)
     const html = astToHtml(s.doc);
     expect(html).toContain('width:250px');
     const back = htmlToAst(html);
     expect(back.content[0].content[0].content[1].attrs.colwidth).toBe(250);
-    expect(astToMarkdown(s.doc)).not.toContain('250');
+  });
+
+  it('column width survives the Markdown mirror', () => {
+    // The AI tools read and write the Markdown mirror, so a width dropped here
+    // was reset on the user's document the first time an AI edit touched it.
+    let s = tableDoc();
+    s = { ...s, selection: textSelection(pos(cellPath(0, 1).concat(0), 0)) };
+    s = applyTransform(s, (x) => Tbl.setColumnWidth(x, 1, 250));
+    const md = astToMarkdown(s.doc);
+    expect(md).toContain('w=250');
+    const back = markdownToAst(md);
+    expect(back.content[0].content[0].content[1].attrs.colwidth).toBe(250);
+    // The marker itself must not leak into the cell's visible text.
+    expect(JSON.stringify(back)).not.toContain('"text":"w=250"');
   });
 
   it('cellRectToText serializes a rectangle to tab/newline text', () => {
@@ -238,5 +251,47 @@ describe('V2: incremental reconciler', () => {
     expect(unmounts).toBe(0);
     expect(remaps).toBe(1);
     expect(host.querySelector('[data-bf-atom]')).toBe(atomHost);
+  });
+});
+
+describe('V2: normalize canonicalizes formula cells (deep pass only)', () => {
+  // A formula cell that picked up whitespace strays around its atom.
+  const messyDoc = () => ({
+    type: 'doc',
+    content: [{
+      type: 'table',
+      content: [{
+        type: 'tableRow',
+        content: [{
+          type: 'tableCell',
+          content: [{
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: ' ' },
+              { type: 'formula', attrs: { src: '=1+1' } },
+              { type: 'text', text: '  ' },
+            ],
+          }],
+        }],
+      }],
+    }],
+  });
+
+  it('normalizeDeep strips whitespace strays down to [paragraph[formula]]', () => {
+    const d = normalizeDeep(messyDoc());
+    const cell = d.content[0].content[0].content[0];
+    expect(cell.content).toHaveLength(1);
+    expect(cell.content[0].type).toBe('paragraph');
+    expect(cell.content[0].content).toHaveLength(1);
+    expect(cell.content[0].content[0].type).toBe('formula');
+    expect(cell.content[0].content[0].attrs.value).toBe('2'); // recompute still ran
+  });
+
+  it('normalizeLight leaves the strays alone (selection safety) but still recomputes', () => {
+    const d = normalizeLight(messyDoc());
+    const inl = d.content[0].content[0].content[0].content[0].content;
+    expect(inl).toHaveLength(3);                    // strays untouched
+    expect(inl[1].type).toBe('formula');
+    expect(inl[1].attrs.value).toBe('2');           // atom found by search, not position
   });
 });

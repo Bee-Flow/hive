@@ -493,7 +493,7 @@ export default function OverviewTab({
                 {/* Azure services */}
                 {(azureServices.byType?.length > 0) && (
                     <div>
-                        <SectionTitle icon={Server}>{t('usage.azure_services') || 'Azure Services'}</SectionTitle>
+                        <SectionTitle icon={Server}>{t('usage.azure_services', 'Azure Services')}</SectionTitle>
                         <Card>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 0 }}>
                                 {azureServices.byType.map((svc, i) => {
@@ -521,7 +521,7 @@ export default function OverviewTab({
                                 })}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--bg-tertiary)', borderTop: '2px solid var(--border-subtle)' }}>
-                                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('usage.total') || 'Total'}</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('usage.total', 'Total')}</span>
                                 <span style={{ fontSize: 16, fontWeight: 800, color: '#10b981' }}>{fCur(azureServices.summary?.total_cost)}</span>
                             </div>
                         </Card>

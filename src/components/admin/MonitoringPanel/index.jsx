@@ -11,11 +11,16 @@ import { FeedbackPage } from './FeedbackPage';
 import { ActivityPage } from './ActivityPage';
 import { TerminationsPage } from './TerminationsPage';
 import { DetailDrawer } from './DetailDrawer';
+import { authFetch } from '../../../utils/helpers';
 
 const API = (import.meta.env.VITE_API_URL || '') + '/api/usage';
 const AI_API = (import.meta.env.VITE_API_URL || '') + '/ai';
 const FEEDBACK_API = (import.meta.env.VITE_API_URL || '') + '/api/feedback';
-const OPTS = { credentials: 'include' };
+// authFetch, not raw fetch. Both send credentials, but authFetch also sets the
+// no-store handling that exists because the Nextcloud proxy path was replaying
+// stale per-user API responses from the browser cache — and usage figures are
+// exactly that kind of per-org, always-changing response. It is also the seam
+// the public demo transport hooks, so a raw fetch here silently bypasses it.
 
 const RANGES = [
     { id: 'today', labelKey: 'admin.mon_today' },
@@ -96,7 +101,7 @@ const PAGES = [
 
 async function fetchJson(url) {
     try {
-        const r = await fetch(url, OPTS);
+        const r = await authFetch(url);
         if (!r.ok) return null;
         return await r.json();
     } catch { return null; }

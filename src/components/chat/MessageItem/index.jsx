@@ -10,6 +10,7 @@ import AppEmoji from '../../AppEmoji';
 import AudioPlayerInline from './AudioPlayer';
 import ImageLightbox from './ImageLightbox';
 import ToolOutput from './ToolOutput';
+import BrowserLivePreview from './BrowserLivePreview';
 import { SequentialThinking } from './ThinkingSteps';
 import { ThinkingPanel } from './ThinkingPanel';
 import SessionSkillsTimeline from './SessionSkillsTimeline';
@@ -24,6 +25,7 @@ import CalendarDraftCard from './CalendarDraftCard';
 import LinkedInDraftCard from './LinkedInDraftCard';
 import ContactsDraftCard from './ContactsDraftCard';
 import KeepDraftCard from './KeepDraftCard';
+import { messageContentToText } from '../../../utils/messageShape';
 
 
 const MessageItem = ({
@@ -68,6 +70,24 @@ const MessageItem = ({
     }, []);
     const isUser = msg.role === 'user';
     const isTool = msg.role === 'tool';
+    // BFSF-307: the retained compaction summary. Everything before it was folded
+    // away and is genuinely gone from the database, so rendering it as a normal
+    // bubble would be a lie (the user never wrote it) and hiding it outright
+    // would leave a conversation that starts abruptly with no explanation.
+    // A divider is the honest middle: it marks where history stops being real.
+    const isCompactionArtifact = !!msg.compactionArtifact;
+    // Whether this turn has anything privacy-related worth showing. The
+    // raw-payload transparency used to be reachable only via `count > 0`, so a
+    // user with "Show raw payload & token mapping" on but nothing detected saw
+    // no confirmation that a scan had run at all (BFSF-291). Any of a
+    // tokenised prompt, a raw response or a token map is enough on its own.
+    const _tok = msg.tokenisationInfo;
+    const hasRawPayload = !!(_tok?.tokenizedPrompt || _tok?.rawResponse || _tok?.tokenMap);
+    const hasPrivacyInfo = !!(
+        _tok?.count > 0
+        || hasRawPayload
+        || (_tok?.attachments || []).some(a => a?.timeout || a?.overflow || a?.reason)
+    );
     const [copied, setCopied] = useState(false);
     const [copiedMd, setCopiedMd] = useState(false);
     const [lightboxImage, setLightboxImage] = useState(null);
@@ -190,6 +210,19 @@ const MessageItem = ({
     const isRemovedMessage = msg.isDeleted ||
         (isUser && typeof msg.content === 'string' && msg.content === '[Message removed - policy violation]');
 
+    // ── Compaction boundary → a rule, not a message bubble ──────────────
+    if (isCompactionArtifact) {
+        return (
+            <div className="flex items-center gap-3 my-4 px-2 select-none" aria-hidden="false">
+                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                <span className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    {t('chat.earlierMessagesSummarised', 'Eerdere berichten zijn samengevat')}
+                </span>
+                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+            </div>
+        );
+    }
+
     if (isRemovedMessage && isUser) {
         return (
             <div className="flex justify-end mb-2 animate-fade-in">
@@ -210,7 +243,7 @@ const MessageItem = ({
                         </svg>
                     </div>
                     <span className="text-xs" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                        {t('chat.message_removed') || 'Message removed by security policy'}
+                        {t('chat.message_removed', 'Message removed by security policy')}
                     </span>
                 </div>
             </div>
@@ -542,6 +575,14 @@ const MessageItem = ({
 
                 {!isUser && !isTool && renderToolCall()}
 
+                {/* Live browser preview (browse_web) — mounted independently of
+                    renderToolCall()'s streaming/no-content gate and of
+                    msg.toolCall (last-write-wins across parallel tools), so a
+                    co-running agent_search can't hide it. */}
+                {!isUser && !isTool && msg.browserPreview && (
+                    <BrowserLivePreview preview={msg.browserPreview} />
+                )}
+
                 {/* Content */}
                 <div
                     ref={contentRef}
@@ -579,7 +620,10 @@ const MessageItem = ({
                         </div>
                     )}
                     {isTool ? renderToolOutput() : (() => {
-                        const errText = typeof msg.content === 'string' ? msg.content : String(msg.content || '');
+                        // NOT String(msg.content): on block content that yields the
+                        // literal "[object Object],[object Object]" users reported
+                        // in BFSF-307. Always read content through the walker.
+                        const errText = messageContentToText(msg.content);
                         return msg.isError && errText ? (
                             <div className={`flex items-start gap-3 p-3 rounded-xl border ${errText.includes('limit') || errText.includes('subscription') || errText.includes('suspended') || errText.includes('cancelled')
                                 ? 'bg-orange-100 dark:bg-amber-900/30 border-orange-400 dark:border-amber-500/50'
@@ -613,7 +657,13 @@ const MessageItem = ({
                             </div>
                         ) : msg.content ? (
                             <MarkdownRenderer content={msg.images?.length > 0 ? errText.replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim() : errText} isLoading={msg.isStreaming} />
-                        ) : msg.isStreaming && !msg.thinking ? (
+                        ) : msg.isStreaming && (!msg.thinking || !showReasoning) ? (
+                            // BFSF-263: keep the indicator during a reasoning-only
+                            // phase whenever the ThinkingPanel is NOT visible —
+                            // for end users (panel is admin-gated) extracted
+                            // reasoning populates msg.thinking while content
+                            // stays empty, and hiding the indicator would leave
+                            // a frozen empty bubble for the whole think phase.
                             <ActivityIndicator msg={msg} sessionSkills={sessionSkills} />
                         ) : null;
                     })()}
@@ -724,7 +774,7 @@ const MessageItem = ({
 
                 {/* How I got this answer — comprehensive collapsed section */}
                 {!simpleMode && !isUser && !isTool && !msg.isStreaming && msg.content && (
-                    (msg.thinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.modelId || msg.kbSources?.length > 0 || msg.tokenisationInfo?.count > 0 || (msg.tokenisationInfo?.attachments || []).some(a => a?.timeout)) && (() => {
+                    (msg.thinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.modelId || msg.kbSources?.length > 0 || hasPrivacyInfo) && (() => {
                         const visibleTools = msg.toolHistory?.filter(t => t.name !== 'sequentialthinking') || [];
                         const totalMs = visibleTools.reduce((acc, t) => acc + (t.endTime && t.startTime ? t.endTime - t.startTime : 0), 0);
                         const totalSec = totalMs > 0 ? (totalMs / 1000).toFixed(1) : null;
@@ -779,25 +829,37 @@ const MessageItem = ({
                                 <div className="mt-3 space-y-2">
 
                                     {/* Privacy protection — shows PII/DLP tokenisation applied to this turn. */}
-                                    {(msg.tokenisationInfo?.count > 0 || (msg.tokenisationInfo?.attachments || []).some(a => a?.timeout)) && (() => {
+                                    {hasPrivacyInfo && (() => {
                                         const info = msg.tokenisationInfo;
                                         const counts = new Map();
                                         for (const c of (info.categories || [])) counts.set(c, (counts.get(c) || 0) + 1);
                                         const categoryList = [...counts.entries()].map(([label, n]) => `${label}${n > 1 ? ` ×${n}` : ''}`).join(', ');
-                                        const actionLabel = info.action === 'block'
-                                            ? 'Blocked'
-                                            : info.action === 'restore'
-                                                ? 'Restored from vault'
-                                                : info.action === 'protected'
-                                                    ? 'Privacy active'
-                                                    : info.source === 'dlp' ? 'Tokenised (DLP)' : 'Tokenised';
+                                        // A scan that found nothing is still worth confirming — silence
+                                        // reads as "the shield did nothing" (BFSF-291).
+                                        const nothingFound = !(info.count > 0);
+                                        // Did any attachment fail to be checked end to end? Drives the
+                                        // explainer below: we may only promise full placeholder coverage
+                                        // when there is full coverage.
+                                        const anyIncompleteAttachment = Array.isArray(info.attachments)
+                                            && info.attachments.some(a => a?.reason || a?.timeout || a?.overflow || a?.truncated);
+                                        const actionLabel = nothingFound
+                                            ? t('privacy.scanned_no_findings', 'Scanned for personal data — nothing found.')
+                                            : info.action === 'block'
+                                                ? 'Blocked'
+                                                : info.action === 'restore'
+                                                    ? 'Restored from vault'
+                                                    : info.action === 'protected'
+                                                        ? 'Privacy active'
+                                                        : info.source === 'dlp' ? 'Tokenised (DLP)' : 'Tokenised';
                                         return (
                                             <details className="group/privacy">
                                                 <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>
                                                     <span className="text-xs">🔒</span>
                                                     <span className="font-medium">Privacy protection</span>
                                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: 'rgba(59, 130, 246, 0.10)', color: 'rgb(29, 78, 216)' }}>
-                                                        {info.count} item{info.count === 1 ? '' : 's'} {info.action === 'restore' ? 'restored' : info.action === 'protected' ? 'protected' : 'redacted'}
+                                                        {nothingFound
+                                                            ? t('privacy.badge_scanned', 'scanned')
+                                                            : `${info.count} item${info.count === 1 ? '' : 's'} ${info.action === 'restore' ? 'restored' : info.action === 'protected' ? 'protected' : 'redacted'}`}
                                                     </span>
                                                     <svg className="w-2.5 h-2.5 transition-transform group-open/privacy:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                                 </summary>
@@ -820,19 +882,20 @@ const MessageItem = ({
                                                                     const fileLine = Object.entries(att.byCategory || {})
                                                                         .map(([cat, n]) => `${n} ${cat.toLowerCase()}${n > 1 ? 's' : ''}`).join(', ');
                                                                     const pageEntries = Object.entries(att.pages || {});
-                                                                    if (att.timeout) {
-                                                                        return (
-                                                                            <li key={`${att.filename}-${i}`}>
-                                                                                <strong style={{ color: 'var(--text-primary)' }}>{att.filename}</strong>
-                                                                                <span className="ml-1" style={{ color: 'rgb(180, 83, 9)' }}>— ⚠️ scan timed out, content passed through unredacted</span>
-                                                                            </li>
-                                                                        );
-                                                                    }
+                                                                    const incompleteReason = att.reason || (att.timeout ? 'timeout' : (att.overflow ? 'overflow' : null));
+                                                                    const incompleteMsg = incompleteReason === 'overflow'
+                                                                        ? t('dlp.attachment_overflow_truncated', 'too large to fully check; the rest was left out')
+                                                                        : incompleteReason === 'timeout'
+                                                                            ? t('dlp.attachment_timeout_truncated', 'check ran out of time; the rest was left out')
+                                                                            : t('dlp.attachment_degraded_truncated', 'checking unavailable; the rest was left out');
+                                                                    const pageNote = (Number.isFinite(att.scannedPages) && Number.isFinite(att.totalPages))
+                                                                        ? ' ' + t('dlp.attachment_scanned_partial', 'Scanned {scanned} of {total} pages', { scanned: att.scannedPages, total: att.totalPages })
+                                                                        : '';
                                                                     return (
                                                                         <li key={`${att.filename}-${i}`}>
                                                                             <strong style={{ color: 'var(--text-primary)' }}>{att.filename}</strong>
                                                                             {fileLine && <> — {fileLine}</>}
-                                                                            {att.overflow && <span className="ml-1 opacity-70">(scan limited to first 50 pages)</span>}
+                                                                            {incompleteReason && <span className="ml-1" style={{ color: 'rgb(180, 83, 9)' }}>— ⚠️ {incompleteMsg}{pageNote}</span>}
                                                                             {pageEntries.length > 0 && (
                                                                                 <ul className="ml-4 list-[circle]">
                                                                                     {pageEntries.map(([page, byCat]) => {
@@ -848,9 +911,24 @@ const MessageItem = ({
                                                             </ul>
                                                         </div>
                                                     )}
-                                                    <p className="opacity-70">
-                                                        The AI only saw placeholders like <code className="px-1 rounded" style={{ background: 'var(--bg-primary)' }}>[email_1]</code>. Real values were restored in the reply before you saw it.
-                                                    </p>
+                                                    {/* The reassurance used to be unconditional, so a document that
+                                                        timed out halfway still told the user "the AI only saw
+                                                        placeholders" while the unchecked pages had gone out verbatim.
+                                                        The tail is now cut rather than sent, but the sentence must
+                                                        still only make the claim it can back: when coverage was
+                                                        partial, say what actually happened instead. */}
+                                                    {!nothingFound && (anyIncompleteAttachment
+                                                        ? (
+                                                            <p style={{ color: 'rgb(180, 83, 9)' }}>
+                                                                {t('dlp.panel_partial_explainer', 'Part of this document could not be checked, so it was left out of what the AI received. Everything that was checked was replaced with placeholders.')}
+                                                            </p>
+                                                        )
+                                                        : (
+                                                            <p className="opacity-70">
+                                                                {t('dlp.panel_full_explainer', 'The AI only saw placeholders like [email_1]. Real values were restored in the reply before you saw it.')}
+                                                            </p>
+                                                        )
+                                                    )}
 
                                                     {/* Raw-payload transparency — only renders when the org opted in
                                                         via Privacy Shield → Show raw payload. Lets the user verify the
@@ -1346,15 +1424,25 @@ const MessageItem = ({
             {/* PII / DLP tokenisation badge — visible confirmation that the user's
                 message had sensitive values replaced with placeholders before
                 reaching the LLM. `dlpRedactedCount` is set by the DLP path;
-                `piiTokenizedCount` by the legacy Azure-PII path. Take the max. */}
-            {isUser && !isEditing && (msg.dlpRedactedCount || msg.piiTokenizedCount) ? (
-                <div className="mt-1 mr-1 flex justify-end">
-                    <TokenisedBadge
-                        count={Math.max(msg.dlpRedactedCount || 0, msg.piiTokenizedCount || 0)}
-                        categories={msg.dlpCategories?.length ? msg.dlpCategories : (msg.piiCategories || [])}
-                    />
-                </div>
-            ) : null}
+                `piiTokenizedCount` by the legacy Azure-PII path. Take the max.
+                Amber "scan incomplete" warnings surface any large upload whose
+                unscanned part was passed unredacted (fail_open) — never silent. */}
+            {(() => {
+                if (!isUser || isEditing) return null;
+                const scanWarnings = Array.isArray(msg.piiScanWarnings) ? msg.piiScanWarnings : [];
+                const count = Math.max(msg.dlpRedactedCount || 0, msg.piiTokenizedCount || 0);
+                if (!count && scanWarnings.length === 0) return null;
+                return (
+                    <div className="mt-1 mr-1 flex justify-end">
+                        <TokenisedBadge
+                            count={count}
+                            categories={msg.dlpCategories?.length ? msg.dlpCategories : (msg.piiCategories || [])}
+                            warnings={scanWarnings}
+                            t={t}
+                        />
+                    </div>
+                );
+            })()}
 
             {/* User message actions + timestamp */}
             {isUser && !isEditing && !msg.isStreaming && (

@@ -102,6 +102,25 @@ export default function useAutomationApi() {
             if (!r.ok) throw new Error((await safeText(r)) || 'GET /ticket-assistant/connections failed');
             return r.json();
         },
+        // Cross-route helpers: reusable HTTP credentials (org vault) for the
+        // http_request step's Authentication picker. Live under
+        // /api/integrations/connections; includeShared adds credentials lent
+        // to this user (marked access:'lent'). Responses never contain the
+        // secret — write-only by API contract.
+        listHttpConnections: async () => {
+            const r = await authFetch(`${API_BASE}/api/integrations/connections?provider=http&includeShared=1`);
+            if (!r.ok) throw new Error((await safeText(r)) || 'GET /integrations/connections failed');
+            return r.json();
+        },
+        createHttpConnection: async (body) => {
+            const r = await authFetch(`${API_BASE}/api/integrations/connections`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body || {}),
+            });
+            if (!r.ok) throw new Error((await safeText(r)) || 'POST /integrations/connections failed');
+            return r.json();
+        },
         getRun: (runId) => get(`/runs/${runId}`),
         getRunSteps: (runId) => get(`/runs/${runId}/steps`),
         approveRun: (runId) => send('POST', `/runs/${runId}/approve`),
@@ -120,13 +139,25 @@ export default function useAutomationApi() {
         // since) and bumps the version counter so the restore itself shows
         // up as a new entry in the history.
         restoreVersion: (id, versionId) => send('POST', `/${id}/versions/${versionId}/restore`),
-        createWebhook: (id) => send('POST', `/${id}/webhook`),
+        // `triggerStepId` scopes the new webhook to ONE webhook-kind trigger
+        // node, so an automation with several of them gets a distinct URL each.
+        // The server has always validated and stored this; the client just
+        // never sent it, so every webhook was primary-trigger-scoped (BFSF-320).
+        // Omitted → the primary trigger, the pre-existing behaviour.
+        createWebhook: (id, triggerStepId = null) => send('POST', `/${id}/webhook`, triggerStepId ? { triggerStepId } : {}),
         listWebhooks: (id) => get(`/${id}/webhooks`),
         // Webhook secret rotation invalidates the previous secret
         // immediately. The new secret is returned ONCE — surface it in the
         // UI so the user copies it before navigating away.
         rotateWebhook: (id, slug) => send('POST', `/${id}/webhook/${slug}/rotate`),
         deleteWebhook: (id, slug) => send('DELETE', `/${id}/webhook/${slug}`),
+        // Hosted form pages (trigger kind 'form'). Unlike a webhook there is no
+        // secret to reveal: the URL token IS the credential, so rotating mints
+        // a whole new URL and the old one 404s immediately.
+        createFormPage: (id, triggerStepId = null) => send('POST', `/${id}/form`, triggerStepId ? { triggerStepId } : {}),
+        listFormPages: (id) => get(`/${id}/forms`),
+        rotateFormPage: (id, token) => send('POST', `/${id}/form/${token}/rotate`),
+        deleteFormPage: (id, token) => send('DELETE', `/${id}/form/${token}`),
         getCatalog: () => get('/catalog'),
         // AI one-liner describing what a layer does. Opt-in (gated behind an
         // off-by-default checkbox in the Layers drawer) — stateless: we send
@@ -136,6 +167,11 @@ export default function useAutomationApi() {
         // unnamed (empty + not user-locked). `allowedIcons` is the client's
         // renderable icon-name set so the model can only return icons we draw.
         labelSteps: (definition, allowedIcons) => send('POST', '/builder/label-steps', { definition, allowedIcons }),
+        // Design-time "Map with AI" for the parse_json step: sample + plain-
+        // language instruction → deterministic field paths, verified server-
+        // side against the sample. Returns { fields: [{ name, path,
+        // description, verified, sampleValue? }] }.
+        mapJsonFields: (sample, instruction, existingFields) => send('POST', '/builder/map-json-fields', { sample, instruction, existingFields }),
         // Curated template gallery shown in the EmptyState. listTemplates
         // returns metadata only; getTemplate fetches the full definition
         // so the builder can pre-fill via createAutomation.
@@ -217,15 +253,42 @@ export default function useAutomationApi() {
     }), [get, send, stepGet, stepSend]);
 }
 
-async function safeText(r) {
+export async function safeText(r) {
     try {
         const j = await r.json();
-        // Surface validator details so the user can see WHY the definition is rejected.
+        // Surface validator details so the user can see WHY the definition is
+        // rejected. `details` is an array of structured records
+        // ({code, message, hint, ...}) — render their human messages, not the
+        // raw objects (which would stringify to "[object Object]").
         if (j.error && Array.isArray(j.details) && j.details.length) {
-            return `${j.error}: ${j.details.join('; ')}`;
+            const msgs = j.details.map(detailText).filter(Boolean);
+            return msgs.length ? `${j.error}: ${msgs.join('; ')}` : j.error;
         }
         return j.error || JSON.stringify(j);
     } catch { return r.statusText; }
+}
+
+/**
+ * One validator detail as a sentence — INCLUDING its hint (BFSF-348).
+ *
+ * Every record the server rejects a definition with carries both a `message`
+ * ("Step step_7: a form step needs the routine to start with a form trigger")
+ * and a `hint` ("Switch the trigger to Form, or remove this step") — the
+ * message says what is wrong, the hint says what to do about it. We used to
+ * drop the hint on the floor, which left the user staring at a rule with no
+ * way out of it: the one actionable half of the error was fetched, parsed and
+ * then discarded.
+ *
+ * The hint is skipped when the message already contains it, so a server that
+ * spells both into `message` doesn't produce a stutter.
+ */
+function detailText(d) {
+    if (typeof d === 'string') return d;
+    if (!d) return '';
+    const message = d.message || d.code || '';
+    const hint = typeof d.hint === 'string' ? d.hint.trim() : '';
+    if (!hint || message.includes(hint)) return message;
+    return message ? `${message} — ${hint}` : hint;
 }
 
 // Build the executions list query string. Arrays (status/trigger/mode) are

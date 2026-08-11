@@ -18,6 +18,7 @@ const DOC_LABELS = {
     privacy: ['signup.consent_privacy', 'Privacy Policy'],
     dpa: ['signup.consent_dpa', 'Data Processing Agreement'],
     aup: ['signup.consent_aup', 'Acceptable Use Policy'],
+    connector_terms: ['signup.consent_connector_terms', 'Nextcloud Connector Terms'],
 };
 
 export default function ReconsentGate({ docs = [], onDone, onLogout }) {

@@ -4,6 +4,10 @@ import './marketing.css';
 // Cabinet Grotesk, General Sans, Clash Display, Clash Grotesk. No CDN
 // dependency; files live under agent-hub/public/fonts/.
 import './self-hosted-fonts.css';
+// Editor-only block chrome (outlines, name tag, toolbar, insert zones).
+// Every rule is scoped under `.marketing-root.cms-preview`, so importing
+// it here is inert on the published site.
+import './preview-chrome.css';
 
 import Header       from './sections/Header';
 import Hero         from './sections/Hero';
@@ -21,35 +25,70 @@ import CtaBanner    from './sections/CtaBanner';
 import LiveComponent from './sections/LiveComponent';
 import Pricing      from './sections/PricingSection';
 import CustomerSupport from './sections/CustomerSupport';
+import Testimonials from './sections/Testimonials';
+import Faq          from './sections/Faq';
+import TrustBand    from './sections/TrustBand';
+import Showcase     from './sections/Showcase';
+import FeatureDemo  from './sections/FeatureDemo';
+import Roadmap      from './sections/Roadmap';
+import CompareTable from './sections/CompareTable';
+import GitHubStats  from './sections/GitHubStats';
+import ReleaseNotes from './sections/ReleaseNotes';
 import Footer       from './sections/Footer';
+// "Skip to content" — first focusable element, targets the <main id="main">
+// landmark below. Chrome like the cookie banner, so it lives in components/.
+import SkipLink     from './components/SkipLink';
 // Site-wide cookie consent banner. Lives outside ./sections because it's
 // chrome (fixed-position overlay), not an in-flow page section.
 import CookieBanner from './components/CookieBanner';
+// Site-wide announcement strip. Also chrome, and also fixed — it sits ABOVE
+// the header and publishes --announce-height so the header/hero/drawer
+// offsets move down by exactly its measured height.
+import AnnouncementBar from './components/AnnouncementBar';
 // Injects the (cookieless-by-default) Umami usage tracker on the live public
 // site. Renders nothing; only active when the server passes an `analytics`
 // config and we're not in the admin preview iframe.
 import AnalyticsTracker from './components/AnalyticsTracker';
+import GoogleAnalyticsTracker from './components/GoogleAnalyticsTracker';
+import SessionRecorder from './components/SessionRecorder';
+import { startAnalyticsEvents } from './components/analyticsEvents';
 
 import { useScrollReveal } from './components/ScrollReveal';
+import useCmsHead from './useCmsHead';
 import { BlockIdContext } from './components/EditableText';
+import { PreviewBlockChrome, InsertZone } from './components/PreviewBlockChrome';
+import { resolveAssetUrl } from './assetUrl';
+import { LOCALE_PREFIXES } from '../utils/cmsPublicRouting';
 
-// Resolve which language the cookie banner should show. The banner's `text`
-// blob carries every locale, so we pick one at render time from the URL
-// `?locale=` (set by the public route) or the browser language — mirroring
-// the locale logic in App.jsx's RootPathGate. Anything other than Dutch
-// falls back to English.
+// Resolve which language the cookie banner / announcement bar should show.
+// Their `text` blobs carry every locale, so we pick one at render time.
+//
+// The PATH decides, full stop. Public URLs are locale-prefixed (`/nl/pricing`)
+// and the server 301s the old `?locale=` form onto the path, so the legacy
+// param is honoured only for the instant before that redirect. The browser
+// language is deliberately NOT a fallback any more: it made a Dutch-browser
+// visitor reading the ENGLISH page at /pricing meet a Dutch cookie banner —
+// and a Dutch aria-label on the floating cookie button — as their first
+// interaction with an otherwise English site. The banner speaks the language
+// of the page it sits on. Anything other than Dutch falls back to English.
 function resolveCookieLang() {
     if (typeof window === 'undefined') return 'en';
     try {
+        // Not "any two-letter segment": /it is a valid CMS slug, not Italian.
+        // LOCALE_PREFIXES is the same allowlist the router itself uses.
+        const seg = (window.location.pathname.split('/')[1] || '').toLowerCase();
+        const fromPath = LOCALE_PREFIXES.has(seg) ? seg : null;
         const param = new URLSearchParams(window.location.search).get('locale');
-        const loc = (param || navigator.language || 'en').toLowerCase().split('-')[0];
+        const loc = (fromPath || param || 'en').toLowerCase().split('-')[0];
         return loc === 'nl' ? 'nl' : 'en';
     } catch {
         return 'en';
     }
 }
 
-const SECTION_REGISTRY = {
+// Exported for the admin AddBlockDialog's live section thumbnails
+// (SectionThumb renders the real section components at scale 0.2).
+export const SECTION_REGISTRY = {
     hero: Hero,
     socialProof: SocialProof,
     content: Content,
@@ -65,6 +104,15 @@ const SECTION_REGISTRY = {
     'live-component': LiveComponent,
     pricing: Pricing,
     'customer-support': CustomerSupport,
+    testimonials: Testimonials,
+    faq: Faq,
+    'trust-band': TrustBand,
+    showcase: Showcase,
+    'feature-demo': FeatureDemo,
+    roadmap: Roadmap,
+    'compare-table': CompareTable,
+    'github-stats': GitHubStats,
+    'release-notes': ReleaseNotes,
 };
 
 const isPreviewMode = () =>
@@ -90,7 +138,8 @@ function applyDesignToRoot(rootEl, design, effectiveTheme) {
     if (!design || typeof design !== 'object') {
         // No design — clear any inline overrides we previously set.
         for (const prop of CSS_VAR_PROPS) style.removeProperty(prop);
-        rootEl.classList.remove('cms-theme-dark', 'cms-gradient');
+        rootEl.classList.remove('cms-theme-dark', 'cms-gradient', 'cms-grain',
+            'cms-motion--none', 'cms-motion--subtle');
         return;
     }
     const c = design.colors || {};
@@ -100,16 +149,26 @@ function applyDesignToRoot(rootEl, design, effectiveTheme) {
     const resolved = effectiveTheme || (design.theme === 'dark' ? 'dark' : 'light');
     const isDark = resolved === 'dark';
 
-    // Brand colors always come from the user — they ride through both modes.
-    if (c.primary)   style.setProperty('--brand-primary',   c.primary);
+    // Brand colors always come from the user — they ride through both
+    // modes; darkColors.primary/accent are optional per-mode adjustments.
+    const dk = isDark && design.darkColors && typeof design.darkColors === 'object'
+        ? design.darkColors : null;
+    const primary = (dk && dk.primary) || c.primary;
+    const accent  = (dk && dk.accent)  || c.accent;
+    if (primary)     style.setProperty('--brand-primary',   primary);
     if (c.secondary) style.setProperty('--brand-secondary', c.secondary);
-    if (c.accent)    style.setProperty('--brand-accent',    c.accent);
+    if (accent)      style.setProperty('--brand-accent',    accent);
 
-    // Layout palette (bg/surface/text). When dark mode is on, we DON'T set
-    // these inline — the .cms-theme-dark class in marketing.css supplies
-    // dark-flavored values and class-level rules can win. When light, the
-    // user's chosen values are pushed inline and override the file defaults.
-    if (isDark) {
+    // Layout palette (bg/surface/text). Dark mode is now fully token-
+    // driven from design.darkColors — set inline the same way light is.
+    // A stale payload without darkColors keeps the legacy remove-path so
+    // the .cms-theme-dark fallback class in marketing.css still wins.
+    if (dk) {
+        if (dk.background)    style.setProperty('--brand-bg',             dk.background);
+        if (dk.surface)       style.setProperty('--brand-surface',        dk.surface);
+        if (dk.textPrimary)   style.setProperty('--brand-text',           dk.textPrimary);
+        if (dk.textSecondary) style.setProperty('--brand-text-secondary', dk.textSecondary);
+    } else if (isDark) {
         style.removeProperty('--brand-bg');
         style.removeProperty('--brand-surface');
         style.removeProperty('--brand-text');
@@ -121,32 +180,192 @@ function applyDesignToRoot(rootEl, design, effectiveTheme) {
         if (c.textSecondary) style.setProperty('--brand-text-secondary', c.textSecondary);
     }
 
+    // Dark-band tokens — set in BOTH themes from design.darkColors so the
+    // per-block 'dark' band (style.band) is always palette-consistent
+    // with the site's dark mode, even on a light page.
+    const bandDk = design.darkColors || {};
+    if (bandDk.background)    style.setProperty('--band-dark-bg',             bandDk.background);
+    if (bandDk.surface)       style.setProperty('--band-dark-surface',        bandDk.surface);
+    if (bandDk.textPrimary)   style.setProperty('--band-dark-text',           bandDk.textPrimary);
+    if (bandDk.textSecondary) style.setProperty('--band-dark-text-secondary', bandDk.textSecondary);
+
     const fonts = design.fonts || {};
     if (fonts.heading) style.setProperty('--font-heading', cssFontStack(fonts.heading));
     if (fonts.body)    style.setProperty('--font-body',    cssFontStack(fonts.body));
+    if (fonts.mono)    style.setProperty('--font-mono',    cssMonoStack(fonts.mono));
 
     if (typeof design.radius === 'number' && design.radius >= 0 && design.radius <= 48) {
         style.setProperty('--radius-base', `${design.radius}px`);
     }
 
+    // Typography v2 — display cap (64/80/96px), heading weight, body size.
+    const ty = design.typography || {};
+    const displayMax = { md: '4rem', lg: '5rem', xl: '6rem' }[ty.displaySize];
+    if (displayMax) style.setProperty('--display-max', displayMax);
+    if ([500, 600, 700].includes(ty.headingWeight)) {
+        style.setProperty('--heading-weight', String(ty.headingWeight));
+    }
+    if ([16, 17, 18].includes(ty.bodySize)) {
+        style.setProperty('--text-body', `${ty.bodySize}px`);
+    }
+
+    // ── Component shape + size ──────────────────────────────────────
+    // Each map below is value → inline properties. The DEFAULT value maps
+    // to {} so it emits nothing, and every CSS consumer is written
+    // var(--token, <today's literal>) — that is what makes an absent
+    // field, an unknown field and an explicit default all render
+    // identically. Applied AFTER the scalar tokens above so the
+    // "sharp implies flat" coupling can override the shadow level.
+    const comp = design.components || {};
+    const lay  = design.layout || {};
+    applyEnum(style, SHAPE_MAPS.buttonShape,     comp.buttonShape);
+    applyEnum(style, SHAPE_MAPS.buttonSize,      comp.buttonSize);
+    applyEnum(style, SHAPE_MAPS.navHeight,       comp.navHeight);
+    applyEnum(style, SHAPE_MAPS.logoSize,        comp.logoSize);
+    applyEnum(style, SHAPE_MAPS.cardPadding,     comp.cardPadding);
+    applyEnum(style, SHAPE_MAPS.shadow,          comp.shadow);
+    applyEnum(style, SHAPE_MAPS.containerWidth,  lay.containerWidth);
+    applyEnum(style, SHAPE_MAPS.sectionRhythm,   lay.sectionRhythm);
+
+    // Button label color. 'auto' derives from the RESOLVED primary's
+    // luminance, which a single site-wide value can't express when a theme
+    // inverts its button between light and dark mode.
+    if (comp.buttonTextColor === 'dark') {
+        style.setProperty('--btn-primary-fg', '#0B0B0C');
+    } else if (comp.buttonTextColor === 'auto') {
+        style.setProperty('--btn-primary-fg', relativeLuminance(primary) > 0.45 ? '#0B0B0C' : '#fff');
+    }
+
+    // 'sharp' means "flat" as a whole idiom, not just square corners —
+    // applied last so it wins over the shadow level.
+    if (comp.buttonShape === 'sharp') {
+        style.setProperty('--btn-shadow', 'none');
+        style.setProperty('--btn-shadow-hover', 'none');
+        style.setProperty('--btn-lift', '0px');
+        style.setProperty('--btn-blur', 'none');
+        style.setProperty('--pill-radius', '0px');
+        style.setProperty('--logo-radius', '0px');
+    }
+
     rootEl.classList.toggle('cms-theme-dark', isDark);
     rootEl.classList.toggle('cms-gradient',   design.gradient === true);
+    rootEl.classList.toggle('cms-grain',      design.grain === true);
+    rootEl.classList.toggle('cms-motion--none',   design.motion === 'none');
+    rootEl.classList.toggle('cms-motion--subtle', design.motion === 'subtle');
+    // Structural variants are classes (they change WHICH declarations
+    // exist); the identity values 'bar' and 'hairline' get no class.
+    rootEl.classList.toggle('cms-nav--floating',  comp.navStyle === 'floating');
+    rootEl.classList.toggle('cms-nav--bordered',  comp.navStyle === 'bordered');
+    rootEl.classList.toggle('cms-cards--soft',     comp.cardStyle === 'soft');
+    rootEl.classList.toggle('cms-cards--flat',     comp.cardStyle === 'flat');
+    rootEl.classList.toggle('cms-cards--elevated', comp.cardStyle === 'elevated');
+}
+
+// value → { cssProp: value } maps. A value that is absent from a map (which
+// includes every identity value) emits nothing at all.
+const SHAPE_MAPS = {
+    buttonShape: {
+        pill:    { '--btn-radius': '999px' },
+        rounded: { '--btn-radius': 'calc(var(--radius-base) * 0.5)' },
+        sharp:   { '--btn-radius': '0px' },
+    },
+    buttonSize: {
+        sm: { '--btn-pad-y': '10px', '--btn-pad-x': '22px', '--btn-font-size': '0.875rem' },
+        lg: { '--btn-pad-y': '17px', '--btn-pad-x': '40px', '--btn-font-size': '1.0625rem' },
+    },
+    navHeight: {
+        compact: { '--header-height': '60px' },
+        tall:    { '--header-height': '88px' },
+    },
+    logoSize: {
+        sm: { '--logo-size': '30px' },
+        lg: { '--logo-size': '46px' },
+    },
+    cardPadding: {
+        compact: { '--card-pad-scale': '0.75' },
+        roomy:   { '--card-pad-scale': '1.3' },
+    },
+    shadow: {
+        none:   { '--card-shadow': 'none', '--card-shadow-hover': 'none',
+                  '--btn-shadow': 'none', '--btn-shadow-hover': 'none' },
+        medium: { '--shadow-card': '0 8px 30px var(--shadow-color)' },
+        strong: { '--shadow-card': '0 16px 48px var(--shadow-color-strong)' },
+    },
+    containerWidth: {
+        // 'full' is 1760px, NOT 100%: --bleed-w uses calc(var(--max-width)
+        // - 48px), and a percentage there would resolve against the grid
+        // column instead of the container and narrow full-bleed images.
+        narrow: { '--max-width': '1120px' },
+        wide:   { '--max-width': '1440px' },
+        full:   { '--max-width': '1760px' },
+    },
+    sectionRhythm: {
+        tight: { '--section-y': 'clamp(56px, 4.5vw + 28px, 88px)',
+                 '--section-y-hero': 'clamp(72px, 6vw + 36px, 120px)' },
+        airy:  { '--section-y': 'clamp(96px, 8vw + 48px, 152px)',
+                 '--section-y-hero': 'clamp(112px, 10vw + 56px, 192px)' },
+    },
+};
+
+function applyEnum(style, map, value) {
+    const props = map && map[value];
+    if (!props) return;
+    for (const [prop, v] of Object.entries(props)) style.setProperty(prop, v);
+}
+
+// sRGB relative luminance (WCAG). Local to the marketing bundle on purpose —
+// the admin panel's colorUtils lives across the app boundary.
+function relativeLuminance(hex) {
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || '').trim());
+    if (!m) return 0;
+    let h = m[1];
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    const chan = (i) => {
+        const c = parseInt(h.slice(i * 2, i * 2 + 2), 16) / 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * chan(0) + 0.7152 * chan(1) + 0.0722 * chan(2);
 }
 
 const CSS_VAR_PROPS = [
     '--brand-primary', '--brand-secondary', '--brand-accent',
     '--brand-bg', '--brand-surface',
     '--brand-text', '--brand-text-secondary',
-    '--font-heading', '--font-body',
+    '--band-dark-bg', '--band-dark-surface',
+    '--band-dark-text', '--band-dark-text-secondary',
+    '--font-heading', '--font-body', '--font-mono',
     '--radius-base',
+    '--display-max', '--heading-weight', '--text-body',
+    // Shape + size. Every property any SHAPE_MAPS entry can set must be
+    // listed, or it survives after the design is cleared.
+    '--btn-radius', '--btn-pad-y', '--btn-pad-x', '--btn-font-size',
+    '--btn-shadow', '--btn-shadow-hover', '--btn-lift', '--btn-blur',
+    '--btn-primary-fg', '--pill-radius',
+    '--header-height', '--logo-size', '--logo-radius',
+    '--card-pad-scale', '--card-shadow', '--card-shadow-hover',
+    '--shadow-card', '--max-width', '--section-y', '--section-y-hero',
 ];
+
+// The self-hosted families carry a metric-matched local fallback face
+// (self-hosted-fonts.css); slotting it right after the web font means text
+// that paints before the WOFF2 arrives already occupies the web font's
+// geometry, so the swap moves nothing. See fallbackFaceFor in googleFonts.js.
+function cssMonoStack(name) {
+    const safe = String(name || '').replace(/"/g, '');
+    const quoted = /\s/.test(safe) ? `"${safe}"` : safe;
+    const fb = fallbackFaceFor(safe);
+    const metric = fb ? `, "${fb}"` : '';
+    return `${quoted}${metric}, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+}
 
 function cssFontStack(name) {
     // Quote names that contain spaces; always include system fallbacks
-    // so the page renders before Google Fonts has finished loading.
+    // so the page renders before the font file has finished loading.
     const safe = String(name || '').replace(/"/g, '');
     const quoted = /\s/.test(safe) ? `"${safe}"` : safe;
-    return `${quoted}, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    const fb = fallbackFaceFor(safe);
+    const metric = fb ? `, "${fb}"` : '';
+    return `${quoted}${metric}, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
 }
 
 // ── Font loader ─────────────────────────────────────────────────────
@@ -156,7 +375,7 @@ function cssFontStack(name) {
 // picked-font set changes; the existing <link> elements are updated in
 // place rather than recreated so the browser keeps the same network
 // entries and avoids a flash of unstyled text.
-import { buildFontsHrefs } from '../components/admin/ProductWebsite/googleFonts';
+import { buildFontsHrefs, fallbackFaceFor } from '../components/admin/ProductWebsite/googleFonts';
 
 // Legacy ID, kept around so an old <link> from a previous build of the
 // iframe gets cleaned up cleanly when the new multi-source loader
@@ -164,7 +383,32 @@ import { buildFontsHrefs } from '../components/admin/ProductWebsite/googleFonts'
 // buildFontsHrefs (e.g. cms-fonts-google, cms-fonts-fontshare).
 const LEGACY_FONTS_LINK_ID = 'cms-google-fonts';
 
-function ensureFontsLink(doc, headingFont, bodyFont, extras = []) {
+// Repeat-visit font-flash mitigation: the per-site font <link> normally
+// waits for the /api/cms/site payload, so custom-font sites paint once in
+// the fallback face and reflow. We cache the last computed hrefs and
+// inject them at module import time — the request starts ~a round-trip
+// earlier and display=swap keeps text visible throughout. ensureFontsLink
+// later reconciles the hrefs if the design changed.
+const FONT_HREFS_CACHE_KEY = 'cms.fontHrefs';
+(function bootstrapCachedFonts() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    try {
+        const cached = JSON.parse(window.localStorage.getItem(FONT_HREFS_CACHE_KEY) || 'null');
+        if (!Array.isArray(cached)) return;
+        for (const entry of cached) {
+            if (!entry || typeof entry.id !== 'string' || typeof entry.href !== 'string') continue;
+            if (!/^https:\/\/(fonts\.googleapis\.com|api\.fontshare\.com)\//.test(entry.href)) continue;
+            if (document.getElementById(entry.id)) continue;
+            const link = document.createElement('link');
+            link.id = entry.id;
+            link.rel = 'stylesheet';
+            link.href = entry.href;
+            document.head.appendChild(link);
+        }
+    } catch { /* corrupt cache — ignore, ensureFontsLink rebuilds it */ }
+})();
+
+function ensureFontsLink(doc, headingFont, bodyFont, extras = [], headingWeight = 600) {
     if (!doc) return;
 
     // Drop the legacy single-source <link> from older builds. Idempotent
@@ -182,13 +426,20 @@ function ensureFontsLink(doc, headingFont, bodyFont, extras = []) {
     add(bodyFont);
     for (const f of extras) add(f);
 
-    // Source-aware URL bundle — one entry per CDN. We pass the rich
-    // weight set (400…800) here because the iframe renders production
-    // typography, not just dropdown previews.
-    const hrefs = buildFontsHrefs(
-        Array.from(families),
-        [400, 500, 600, 700, 800],
-    );
+    // Source-aware URL bundle — one entry per CDN. Weights are derived
+    // from the design (heading weight + regular/medium/bold) instead of
+    // the old fixed 400–800 spread; premium typography never uses 800,
+    // so dropping it trims every font payload.
+    const weights = Array.from(new Set([400, 500, headingWeight, 700]))
+        .filter(w => Number.isFinite(w))
+        .sort((a, b) => a - b);
+    const hrefs = buildFontsHrefs(Array.from(families), weights);
+
+    // Cache the computed hrefs so the module-scope bootstrap below can
+    // inject them ~a round-trip earlier on repeat visits.
+    try {
+        window.localStorage.setItem(FONT_HREFS_CACHE_KEY, JSON.stringify(hrefs));
+    } catch { /* private mode etc. — cache is best-effort */ }
 
     // Track which source IDs are needed THIS pass. Anything previously
     // injected for a source no longer in the list (e.g. last Fontshare
@@ -256,7 +507,16 @@ function collectCustomFontFamilies(content) {
 // owns padding/margin/background/maxWidth/alignment; the section
 // component inside it stays focused on content and doesn't have to
 // know about styling.
-function blockWrapClasses(style) {
+// Types whose section markup carries no internal .reveal elements — the
+// wrapper supplies the entrance animation so every block type animates
+// uniformly. Never applied in preview (contentEditable focus + the
+// editing chrome must not sit inside an opacity transition).
+const WRAPPER_REVEAL_TYPES = new Set([
+    'socialProof', 'content', 'media-text', 'cta-banner',
+    'live-component', 'pricing', 'customer-support',
+]);
+
+function blockWrapClasses(style, { type, inPreview } = {}) {
     const out = ['cms-block-wrap'];
     const maxWidth = style?.maxWidth || 'full';
     out.push(`cms-block-wrap--${['narrow', 'medium', 'wide', 'full'].includes(maxWidth) ? maxWidth : 'full'}`);
@@ -265,6 +525,22 @@ function blockWrapClasses(style) {
     }
     if (typeof style?.backgroundImage === 'string' && style.backgroundImage) {
         out.push('cms-block-wrap--has-image');
+    }
+    // ── style v2 (all optional; absent = today's rendering) ─────────
+    // band: works on EVERY type via the retheme-scope rule in tokens.css.
+    if (['surface', 'tint', 'dark', 'primary'].includes(style?.band)) {
+        out.push(`cms-band--${style.band}`);
+    }
+    // rhythm: re-declares --section-y for the wrapped section.
+    if (['compact', 'spacious'].includes(style?.rhythm)) {
+        out.push(`cms-rhythm--${style.rhythm}`);
+    }
+    if (style?.glow === true) out.push('cms-glow');
+    if (style?.reveal === 'off') {
+        // Forces any internal .reveal elements visible (per-block motion off).
+        out.push('cms-no-reveal');
+    } else if (!inPreview && WRAPPER_REVEAL_TYPES.has(type)) {
+        out.push('reveal');
     }
     if (typeof style?.cssClass === 'string' && style.cssClass.trim()) {
         out.push(style.cssClass.trim());
@@ -288,6 +564,12 @@ function blockWrapStyle(style) {
     if (sp && typeof sp === 'object') {
         if (typeof sp.paddingTop    === 'string' && sp.paddingTop)    css.paddingTop    = sp.paddingTop;
         if (typeof sp.paddingBottom === 'string' && sp.paddingBottom) css.paddingBottom = sp.paddingBottom;
+    }
+
+    // Grid column override (style v2) — consumed by the grid rules in
+    // tokens.css via repeat(var(--cms-cols, N), 1fr).
+    if ([2, 3, 4].includes(Number(style.columns))) {
+        css['--cms-cols'] = Number(style.columns);
     }
 
     // Background image. cms-block-wrap--has-image (added by blockWrapClasses)
@@ -374,14 +656,10 @@ function buildBlockOverrideCss(blockId, style) {
     ].join(' ');
 }
 
-function resolveAssetUrl(urlOrKey) {
-    if (!urlOrKey) return '';
-    if (urlOrKey.startsWith('http://') || urlOrKey.startsWith('https://') || urlOrKey.startsWith('/')) return urlOrKey;
-    if (urlOrKey.startsWith('cms/')) {
-        return `/api/cms/asset/${urlOrKey.split('/').map(encodeURIComponent).join('/')}`;
-    }
-    return urlOrKey;
-}
+// resolveAssetUrl moved to ./assetUrl.js (sections import it there without
+// cycling through this module); imported for local use + re-exported so
+// existing imports keep resolving.
+export { resolveAssetUrl };
 
 /**
  * Public product website. Renders enabled sections in canonical order from
@@ -393,13 +671,28 @@ function resolveAssetUrl(urlOrKey) {
  *     and design changes from the panel.
  *   - Each text node becomes a click-to-edit `EditableText` that posts
  *     `cms-edit` events back to the panel on blur.
- *   - Each section is wrapped in a `SectionFrame` that exposes a hover
- *     toolbar for quick actions (focus settings, toggle visibility) which
- *     post `cms-section-action` events.
+ *   - Receives `cms-active { blockId, locked, labels }` mirroring the
+ *     panel's block selection + AI stream lock. The block map paints the
+ *     active outline (`.cms-block-active`) and renders PreviewBlockChrome
+ *     inside each wrapper: a name tag + floating toolbar posting
+ *     `cms-block-action`, and insert "+" zones posting `cms-insert-at`.
+ *     All chrome keys on the wrapper's block *id*, never its type — the
+ *     old SectionFrame hover toolbar keyed on type and never resolved
+ *     (see components/SectionFrame.jsx).
  */
 export default function ProductWebsite({ content: initialContent, analytics = null }) {
     const rootRef = useRef(null);
     const [content, setContent] = useState(initialContent || {});
+
+    // Automatic interaction events (CTA clicks, outbound links, downloads, form
+    // submits). No consent logic of its own: it calls window.umami.track, which
+    // only exists once the consent-gated tracker has loaded.
+    const eventsEnabled = !!analytics && !analytics.disabledForPage;
+    useEffect(() => {
+        if (!eventsEnabled) return undefined;
+        return startAnalyticsEvents();
+    }, [eventsEnabled]);
+
     // Design comes from one of three sources, in order of priority:
     //   1. cms-preview postMessage (preview mode, live editor)
     //   2. content.design embedded by the public route (synthesizeLegacyContent)
@@ -409,6 +702,12 @@ export default function ProductWebsite({ content: initialContent, analytics = nu
     // body so the user can edit site chrome in isolation. Null/'page' renders
     // the page's blocks normally. Only set in admin preview (postMessage).
     const [previewMode, setPreviewMode] = useState(null);
+    // Latest cms-active payload from the panel (admin preview only).
+    // Selection state LIVES in the panel — this is a read-only mirror the
+    // block chrome renders from: blockId = the active block's id (never
+    // type), locked = AI stream lock, labels = { [type]: label } so block
+    // pills get human names without importing admin code.
+    const [cmsActive, setCmsActive] = useState({ blockId: null, locked: false, labels: {} });
 
     // Visitor theme override — null = follow design.theme; 'light'/'dark'
     // force a mode. Persisted across visits in localStorage when the site
@@ -457,6 +756,17 @@ export default function ProductWebsite({ content: initialContent, analytics = nu
                 if ('design' in e.data) setDesign(e.data.design || null);
                 if ('previewMode' in e.data) setPreviewMode(e.data.previewMode || null);
             }
+            // Selection/lock sync from the panel — stored verbatim; the
+            // block map below derives the active class + chrome props.
+            if (e.data?.type === 'cms-active') {
+                setCmsActive({
+                    blockId: typeof e.data.blockId === 'string' ? e.data.blockId : null,
+                    locked: e.data.locked === true,
+                    labels: (e.data.labels && typeof e.data.labels === 'object' && !Array.isArray(e.data.labels))
+                        ? e.data.labels
+                        : {},
+                });
+            }
             // Translation list → scroll the matching block into view and flash
             // a highlight so the admin sees which block a row belongs to.
             if (e.data?.type === 'cms-scroll' && typeof e.data.blockId === 'string') {
@@ -468,12 +778,32 @@ export default function ProductWebsite({ content: initialContent, analytics = nu
                 }
             }
         };
+        // Forward undo/redo hotkeys to the admin panel — Ctrl/Cmd+Z is
+        // otherwise dead while focus sits inside this iframe (key events
+        // never bubble cross-document). Native text undo must keep winning
+        // inside EditableText / form fields, so contentEditable and
+        // input/textarea targets are left alone (no preventDefault, no
+        // forward). Shift+Z / Y = redo. Same expectedOrigin as above.
+        const onKeyDown = (e) => {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            const k = (e.key || '').toLowerCase();
+            if (k !== 'z' && k !== 'y') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            e.preventDefault();
+            const action = (k === 'y' || (k === 'z' && e.shiftKey)) ? 'redo' : 'undo';
+            window.parent?.postMessage({ type: 'cms-hotkey', action }, expectedOrigin);
+        };
         window.addEventListener('message', onMessage);
+        window.addEventListener('keydown', onKeyDown);
         // Mark the root with a class so CSS can adapt (e.g., un-fix the header).
         rootRef.current?.classList.add('cms-preview');
         // Tell the parent we're ready — explicit target origin (no '*').
         window.parent?.postMessage({ type: 'cms-preview-ready' }, expectedOrigin);
-        return () => window.removeEventListener('message', onMessage);
+        return () => {
+            window.removeEventListener('message', onMessage);
+            window.removeEventListener('keydown', onKeyDown);
+        };
     }, []);
 
     // Apply design to the root element + sync Google Fonts <link> in head.
@@ -490,17 +820,39 @@ export default function ProductWebsite({ content: initialContent, analytics = nu
             rootRef.current?.ownerDocument,
             design?.fonts?.heading,
             design?.fonts?.body,
-            collectCustomFontFamilies(content),
+            [design?.fonts?.mono, ...collectCustomFontFamilies(content)],
+            design?.typography?.headingWeight,
         );
     }, [design, effectiveTheme, content]);
 
-    useScrollReveal(rootRef);
+    useScrollReveal(rootRef, content);
+
+    // Public-site <head>: page title, SEO meta, robots and favicon. Never in
+    // editor preview (the iframe keeps its neutral title). pageTitle/seo come
+    // from synthesizeLegacyContent (locale overrides pre-merged server-side);
+    // favicon from the design blob.
+    useCmsHead({
+        enabled: !isPreviewMode(),
+        pageTitle: content.pageTitle,
+        seo: content.seo,
+        favicon: design?.favicon,
+        resolveAssetUrl,
+    });
 
     // When the panel sends a blocks[] array (multi-page CMS), render in that
     // order so the preview reflects the editor's block list. Otherwise fall
     // back to the legacy keyed shape so the public site at "/" keeps working.
     const orderedBlocks = Array.isArray(content.blocks)
-        ? content.blocks.filter(b => b && b.enabled !== false && SECTION_REGISTRY[b.type])
+        ? content.blocks.filter(b => {
+            const keep = b && b.enabled !== false && SECTION_REGISTRY[b.type];
+            // Dev-only: an unknown block type renders nothing. Warn so the
+            // "empty page" cause is visible during development (production
+            // stays silent; the import boundary surfaces it to users).
+            if (import.meta.env?.DEV && b && b.enabled !== false && !SECTION_REGISTRY[b.type]) {
+                console.warn('[ProductWebsite] skipping unknown block type', { id: b.id, type: b.type });
+            }
+            return keep;
+        })
         : null;
 
     // Per-page chrome visibility. When the active page has hideHeader /
@@ -519,41 +871,98 @@ export default function ProductWebsite({ content: initialContent, analytics = nu
 
     return (
         <div className="marketing-root" ref={rootRef}>
-            {showHeader ? <Header data={content.header} /> : null}
+            {/* First focusable element on the page — keyboard/AT users skip
+                the announcement bar + full nav straight to the <main>
+                landmark below. Renders nothing in the admin preview. */}
+            <SkipLink />
+            {/* Announcement bar — above the header on every page. Renders
+                nothing unless the site enabled it AND the resolved locale
+                has a message, so sites without one are pixel-identical.
+                Shares resolveCookieLang() with the cookie banner: both read
+                one per-locale text blob and pick the visitor's language. */}
+            <AnnouncementBar
+                enabled={content.announcement?.enabled === true}
+                dismissible={content.announcement?.dismissible !== false}
+                variant={content.announcement?.variant}
+                language={resolveCookieLang()}
+                text={content.announcement?.text}
+            />
+            {showHeader ? (
+                <Header
+                    data={content.header}
+                    showLanguageSwitcher={content.footer?.showLanguageSwitcher !== false}
+                />
+            ) : null}
+            {/* The page's one main landmark — every rendered section sits
+                inside it; site chrome (header, footer, banners) stays out.
+                No section component renders its own <main> (the standalone
+                HomePage/PricingPage ones are separate routes), so this never
+                creates a duplicate landmark. Also the skip-link target. */}
+            <main id="main">
             {previewMode === 'chrome' ? (
                 <ChromePreviewPlaceholder />
             ) : orderedBlocks ? (
-                orderedBlocks.map(b => {
-                    const Comp = SECTION_REGISTRY[b.type];
-                    const overrideCss = buildBlockOverrideCss(b.id, b.style);
-                    return (
-                        <React.Fragment key={b.id}>
-                            {overrideCss ? <style>{overrideCss}</style> : null}
-                            <div
-                                data-cms-block-id={b.id}
-                                className={blockWrapClasses(b.style)}
-                                style={blockWrapStyle(b.style)}
-                                // Clicking anywhere in the block (images,
-                                // buttons, empty space — not just editable
-                                // text) selects it in the panel. Bubbles up
-                                // from descendants; doesn't preventDefault, so
-                                // links/buttons still work. Editable-text focus
-                                // posts the same id, which the panel dedupes.
-                                onClick={inPreview
-                                    ? () => window.parent?.postMessage(
-                                        { type: 'cms-select', blockId: b.id }, '*')
-                                    : undefined}
-                            >
-                                {/* Stamp this block's id onto every EditableText
-                                    inside so inline edits write back to THIS
-                                    block, not the first one of its type. */}
-                                <BlockIdContext.Provider value={b.id}>
-                                    <Comp data={{ enabled: b.enabled !== false, ...(b.content || {}) }} />
-                                </BlockIdContext.Provider>
-                            </div>
-                        </React.Fragment>
-                    );
-                })
+                <>
+                    {orderedBlocks.map(b => {
+                        const Comp = SECTION_REGISTRY[b.type];
+                        const overrideCss = buildBlockOverrideCss(b.id, b.style);
+                        // Chrome positions are computed against the FULL
+                        // blocks array — orderedBlocks filters out disabled/
+                        // unknown blocks, so its own indices would make the
+                        // panel splice new sections in the wrong slot.
+                        const srcIndex = content.blocks.indexOf(b);
+                        const isActive = inPreview && cmsActive.blockId === b.id;
+                        return (
+                            <React.Fragment key={b.id}>
+                                {/* Insert-before zone (preview only). */}
+                                {inPreview
+                                    ? <InsertZone index={srcIndex} locked={cmsActive.locked} />
+                                    : null}
+                                {overrideCss ? <style>{overrideCss}</style> : null}
+                                <div
+                                    data-cms-block-id={b.id}
+                                    // Read by analyticsEvents.js so a CTA click can
+                                    // be attributed to the block it came from.
+                                    data-cms-block-type={b.type}
+                                    className={`${blockWrapClasses(b.style, { type: b.type, inPreview })}${isActive ? ' cms-block-active' : ''}`}
+                                    style={blockWrapStyle(b.style)}
+                                    // Clicking anywhere in the block (images,
+                                    // buttons, empty space — not just editable
+                                    // text) selects it in the panel. Bubbles up
+                                    // from descendants; doesn't preventDefault, so
+                                    // links/buttons still work. Editable-text focus
+                                    // posts the same id, which the panel dedupes.
+                                    onClick={inPreview
+                                        ? () => window.parent?.postMessage(
+                                            { type: 'cms-select', blockId: b.id }, '*')
+                                        : undefined}
+                                >
+                                    {/* Stamp this block's id onto every EditableText
+                                        inside so inline edits write back to THIS
+                                        block, not the first one of its type. */}
+                                    <BlockIdContext.Provider value={b.id}>
+                                        <Comp data={{ enabled: b.enabled !== false, ...(b.content || {}) }} />
+                                    </BlockIdContext.Provider>
+                                    {/* Name tag + floating toolbar (preview only) —
+                                        a view of the panel's selection/lock state. */}
+                                    {inPreview ? (
+                                        <PreviewBlockChrome
+                                            blockId={b.id}
+                                            label={cmsActive.labels[b.type] || b.type}
+                                            locked={cmsActive.locked}
+                                            isFirst={srcIndex === 0}
+                                            isLast={srcIndex === content.blocks.length - 1}
+                                        />
+                                    ) : null}
+                                </div>
+                            </React.Fragment>
+                        );
+                    })}
+                    {/* Insert-after-last zone (preview only). */}
+                    {inPreview
+                        ? <InsertZone index={content.blocks.length} locked={cmsActive.locked} />
+                        : null}
+                </>
             ) : (
                 <>
                     <Hero         data={content.hero} />
@@ -567,6 +976,7 @@ export default function ProductWebsite({ content: initialContent, analytics = nu
                     <CTA          data={content.cta} />
                 </>
             )}
+            </main>
             {showFooter ? (
                 <Footer
                     data={content.footer}
@@ -583,10 +993,23 @@ export default function ProductWebsite({ content: initialContent, analytics = nu
                 language={resolveCookieLang()}
                 text={content.cookieBanner?.text}
             />
-            {/* Usage tracker — renders nothing; injects a deferred, same-origin-
-                agnostic <script> only on the live public site (gated server-side
-                and by visitor consent in cookie mode). Off in preview. */}
-            {analytics ? <AnalyticsTracker {...analytics} /> : null}
+            {/* Usage trackers — render nothing; inject <script> tags only on
+                the live public site (gated server-side and by visitor consent).
+                Off in preview, and off entirely on pages the admin excluded
+                from analytics (analytics.disabledForPage). Umami is first-party
+                (cookieless by default); Google Analytics is ALWAYS gated behind
+                cookie-banner consent. */}
+            {analytics && !analytics.disabledForPage ? <AnalyticsTracker {...analytics} /> : null}
+            {analytics?.ga?.measurementId && !analytics.disabledForPage
+                ? <GoogleAnalyticsTracker measurementId={analytics.ga.measurementId} />
+                : null}
+            {/* Session recording (heatmaps + replays). Opt-in per site server-
+                side, and consent-gated in EVERY consent mode — recording a
+                visitor's clicks and DOM is not cookieless-innocent the way a
+                pageview count is. */}
+            {analytics?.recorderUrl && analytics.websiteId && !analytics.disabledForPage
+                ? <SessionRecorder websiteId={analytics.websiteId} recorderUrl={analytics.recorderUrl} />
+                : null}
         </div>
     );
 }

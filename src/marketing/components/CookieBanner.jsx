@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import AppIcon from '../../components/AppIcon';
 
 // Self-contained cookie consent banner. No external CSS or state deps — it
 // owns its own styling (inline, using the marketing CSS variables with hard
@@ -7,14 +8,16 @@ import React, { useEffect, useState } from 'react';
 //
 // Stored under `cookie_consent` as one of: "accepted" | "declined".
 // Absent/unknown → the banner is shown. Once a choice is made the banner is
-// replaced by a small 🍪 button (fixed bottom-right) that re-opens it — the
+// replaced by a small cookie-mark button (fixed bottom-right) that re-opens it — the
 // reopen affordance is required so visitors can withdraw consent under EU
 // GDPR ("intrekken even makkelijk als toestemming geven").
 
-const STORAGE_KEY = 'cookie_consent';
-// Legacy key used by earlier builds; migrated on first read so returning
-// visitors don't see the banner again after the rename.
-const LEGACY_STORAGE_KEY = 'bf_cookie_consent';
+// Storage keys live in ./consent.js — the single source shared with every
+// consent-gated tracker (AnalyticsTracker, GoogleAnalyticsTracker).
+import {
+    CONSENT_STORAGE_KEY as STORAGE_KEY,
+    LEGACY_CONSENT_STORAGE_KEY as LEGACY_STORAGE_KEY,
+} from './consent';
 
 // Built-in copy. Caller-supplied `text` is overlaid per language, so a
 // partial override (e.g. just the message) keeps the default button labels.
@@ -110,7 +113,7 @@ export default function CookieBanner({
                 title={strings.privacyLabel || 'Cookie settings'}
                 style={reopenButtonStyle}
             >
-                <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1 }}>🍪</span>
+                <AppIcon name="Cookie" className="w-4 h-4" aria-hidden="true" />
             </button>
         );
     }
@@ -171,9 +174,9 @@ const bannerStyle = {
     padding: '0.875rem 1.125rem',
     background: 'var(--brand-surface, #ffffff)',
     color: 'var(--brand-text, #0f172a)',
-    border: '1px solid var(--border-subtle, rgba(15, 23, 42, 0.12))',
-    borderRadius: 'var(--radius-base, 12px)',
-    boxShadow: '0 8px 30px rgba(0, 0, 0, 0.18)',
+    border: '1px solid var(--hairline-strong, rgba(15, 23, 42, 0.12))',
+    borderRadius: 'var(--radius-lg, 16px)',
+    boxShadow: 'var(--shadow-card, 0 4px 24px rgba(15, 23, 42, 0.08)), 0 8px 30px rgba(0, 0, 0, 0.12)',
     fontFamily: 'var(--font-body, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
 };
 
@@ -201,7 +204,7 @@ const baseButtonStyle = {
     fontSize: '0.8125rem',
     fontWeight: 600,
     padding: '0.5rem 1rem',
-    borderRadius: 'var(--radius-base, 8px)',
+    borderRadius: 'var(--radius-sm, 8px)',
     border: '1px solid transparent',
     fontFamily: 'inherit',
 };
@@ -219,21 +222,28 @@ const declineButtonStyle = {
     borderColor: 'var(--border-subtle, rgba(15, 23, 42, 0.25))',
 };
 
+// Re-open affordance — a subtle surface chip on a hairline border (not a
+// bare emoji floating over the page), quiet enough to live bottom-right
+// permanently while staying an obvious tap target.
 const reopenButtonStyle = {
     position: 'fixed',
     right: '1rem',
     bottom: '1rem',
     zIndex: Z,
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 0,
     cursor: 'pointer',
-    borderRadius: '50%',
+    borderRadius: 'var(--radius-xl, 999px)',
     background: 'var(--brand-surface, #ffffff)',
-    border: '1px solid var(--border-subtle, rgba(15, 23, 42, 0.15))',
-    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.18)',
+    border: '1px solid var(--hairline-strong, rgba(15, 23, 42, 0.15))',
+    boxShadow: 'var(--shadow-card, 0 4px 16px rgba(0, 0, 0, 0.12))',
+    opacity: 0.92,
+    // The mark inside is a Lucide outline now rather than the 🍪 emoji, which
+    // was the one full-colour glyph on the entire page.
+    color: 'var(--text-secondary, #475569)',
 };
 

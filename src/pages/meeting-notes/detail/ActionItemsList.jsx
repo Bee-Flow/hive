@@ -1,9 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Check, ListChecks, Clock, Pencil } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { CalendarDays, Check, ListChecks, Clock, Pencil } from 'lucide-react';
+// The strict parser (null for junk), NOT parseTimestampToSeconds (junk → 0):
+// an unreadable model timestamp must lose its chip, not seek to 0:00.
+import { toSeconds } from '../lib/timelineMarkers';
 
 export default function ActionItemsList({ items = [], onToggle, onEdit, onSeek }) {
     const [editingId, setEditingId] = useState(null);
     const [draft, setDraft] = useState('');
+
+    // When any item carries a spoken deadline, dated items float up in due
+    // order; undated ones keep their original (discussion) order below.
+    // Stable sort, so toggling done never reshuffles rows.
+    const sorted = useMemo(() => {
+        if (!items.some((i) => i && i.due)) return items;
+        return [...items].sort((a, b) => (a.due && b.due
+            ? a.due.localeCompare(b.due)
+            : a.due ? -1 : b.due ? 1 : 0));
+    }, [items]);
 
     const startEdit = (item) => {
         if (!onEdit) return;
@@ -40,7 +53,7 @@ export default function ActionItemsList({ items = [], onToggle, onEdit, onSeek }
                     </div>
                 ) : (
                     <ul className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-                        {items.map((item) => (
+                        {sorted.map((item) => (
                             <ActionItemRow
                                 key={item.id}
                                 item={item}
@@ -121,18 +134,45 @@ function ActionItemRow({ item, editing, draft, onDraftChange, onToggle, onStartE
                             {item.assignee}
                         </span>
                     )}
-                    {item.timestamp && onSeek && (
+                    {onSeek && toSeconds(item.timestamp) !== null && (
                         <button
                             type="button"
-                            onClick={() => onSeek(item.timestamp)}
+                            onClick={() => onSeek(toSeconds(item.timestamp))}
                             className="inline-flex items-center gap-1 hover:text-[var(--accent-primary)] transition-colors"
                         >
                             <Clock className="w-3 h-3" />
                             {item.timestamp}
                         </button>
                     )}
+                    {item.due && <DueChip due={item.due} done={item.done} />}
                 </div>
             </div>
         </li>
     );
+}
+
+/** Spoken deadline ("YYYY-MM-DD"); red once it's past and the item isn't done. */
+function DueChip({ due, done }) {
+    // Compare against the viewer's LOCAL date. toISOString() is UTC, which in
+    // CEST turns an item due today into "overdue" for the first two hours
+    // after midnight.
+    const overdue = !done && due < localToday();
+    return (
+        <span
+            className="inline-flex items-center gap-1 tabular-nums"
+            style={{ color: overdue ? '#ef4444' : 'var(--text-muted)' }}
+            title={overdue ? 'Overdue' : 'Due date'}
+        >
+            <CalendarDays className="w-3 h-3" />
+            {due}
+            {overdue && <span className="font-semibold">· overdue</span>}
+        </span>
+    );
+}
+
+/** Today as "YYYY-MM-DD" in the viewer's timezone. */
+function localToday() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }

@@ -1,14 +1,28 @@
 import js from '@eslint/js';
-import globals from 'globals';
 import importPlugin from 'eslint-plugin-import';
+import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
 
 // Initial CI-friendly config:
 //   - keeps `react-hooks/rules-of-hooks` strict (real bugs)
 //   - demotes the rest of react-hooks v7 (the new React-Compiler rules) to warn
 //   - demotes a few js.configs.recommended rules to warn so CI passes today
 // Tighten over time by promoting individual rules back to 'error'.
+
+// Long-file / long-function / complexity budgets. Warn-only so CI stays green;
+// promote to 'error' as the codebase is cleaned up.
+const sizeComplexityRules = {
+    'max-lines': ['warn', { max: 400, skipBlankLines: true, skipComments: true }],
+    'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true, IIFEs: true }],
+    complexity: ['warn', { max: 15 }],
+    'max-depth': ['warn', 4],
+    'max-params': ['warn', 5],
+    'max-statements': ['warn', 25],
+    'max-nested-callbacks': ['warn', 4],
+};
 
 export default [
     {
@@ -28,6 +42,11 @@ export default [
             },
         },
         plugins: {
+            // eslint-plugin-react is registered for exactly one rule
+            // (react/jsx-no-undef, below). Its recommended set is deliberately
+            // NOT spread in — it would bury the errors we do care about under a
+            // few thousand new warnings.
+            react,
             'react-hooks': reactHooks,
             'react-refresh': reactRefresh,
             'import': importPlugin,
@@ -40,6 +59,7 @@ export default [
         rules: {
             ...js.configs.recommended.rules,
             ...reactHooks.configs.recommended.rules,
+            ...sizeComplexityRules,
 
             // React rules — keep rules-of-hooks strict, demote the new
             // React-Compiler rules to warn for now.
@@ -61,6 +81,15 @@ export default [
                 { allowConstantExport: true },
             ],
 
+            // A JSX element name is not a reference as far as core `no-undef`
+            // is concerned, so `<Foo />` with no import for Foo lints clean and
+            // then throws ReferenceError in the browser — minified to something
+            // like "X is not defined", from inside whatever .map() rendered it.
+            // That shipped to production once (BFSF-351: a missing lucide `X`
+            // import crashed the notebook editor on every table click). Error,
+            // not warn: there is no legitimate undefined JSX element.
+            'react/jsx-no-undef': 'error',
+
             // Demote a handful of recommended JS rules to warn so CI is green
             // today. Promote back to 'error' as the codebase is cleaned up.
             //   no-dupe-keys     → 14 instances; these ARE real bugs, fix later.
@@ -69,14 +98,18 @@ export default [
             //   no-irregular-whitespace → narrow case.
             //   no-shadow-restricted-names → narrow case.
             //   no-constant-binary-expression → narrow case.
-            //   no-undef → check before promoting back; might surface real bugs.
             'no-dupe-keys': 'warn',
             'no-case-declarations': 'warn',
             'no-useless-escape': 'warn',
             'no-irregular-whitespace': 'warn',
             'no-shadow-restricted-names': 'warn',
             'no-constant-binary-expression': 'warn',
-            'no-undef': 'warn',
+
+            // Promoted back to 'error': the check turned up exactly one
+            // violation repo-wide and it was a genuine crash (an unimported
+            // MISTRAL_MODEL_META in AllowedModelsConfig). Every hit here is a
+            // runtime ReferenceError waiting for the right render path.
+            'no-undef': 'error',
 
             'no-unused-vars': [
                 'warn',
@@ -115,6 +148,26 @@ export default [
                 name: 'fetch',
                 message: 'Use apiClient (api/client) or a React Query hook instead of raw fetch().',
             }],
+        },
+    },
+    {
+        // TS/TSX were previously unlinted. Apply only the size/complexity budgets
+        // here (syntax-only via the TS parser, no type-check) to avoid a rule flood.
+        files: ['**/*.{ts,tsx}'],
+        languageOptions: {
+            parser: tseslint.parser,
+            ecmaVersion: 2022,
+            sourceType: 'module',
+            globals: {
+                ...globals.browser,
+                ...globals.node,
+            },
+            parserOptions: {
+                ecmaFeatures: { jsx: true },
+            },
+        },
+        rules: {
+            ...sizeComplexityRules,
         },
     },
     // NOTE: scoping 'react-hooks/exhaustive-deps' to error inside src/hooks/

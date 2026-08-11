@@ -60,7 +60,7 @@ export default function LeadStudio({ user, modelTiers: modelTiersProp = {} }) {
     // Reset the live activity log when switching campaigns.
     useEffect(() => { setActivity([]); }, [activeId]);
 
-    // Tiers: prefer the prop; otherwise self-fetch (mirrors SecurityStudio).
+    // Tiers: prefer the prop; otherwise self-fetch.
     useEffect(() => {
         if (modelTiersProp && Object.keys(modelTiersProp).length) { setModelTiers(modelTiersProp); return; }
         let alive = true;

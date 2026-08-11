@@ -1,6 +1,7 @@
-import { ChevronDown, ChevronRight, Database, MousePointer2, Clock, Webhook, Zap, Sparkles, GitBranch, Repeat, Code, Bell, Workflow, GripVertical } from 'lucide-react';
+import { ChevronDown, ChevronRight, Database, MousePointer2, Clock, Webhook, Zap, Sparkles, GitBranch, Repeat, Code, Bell, Workflow, GripVertical, Globe, ClipboardList } from 'lucide-react';
 import React, { useState } from 'react';
 import { previewValue, walkPath } from '../../../../../utils/bindingHelpers';
+import { startPathDrag } from './bindingDnd';
 
 // Resolve the value to SHOW for a path: prefer the real last-run / pinned
 // value (from previewSample) so the user sees actual data, falling back to the
@@ -13,13 +14,19 @@ function shownValue(path, sample, previewSample) {
     return sample;
 }
 
-// Start an HTML5 drag carrying a binding path — dropped onto a BindingField /
-// TemplateField it inserts the reference (whole-node output or a leaf field).
-function startPathDrag(e, path) {
-    e.dataTransfer.setData('text/plain', path);
-    e.dataTransfer.setData('application/x-binding-path', path);
-    e.dataTransfer.effectAllowed = 'copy';
-}
+/**
+ * Start an HTML5 drag carrying a binding path — dropped onto a BindingField /
+ * TemplateField it inserts the reference (whole-node output or a leaf field).
+ *
+ * BOTH MIME types matter: `application/x-binding-path` is what bindingDnd.js
+ * reads, `text/plain` is what a plain <input> gets when the drop lands on a
+ * control that has no binding handler.
+ *
+ * Moved to bindingDnd.js (the drag/drop plumbing module) now that the
+ * VariablePicker popover is a drag source too; re-exported here so the existing
+ * importers keep resolving.
+ */
+export { startPathDrag };
 
 /**
  * Right-side variable browser inside the StepInspector. Lists all
@@ -83,6 +90,8 @@ const KIND_ICON = {
     loop:               () => <Repeat size={12} />,
     code:               () => <Code size={12} />,
     notification:       () => <Bell size={12} />,
+    http_request:       () => <Globe size={12} />,
+    form_page:          () => <ClipboardList size={12} />,
 };
 
 function triggerIcon(group) {
@@ -132,7 +141,7 @@ function GroupNode({ group, onInsert, previewSample }) {
             {open && (
                 <div className="pb-1">
                     {(group.fields || []).map(f => (
-                        <FieldLeaf key={f.path} field={f} onInsert={onInsert} depth={1} previewSample={previewSample} />
+                        <FieldRow key={f.path} field={f} onInsert={onInsert} depth={1} previewSample={previewSample} />
                     ))}
                     {(group.fields || []).length === 0 && (
                         <div className="px-6 py-1 text-[11px] text-[var(--text-tertiary)] italic">No fields</div>
@@ -143,7 +152,13 @@ function GroupNode({ group, onInsert, previewSample }) {
     );
 }
 
-function FieldLeaf({ field, onInsert, depth, previewSample }) {
+/**
+ * One field row: drag it into a parameter, or click to insert. Children-bearing
+ * rows expand from the chevron only, so clicking the row still maps the parent
+ * path. Shared with the NDV's INPUT panel — the tree IS the input panel now
+ * (BFSF-329), so this is the single row implementation for both.
+ */
+export function FieldRow({ field, onInsert, depth, previewSample }) {
     const [open, setOpen] = useState(false);
     const indent = 12 + depth * 14;
     const hasChildren = Array.isArray(field.children) && field.children.length > 0;
@@ -191,7 +206,7 @@ function FieldLeaf({ field, onInsert, depth, previewSample }) {
                 </span>
             </div>
             {hasChildren && open && field.children.map(c => (
-                <FieldLeaf key={c.path} field={c} onInsert={onInsert} depth={depth + 1} previewSample={previewSample} />
+                <FieldRow key={c.path} field={c} onInsert={onInsert} depth={depth + 1} previewSample={previewSample} />
             ))}
         </div>
     );

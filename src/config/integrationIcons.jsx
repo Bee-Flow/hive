@@ -82,6 +82,9 @@ export const INTEGRATION_ICONS = {
     nmbrs: (
         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="4" fill="#00C389" /><path d="M7 16.5v-9h1.9v1.1c.45-.8 1.3-1.3 2.4-1.3 1.05 0 1.85.42 2.3 1.2.5-.78 1.4-1.2 2.45-1.2 1.95 0 2.95 1.2 2.95 3.2v6H19v-5.6c0-1-.35-1.75-1.4-1.75-1 0-1.5.78-1.5 1.8v5.55h-2v-5.6c0-1-.35-1.75-1.4-1.75-1 0-1.5.78-1.5 1.8v5.55H7z" fill="white" /></svg>
     ),
+    vplan: (
+        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="4" fill="#1D4ED8" /><rect x="6" y="7" width="11" height="2.4" rx="1.2" fill="white" /><rect x="8.5" y="10.8" width="9.5" height="2.4" rx="1.2" fill="white" fillOpacity="0.85" /><rect x="6" y="14.6" width="7" height="2.4" rx="1.2" fill="white" fillOpacity="0.7" /></svg>
+    ),
     n8n: (
         <img src="/n8n-color.png" alt="n8n" className="w-5 h-5 object-contain" />
     ),

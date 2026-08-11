@@ -5,8 +5,23 @@ server {
     # Hide Nginx version in responses
     server_tokens off;
 
-    # Docker DNS resolver for dynamic upstream resolution
-    resolver 127.0.0.11 valid=30s ipv6=off;
+    # DNS resolver for the dynamic ($backend) upstreams below.
+    #
+    # 127.0.0.11 is DOCKER'S embedded DNS and does not exist in Kubernetes,
+    # where CoreDNS has its own ClusterIP. That went unnoticed for a long time
+    # because the only consumer was `location /api/`, and the Kapsule ingress
+    # routes /api straight to the server Service — nginx never saw it. The
+    # moment page loads started going through @render, every request in k8s
+    # hung on an unreachable resolver until the 30s default timeout, the
+    # readiness probe on / gave up after 1s, and the pod crash-looped.
+    #
+    # Overridable per environment (see NGINX_ENVSUBST_FILTER in the manifest);
+    # the image defaults it to Docker's so a plain `docker compose up` is
+    # unchanged.
+    resolver ${NGINX_RESOLVER} valid=30s ipv6=off;
+    # Fail fast rather than hanging a page load. If DNS is wrong the request
+    # falls through to @shell and the visitor gets the client-rendered site.
+    resolver_timeout 3s;
     set $backend "http://${SERVER_HOST}:${SERVER_PORT}";
 
     root /usr/share/nginx/html;
@@ -15,9 +30,23 @@ server {
     # Allow large file uploads (knowledge base docs, etc.)
     client_max_body_size 100m;
 
-    # Gzip compression
+    # Gzip compression.
+    #
+    # `gzip_comp_level` was unset, which means nginx's default of 1 — and level 1
+    # on the entry stylesheet costs 12.7 KB over level 6 (59,728 → 47,069 bytes
+    # measured against the real build). That sits on the render-blocking path, so
+    # it is paid before anything paints. Level 6 is the usual sweet spot; 9 buys
+    # a further 1 KB for materially more CPU. Bounded risk: /assets/ is
+    # content-hashed and served `immutable`, so each file is compressed rarely
+    # and cached everywhere afterwards.
+    #
+    # image/svg+xml was missing from the type list, so the CMS artwork (the hive
+    # graphic and the logo, both text) shipped uncompressed.
     gzip on;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+    gzip_comp_level 6;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
 
     # ── Security headers (server-level) ────────────────────────────────────────
     add_header X-Content-Type-Options  "nosniff" always;
@@ -25,7 +54,37 @@ server {
     add_header X-XSS-Protection        "1; mode=block" always;
     add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+    # frame-src/object-src 'self' blob: → in-app invoice PDF viewer (BFSF-250).
+    # ${ANALYTICS_ORIGIN} (empty by default) whitelists a self-hosted Umami that
+    # is NOT served over https — the bare `https:` source below covers a public
+    # stats domain, but an instance on plain http (every local stack, and any
+    # internal-network self-host) is blocked outright, so the tracker script
+    # never loads and analytics silently collects nothing.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https: wss: ${ANALYTICS_ORIGIN}; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+
+    # ── Self-hosted fonts ──────────────────────────────────────────────────────
+    #
+    # No location matched /fonts/, so the WOFF2 files fell into `location /` and
+    # inherited its `no-store, no-cache, must-revalidate` — a header meant for
+    # the SPA shell, which must never be cached. The effect was that Inter and
+    # Fraunces (85 KB together) were re-downloaded on every single navigation,
+    # and it stayed invisible in Lighthouse because its cache audit skips
+    # no-store resources entirely: the report named two 5 KB CMS SVGs and never
+    # mentioned the two fonts that are seventeen times larger.
+    #
+    # 30 days rather than `immutable`: unlike /assets/, files under public/fonts/
+    # are not content-hashed, so an in-place swap has to stay recoverable.
+    #
+    # NOTE: add_header in a location block overrides all server-level add_header
+    # directives, so the security headers must be re-declared here.
+    location ^~ /fonts/ {
+        add_header Cache-Control "public, max-age=2592000" always;
+        add_header X-Content-Type-Options  "nosniff" always;
+        add_header X-Frame-Options         "SAMEORIGIN" always;
+        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
+    }
 
     # Public agent chat embed (/chat/<agentId>) — must be framable from any
     # origin so the "Web embed" iframe snippet works on third-party sites
@@ -48,7 +107,7 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy     "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https: wss:; base-uri 'self'; form-action 'self'" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https: wss: ${ANALYTICS_ORIGIN}; base-uri 'self'; form-action 'self'" always;
     }
 
     # ── Embedded SPA shell for the Nextcloud connector ───────────────────────
@@ -90,17 +149,134 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Handle SPA routing - redirect all non-file requests to index.html
+    # Health endpoint for the kubelet probes.
+    #
+    # It MUST be served by nginx itself. Both probes used to hit `/`, which
+    # after the render change meant the FRONTEND's liveness depended on the
+    # backend being reachable and fast — so a slow API would restart healthy
+    # web pods, which is exactly backwards.
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain always;
+        return 200 "ok";
+    }
+
+    # The homepage needs its own exact-match block. `index index.html;` at the
+    # server level resolves "/" to /index.html on disk, so `try_files $uri` in
+    # `location /` matched the file and never reached @render — the single most
+    # important page on the site was the one page still served un-rendered.
+    # try_files with a path that cannot exist forces the named fallback.
+    location = / {
+        try_files /__render_homepage__ @render;
+    }
+
+    # Handle SPA routing.
+    #
+    # A non-file request no longer goes straight to index.html — it goes to the
+    # backend's renderer (@render), which returns the SAME shell with the page's
+    # real <head> and its text already in #root. That is what makes the site
+    # crawlable: before this, every URL served `<div id="root"></div>` plus the
+    # app's default title, and social scrapers (LinkedIn, Slack, X) do not run
+    # JavaScript, so every shared link previewed as "Bee Flow - AI / Chat with
+    # AI agents powered by Bee Flow".
+    #
     # NOTE: add_header in a location block overrides all server-level add_header
     # directives, so security headers must be re-declared here.
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ @render;
         add_header Cache-Control "no-store, no-cache, must-revalidate" always;
         add_header X-Content-Type-Options  "nosniff" always;
         add_header X-Frame-Options         "SAMEORIGIN" always;
         add_header X-XSS-Protection        "1; mode=block" always;
         add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
+        # CSP for the SPA document. connect-src explicitly allows the OpenObserve
+        # RUM/browser-logs ingest host; worker-src 'self' blob: is only needed if
+        # session replay is ever enabled (it spins a blob: web worker) but is
+        # harmless to pre-allow. frame-src/object-src 'self' blob: is REQUIRED
+        # for the in-app invoice PDF viewer (BFSF-250): InvoicePdfModal renders
+        # the proxied PDF in an <iframe src="blob:..."> — without frame-src,
+        # frames fall back to default-src 'self', which never matches blob:
+        # URLs, and the viewer shows a blank pane in every nginx-served deploy
+        # (Vite dev has no CSP, so this only bites in production). Kept in sync
+        # with the server-level CSP above.
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https://observe.beeflow.nl https: wss: ${ANALYTICS_ORIGIN}; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+    }
+
+    # ── Server-rendered marketing pages ──────────────────────────────────────────
+    # Everything `location /` could not answer from disk lands here. The backend
+    # fills in <head> (title, description, canonical, og/twitter, hreflang,
+    # JSON-LD) and puts the page's text inside #root, then React mounts over it.
+    #
+    # FALLBACK IS MANDATORY, NOT DEFENSIVE: routing page loads through the API
+    # means an API outage would otherwise take the marketing site down with it.
+    # `proxy_intercept_errors` + @shell degrade to the old client-rendered
+    # behaviour instead — the visitor gets a working page, just without the
+    # server-side head.
+    location @render {
+        proxy_pass $backend$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 5s;
+
+        proxy_intercept_errors on;
+        error_page 404 500 502 503 504 = @shell;
+
+        # No Cache-Control here on purpose — the renderer sets its own and it
+        # passes through. This block used to add "no-store", which both
+        # duplicated the header and contradicted the upstream's: server-rendered
+        # marketing HTML is anonymous and identical for everyone, so forbidding
+        # every cache in the chain meant each navigation paid a full origin round
+        # trip. Failures never reach here anyway — error_page above hands 404s
+        # and 5xxs to @shell, which still sends no-store for the un-rendered
+        # shell. See routes/publicRender.js for the caching rationale.
+        add_header X-Content-Type-Options  "nosniff" always;
+        add_header X-Frame-Options         "SAMEORIGIN" always;
+        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
+        # CSP for the SPA document. connect-src explicitly allows the OpenObserve
+        # RUM/browser-logs ingest host; worker-src 'self' blob: is only needed if
+        # session replay is ever enabled (it spins a blob: web worker) but is
+        # harmless to pre-allow. frame-src/object-src 'self' blob: is REQUIRED
+        # for the in-app invoice PDF viewer (BFSF-250): InvoicePdfModal renders
+        # the proxied PDF in an <iframe src="blob:..."> — without frame-src,
+        # frames fall back to default-src 'self', which never matches blob:
+        # URLs, and the viewer shows a blank pane in every nginx-served deploy
+        # (Vite dev has no CSP, so this only bites in production). Kept in sync
+        # with the server-level CSP above.
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https://observe.beeflow.nl https: wss: ${ANALYTICS_ORIGIN}; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+    }
+
+    # The un-rendered shell. Reached when the backend is unreachable, or when it
+    # declined the path (404) because no published CMS page matches it — the app
+    # router then resolves it client-side exactly as it always did.
+    location @shell {
+        root /usr/share/nginx/html;
+        try_files /index.html =404;
+
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options  "nosniff" always;
+        add_header X-Frame-Options         "SAMEORIGIN" always;
+        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
+        # CSP for the SPA document. connect-src explicitly allows the OpenObserve
+        # RUM/browser-logs ingest host; worker-src 'self' blob: is only needed if
+        # session replay is ever enabled (it spins a blob: web worker) but is
+        # harmless to pre-allow. frame-src/object-src 'self' blob: is REQUIRED
+        # for the in-app invoice PDF viewer (BFSF-250): InvoicePdfModal renders
+        # the proxied PDF in an <iframe src="blob:..."> — without frame-src,
+        # frames fall back to default-src 'self', which never matches blob:
+        # URLs, and the viewer shows a blank pane in every nginx-served deploy
+        # (Vite dev has no CSP, so this only bites in production). Kept in sync
+        # with the server-level CSP above.
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https://observe.beeflow.nl https: wss: ${ANALYTICS_ORIGIN}; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
     }
 
     # Block source-map files. We build with sourcemap:'hidden' for post-mortem
@@ -128,7 +304,9 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
+        # $http_host keeps the port (localhost:5176); $host strips it, which
+        # breaks OAuth redirect URIs built from the Host header on non-80/443.
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
@@ -162,7 +340,8 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
+        # $http_host keeps the port — see /api/ block (OAuth redirect URIs).
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;

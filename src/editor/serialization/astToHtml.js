@@ -13,7 +13,7 @@
  */
 import { attr } from '../model/nodes.js';
 import { markDefaults } from '../model/schema.js';
-import { escapeHtml, escapeAttr, encodeForAttr, safeUrl } from './util.js';
+import { escapeHtml, escapeAttr, encodeForAttr, safeUrl, safeCssColor, safeCssFont, safeAlign, safeInt, safeTarget, safeRel } from './util.js';
 import { evaluateTable, displayResult, isFormulaCell } from '../engine/formula.js';
 
 export function astToHtml(docNode) {
@@ -23,10 +23,12 @@ export function astToHtml(docNode) {
 function renderBlock(n) {
   switch (n.type) {
     case 'paragraph':      return `<p${alignStyle(n)}>${renderInline(n.content) || '<br>'}</p>`;
-    case 'heading':        { const l = attr(n, 'level'); return `<h${l}${alignStyle(n)}>${renderInline(n.content)}</h${l}>`; }
+    // The level lands in the TAG NAME, so it is clamped rather than escaped —
+    // an out-of-range or non-numeric level would otherwise emit arbitrary markup.
+    case 'heading':        { const l = Math.min(6, Math.max(1, safeInt(attr(n, 'level')) ?? 1)); return `<h${l}${alignStyle(n)}>${renderInline(n.content)}</h${l}>`; }
     case 'blockquote':     return `<blockquote>${(n.content || []).map(renderBlock).join('')}</blockquote>`;
     case 'bulletList':     return `<ul>${renderItems(n)}</ul>`;
-    case 'orderedList':    { const s = attr(n, 'start'); return `<ol${s && s !== 1 ? ` start="${s}"` : ''}>${renderItems(n)}</ol>`; }
+    case 'orderedList':    { const s = safeInt(attr(n, 'start')); return `<ol${s != null && s !== 1 ? ` start="${s}"` : ''}>${renderItems(n)}</ol>`; }
     case 'listItem':       return `<li>${(n.content || []).map(renderBlock).join('')}</li>`;
     case 'taskList':       return `<ul data-type="taskList">${(n.content || []).map(renderTaskItem).join('')}</ul>`;
     case 'codeBlock':      return renderCodeBlock(n);
@@ -66,13 +68,13 @@ function renderTable(n) {
   const rows = (n.content || []).map((row, r) => {
     const cells = (row.content || []).map((cell, c) => {
       const tag = attr(cell, 'header') ? 'th' : 'td';
-      const a = attr(cell, 'align');
-      const cw = attr(cell, 'colwidth');
+      const a = safeAlign(attr(cell, 'align'));
+      const cw = safeInt(attr(cell, 'colwidth'));
       const styles = [];
       if (a) styles.push(`text-align:${a}`);
-      if (cw) styles.push(`width:${cw}px`);
-      const style = styles.length ? ` style="${styles.join(';')}"` : '';
-      const cs = attr(cell, 'colspan'); const rs = attr(cell, 'rowspan');
+      if (cw != null) styles.push(`width:${cw}px`);
+      const style = styles.length ? ` style="${escapeAttr(styles.join(';'))}"` : '';
+      const cs = safeInt(attr(cell, 'colspan')); const rs = safeInt(attr(cell, 'rowspan'));
       const span = (cs && cs !== 1 ? ` colspan="${cs}"` : '') + (rs && rs !== 1 ? ` rowspan="${rs}"` : '');
       let body;
       if (isFormulaCell(cell)) {
@@ -109,12 +111,12 @@ function renderImage(n) {
   const src = safeUrl(attr(n, 'src') || '') || '';
   const alt = attr(n, 'alt') || '';
   const title = attr(n, 'title') || '';
-  const width = attr(n, 'width');
-  const alignment = attr(n, 'alignment') || 'center';
+  const width = safeInt(attr(n, 'width'));
+  const alignment = safeAlign(attr(n, 'alignment')) || 'center';
   const textWrap = attr(n, 'textWrap');
   return `<img src="${escapeAttr(src)}" alt="${escapeAttr(alt)}" title="${escapeAttr(title)}"` +
-    ` data-width="${width || ''}" data-alignment="${alignment}" data-text-wrap="${textWrap ? 'true' : 'false'}"` +
-    ` class="notebook-image"${width ? ` style="width: ${width}px"` : ''}>`;
+    ` data-width="${width == null ? '' : width}" data-alignment="${alignment}" data-text-wrap="${textWrap ? 'true' : 'false'}"` +
+    ` class="notebook-image"${width != null ? ` style="width: ${width}px"` : ''}>`;
 }
 
 function alignStyle(n) {
@@ -132,6 +134,14 @@ function renderInlineNode(n) {
   if (n.type === 'hardBreak') return '<br>';
   if (n.type === 'mathInline') return `<span data-type="inlineMath" data-latex="${escapeAttr(n.attrs?.latex || '')}">\\(${escapeHtml(n.attrs?.latex || '')}\\)</span>`;
   if (n.type === 'image') return renderImage(n);
+  // A formula sharing its cell with any other content (type one character after
+  // it, or press Enter) misses the pure-formula-cell path in renderTable and
+  // lands here. Without this branch it fell through to `return ''` and the
+  // formula was destroyed by the next autosave — HTML is the persisted format.
+  if (n.type === 'formula') {
+    const src = n.attrs?.src || '';
+    return `<span data-type="formula" data-formula="${escapeAttr(src)}">${escapeHtml(n.attrs?.value || src)}</span>`;
+  }
   if (n.type !== 'text') return '';
 
   let s = escapeHtml(n.text);
@@ -150,17 +160,25 @@ function wrapMark(inner, m) {
     case 'underline': return `<u>${inner}</u>`;
     case 'textStyle': {
       const parts = [];
-      if (m.attrs?.color) parts.push(`color: ${m.attrs.color}`);
-      if (m.attrs?.fontFamily) parts.push(`font-family: ${m.attrs.fontFamily}`);
-      return parts.length ? `<span style="${parts.join('; ')}">${inner}</span>` : inner;
+      const color = safeCssColor(m.attrs?.color);
+      const font = safeCssFont(m.attrs?.fontFamily);
+      if (color) parts.push(`color: ${color}`);
+      if (font) parts.push(`font-family: ${font}`);
+      return parts.length ? `<span style="${escapeAttr(parts.join('; '))}">${inner}</span>` : inner;
     }
-    case 'highlight': return m.attrs?.color ? `<mark style="background-color: ${m.attrs.color}">${inner}</mark>` : `<mark>${inner}</mark>`;
+    case 'highlight': {
+      const bg = safeCssColor(m.attrs?.color);
+      return bg ? `<mark style="${escapeAttr(`background-color: ${bg}`)}">${inner}</mark>` : `<mark>${inner}</mark>`;
+    }
     case 'link': {
       const d = markDefaults('link');
       const href = safeUrl(m.attrs?.href || '') || '';
-      const target = m.attrs?.target ?? d.target;
-      const rel = m.attrs?.rel ?? d.rel;
-      return `<a href="${escapeAttr(href)}" target="${target}" rel="${rel}" class="notebook-link">${inner}</a>`;
+      // target/rel are closed vocabularies — whitelist rather than escape, so a
+      // hostile value falls back to the schema default instead of surviving as
+      // inert-but-visible junk in the stored HTML.
+      const target = safeTarget(m.attrs?.target ?? d.target) || safeTarget(d.target);
+      const rel = safeRel(m.attrs?.rel ?? d.rel) || safeRel(d.rel);
+      return `<a href="${escapeAttr(href)}"${target ? ` target="${target}"` : ''}${rel ? ` rel="${rel}"` : ''} class="notebook-link">${inner}</a>`;
     }
     default: return inner;
   }

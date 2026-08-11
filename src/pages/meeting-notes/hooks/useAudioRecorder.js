@@ -20,6 +20,8 @@ export default function useAudioRecorder({ onStopped } = {}) {
 
     const recorderRef = useRef(null);
     const streamRef = useRef(null);
+    // Synchronous re-entrancy guard for start(); see the note there.
+    const startingRef = useRef(false);
     const chunksRef = useRef([]);
     const timerRef = useRef(null);
     const mimeRef = useRef('');
@@ -47,10 +49,20 @@ export default function useAudioRecorder({ onStopped } = {}) {
     useEffect(() => () => cleanupAudio(), [cleanupAudio]);
 
     const start = useCallback(async () => {
-        if (state === 'recording' || state === 'paused') return;
+        // `state` is React state and is not set to 'recording' until AFTER the
+        // getUserMedia await below, so on a double-click both calls passed this
+        // check. The second overwrote streamRef, leaving the first stream's
+        // tracks running — the microphone and its browser indicator stayed on
+        // for the rest of the session — and both recorders pushed into the same
+        // chunk array, producing an unplayable interleaved file. A ref flips
+        // synchronously, so it actually blocks the second click.
+        if (state === 'recording' || state === 'paused' || startingRef.current) return;
+        startingRef.current = true;
         setError(null);
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // Belt and braces: never abandon a live stream.
+            if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
             streamRef.current = stream;
             chunksRef.current = [];
             const mimeType = pickMimeType();
@@ -104,6 +116,10 @@ export default function useAudioRecorder({ onStopped } = {}) {
             setError(err);
             cleanupAudio();
             setState('idle');
+        } finally {
+            // Cleared on BOTH paths: a denied permission prompt must not leave
+            // the recorder permanently unable to start.
+            startingRef.current = false;
         }
     }, [state, cleanupAudio]);
 

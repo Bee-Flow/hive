@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
     History, Clock, Save, Trash2, RotateCcw,
     X, Loader2, FileText, ChevronDown,
@@ -7,6 +7,7 @@ import {
 import { API_BASE, authFetch } from '../../utils/helpers';
 import useTranslation from '../../hooks/useTranslation';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
+import { formatRelativeTime } from '../../utils/dateFormatters';
 
 /* ── Diff engine ──────────────────────────────────────────────── */
 
@@ -44,29 +45,20 @@ function computeLineDiff(oldText, newText) {
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
-function timeAgo(dateStr) {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diff = (now - d) / 1000;
-    if (Number.isNaN(diff)) return dateStr || '';
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return d.toLocaleDateString();
-}
-
+// `undefined` = the browser's locale. Hardcoding 'en-US' rendered every version
+// timestamp in US format for Dutch users, right next to a locale-aware relative
+// time on the same row.
 function fullDate(dateStr) {
-    return new Date(dateStr).toLocaleString('en-US', {
+    return new Date(dateStr).toLocaleString(undefined, {
         month: 'short', day: 'numeric', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
     });
 }
 
-function formatSize(chars) {
-    if (chars < 1000) return `${chars} chars`;
-    if (chars < 1000000) return `${(chars / 1000).toFixed(1)}K chars`;
-    return `${(chars / 1000000).toFixed(1)}M chars`;
+function formatSize(chars, t) {
+    if (chars < 1000) return t('notebooks.version_size_chars', { count: chars });
+    if (chars < 1000000) return t('notebooks.version_size_kchars', { count: (chars / 1000).toFixed(1) });
+    return t('notebooks.version_size_mchars', { count: (chars / 1000000).toFixed(1) });
 }
 
 const SUMMARY_STYLES = {
@@ -163,26 +155,30 @@ export default function NotebookVersions({
         setRestoring(true);
         setRestoreError(null);
         try {
-            // Pre-restore snapshot — best-effort; a failure here is logged but
-            // does not block the restore itself.
-            try {
-                await authFetch(`${API_BASE}/api/notebooks/${notebookId}/versions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ summary: 'Before restore' }),
-                });
-            } catch (snapshotErr) {
-                console.warn('[Versions] Pre-restore snapshot failed:', snapshotErr);
+            // Pre-restore snapshot. The dialog promises the current document is
+            // saved first, so this must NOT be best-effort: send the live
+            // content (the server would otherwise snapshot the last persisted
+            // value, losing anything inside the save debounce) and abort the
+            // restore if it fails — the response status used to be ignored, so
+            // a 400 on an empty notebook passed silently for the whole flow.
+            const res = await authFetch(`${API_BASE}/api/notebooks/${notebookId}/versions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ summary: 'Before restore', content: currentContent || undefined }),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || t('notebooks.restore_snapshot_failed', 'Could not snapshot the current document — restore cancelled.'));
             }
             await Promise.resolve(onRestore?.(selectedContent));
             onClose?.();
         } catch (e) {
             console.error('[Versions] Restore failed:', e);
-            setRestoreError(e.message || 'Restore failed');
+            setRestoreError(e.message || t('notebooks.restore_failed', 'Restore failed'));
         } finally {
             setRestoring(false);
         }
-    }, [selectedContent, notebookId, onRestore, onClose]);
+    }, [selectedContent, currentContent, notebookId, onRestore, onClose, t]);
 
     // Manual snapshot
     const handleSnapshot = useCallback(async () => {
@@ -212,15 +208,19 @@ export default function NotebookVersions({
         } catch (e) { console.error('[Versions] Delete failed:', e); }
     }, [notebookId, selectedVersion, fetchVersions]);
 
-    // Diff
-    const diffLines = selectedContent !== null && viewMode === 'diff'
-        ? computeLineDiff(selectedContent, currentContent || '')
-        : null;
+    // Diff. Memoized: computeLineDiff is an O(m·n) LCS that allocates a full
+    // (m+1)×(n+1) table, and this ran on EVERY render — including every
+    // keystroke in the "Snapshot name" input.
+    const diffLines = useMemo(() => (
+        selectedContent !== null && viewMode === 'diff'
+            ? computeLineDiff(selectedContent, currentContent || '')
+            : null
+    ), [selectedContent, currentContent, viewMode]);
 
-    const diffStats = diffLines ? {
+    const diffStats = useMemo(() => (diffLines ? {
         added: diffLines.filter(l => l.type === 'added').length,
         removed: diffLines.filter(l => l.type === 'removed').length,
-    } : null;
+    } : null), [diffLines]);
 
     // Close on Escape
     useEffect(() => {
@@ -387,9 +387,9 @@ export default function NotebookVersions({
                                                     </span>
                                                 </div>
                                                 <div className="flex items-center gap-1.5 mt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                                                    <span>{timeAgo(v.createdAt)}</span>
+                                                    <span>{formatRelativeTime(v.createdAt)}</span>
                                                     <span style={{ opacity: 0.4 }}>·</span>
-                                                    <span>{formatSize(v.contentLength)}</span>
+                                                    <span>{formatSize(v.contentLength, t)}</span>
                                                 </div>
                                             </div>
 

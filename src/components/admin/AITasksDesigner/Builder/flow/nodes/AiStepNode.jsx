@@ -1,5 +1,6 @@
 import React from 'react';
 import { Sparkles, Hammer } from 'lucide-react';
+import { nodeHelp, nodeTypeLabel } from '../nodeDefs';
 import StepNodeBase, { NodeChip, renderInputsPreview, ForEachBadge } from './StepNodeBase';
 
 export default function AiStepNode({ id, data }) {
@@ -50,7 +51,8 @@ export default function AiStepNode({ id, data }) {
     return (
         <StepNodeBase
             icon={<Sparkles size={14} />}
-            typeLabel="AI step"
+            typeLabel={nodeTypeLabel('ai_step')}
+            help={nodeHelp('ai_step')}
             body={body}
             badges={badges}
             hoverDetail={hoverDetail}

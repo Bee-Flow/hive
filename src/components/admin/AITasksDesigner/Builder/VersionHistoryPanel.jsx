@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { History, RotateCcw, Eye, X, Code2 } from 'lucide-react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 import { summarizeDefinitionDiff } from './diffSummary';
+import { useBuilderConfirm } from './BuilderConfirmContext';
 
 /**
  * Lists every saved version for an automation and lets the user diff or
@@ -16,6 +17,7 @@ import { summarizeDefinitionDiff } from './diffSummary';
  */
 export default function VersionHistoryPanel({ automation, onRestored }) {
     const api = useAutomationApi();
+    const confirmAction = useBuilderConfirm();
     const [versions, setVersions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [restoringId, setRestoringId] = useState(null);
@@ -41,7 +43,13 @@ export default function VersionHistoryPanel({ automation, onRestored }) {
     // Returns true when the restore actually applied, so callers (e.g. the
     // diff modal) can close themselves only on success.
     const onRestore = async (v) => {
-        if (!window.confirm(`Restore version ${v.version}? The current definition will be replaced.`)) return false;
+        const ok = await confirmAction({
+            title: `Restore version ${v.version}?`,
+            description: 'The routine goes back to how it looked then; the current definition is replaced.',
+            confirmLabel: 'Restore',
+            destructive: true,
+        });
+        if (!ok) return false;
         setRestoringId(v.id);
         setErrorMsg(null);
         try {
@@ -390,8 +398,23 @@ function stableStringify(value) {
 //   - keep: same line in both, displayed in both columns
 //   - del:  only in left  (empty cell in right)
 //   - ins:  only in right (empty cell in left)
+//
+// Cap the O(n·m) LCS matrix: a version snapshot carrying large pinned outputs
+// can be thousands of lines, and the full matrix (n·m ints) then freezes or
+// OOMs the tab. Above the cell budget, skip the LCS and emit a coarse
+// "all of left removed, all of right added" script — still a usable
+// side-by-side, just without intra-block line matching.
+const LCS_MAX_CELLS = 2_000_000; // ~16MB of ints; comfortably fast
+
 function diffLines(a, b) {
     const n = a.length, m = b.length;
+    if ((n + 1) * (m + 1) > LCS_MAX_CELLS) {
+        const rows = [];
+        for (let i = 0; i < n; i += 1) rows.push({ kind: 'del', left: a[i], right: '' });
+        for (let j = 0; j < m; j += 1) rows.push({ kind: 'ins', left: '', right: b[j] });
+        rows._coarse = true;
+        return rows;
+    }
     // dp[i][j] = length of LCS of a[i..] and b[j..]
     const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
     for (let i = n - 1; i >= 0; i -= 1) {

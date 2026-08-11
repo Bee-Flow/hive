@@ -13,7 +13,7 @@ import {
   Heading1, Heading2, Heading3, AlignLeft, AlignCenter, AlignRight,
   Highlighter, Wand2, RefreshCw, Scissors, Expand, Code, Link as LinkIcon,
   Table2, Trash2, ChevronDown, ChevronRight, Sigma, CheckSquare, ImageIcon, Palette, WrapText,
-  Loader2, ExternalLink, Minus, Pilcrow, Plus, BarChart3,
+  Loader2, ExternalLink, Minus, Pilcrow, Plus, BarChart3, X,
 } from 'lucide-react';
 import useTranslation from '../../hooks/useTranslation';
 import useFloatingRect from './useFloatingRect.js';
@@ -29,9 +29,13 @@ import MathView from '../nodeviews/MathView.jsx';
 import FormulaView from '../nodeviews/FormulaView.jsx';
 import ChartView from '../nodeviews/ChartView.jsx';
 import ChartConfigModal from './ChartConfigModal.jsx';
+import ChromeBoundary from './ChromeBoundary.jsx';
 import { tableToMatrix } from '../engine/formula.js';
+import { colLabel } from '../engine/formulaRefs.js';
+import * as Tbl from '../engine/tables.js';
+import { tableGrid } from '../engine/tables.js';
 import SectionDragLayer from './SectionDragLayer.jsx';
-import { API_BASE } from '../../utils/helpers';
+import { API_BASE, authFetch } from '../../utils/helpers';
 import EditorToolbar from './EditorToolbar.jsx';
 import {
   Btn, Dropdown, Item, MenuDivider, MenuLabel, BubbleDivider, mkTt,
@@ -44,7 +48,8 @@ import 'katex/dist/katex.min.css';
 const BeeEditor = forwardRef(function BeeEditor(props, ref) {
   const {
     content, placeholder, editable = true, onChange, onSave, onAIAction, onAIFill,
-    saving, onImportClick, generating, aiFilling, onTocUpdate, notebookId, askAiEnabled = true,
+    saving, onImportClick, generating, aiFilling, onTocUpdate, onWordCountChange,
+    notebookId, askAiEnabled = true,
   } = props;
 
   const { t } = useTranslation();
@@ -69,6 +74,8 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
   const [askQuery, setAskQuery] = useState('');
   const [chartConfig, setChartConfig] = useState(null); // { columns, rows } | null
   const [collapsed, setCollapsed] = useState(() => loadCollapsed(notebookId)); // Set<ordinal>
+  // Which tables have their column-name strip hidden. View-only, like collapse.
+  const [hiddenHeaders, setHiddenHeaders] = useState(() => loadHiddenHeaders(notebookId)); // Set<ordinal>
   const tt = mkTt(t);
 
   useEffect(() => { onChangeRef.current = onChange; onSaveRef.current = onSave; });
@@ -86,6 +93,12 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
   const onTocRef = useRef(onTocUpdate);
   useEffect(() => { onTocRef.current = onTocUpdate; }, [onTocUpdate]);
 
+  // Same ref pattern for the word count, so the parent (header meta) can track
+  // it without the mount effect or refreshChrome depending on callback identity.
+  const onWordCountRef = useRef(onWordCountChange);
+  useEffect(() => { onWordCountRef.current = onWordCountChange; }, [onWordCountChange]);
+  const applyWordCount = useCallback((n) => { setWordCount(n); onWordCountRef.current?.(n); }, []);
+
   // Recompute toolbar chrome (word count, TOC) after an external content change
   // that doesn't emit an update (setContent / AI write / content prop) — without
   // triggering a save. Fixes the "0 words after AI write" stale-count bug.
@@ -93,19 +106,24 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
     const v = viewRef.current;
     if (!v) return;
     lastHtmlRef.current = v.getHTML();
-    setWordCount(countWords(v.getText()));
+    applyWordCount(countWords(v.getText()));
     updateToc(v, onTocRef.current);
     bump();
-  }, []);
+  }, [applyWordCount]);
 
   // Collapse state is view-only (never serialized): reload on notebook switch,
   // persist on change, and re-apply the `bf-collapsed` class to each table el
   // after every render (the reconciler may recreate table elements).
   const prevNbRef = useRef(notebookId);
   useEffect(() => {
-    if (prevNbRef.current !== notebookId) { prevNbRef.current = notebookId; setCollapsed(loadCollapsed(notebookId)); }
+    if (prevNbRef.current !== notebookId) {
+      prevNbRef.current = notebookId;
+      setCollapsed(loadCollapsed(notebookId));
+      setHiddenHeaders(loadHiddenHeaders(notebookId));
+    }
   }, [notebookId]);
   useEffect(() => { saveCollapsed(notebookId, collapsed); }, [collapsed, notebookId]);
+  useEffect(() => { saveHiddenHeaders(notebookId, hiddenHeaders); }, [hiddenHeaders, notebookId]);
   useEffect(() => {
     const v = viewRef.current;
     if (!v?.allTables) return;
@@ -151,11 +169,11 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
       // so the mermaid/math view keeps its DOM + internal state (no flicker/reset).
       remapAtom: (hostEl, n) => { hostEl.__bfAtomNode = n; setAtoms((a) => a.map((x) => (x.host === hostEl ? { ...x, node: n } : x))); },
       onUpdate: () => {
+        // Serialize FIRST. Clearing the save timer before this meant a throw in
+        // the serializer both lost the pending save and scheduled no new one,
+        // so the editor went quietly read-only from the user's point of view.
         const html = view.getHTML();
         lastHtmlRef.current = html;
-        onChangeRef.current?.(html);
-        setWordCount(countWords(view.getText()));
-        updateToc(view, onTocRef.current);
         if (saveTimer.current) clearTimeout(saveTimer.current);
         const genAtSchedule = contentGenRef.current;
         const idAtSchedule = notebookIdRef.current;
@@ -163,6 +181,9 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
           // Only persist if we haven't switched notebooks since this edit.
           if (contentGenRef.current === genAtSchedule && notebookIdRef.current === idAtSchedule) onSaveRef.current?.(html);
         }, 2000);
+        onChangeRef.current?.(html);
+        applyWordCount(countWords(view.getText()));
+        updateToc(view, onTocRef.current);
         bump();
       },
       onSelectionChange: () => bump(),
@@ -171,11 +192,15 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
     facadeRef.current = makeFacade(view);
     console.info('%c[BeeEditor] new editor active (not TipTap)', 'color:#3b82f6;font-weight:600');
     lastHtmlRef.current = view.getHTML();
-    setWordCount(countWords(view.getText()));
+    applyWordCount(countWords(view.getText()));
     updateToc(view, onTocUpdate);
 
     // Image paste/drop → upload (capture phase, before the view's text handler)
-    const onPaste = (e) => { if (handleImageClipboard(e.clipboardData)) e.stopImmediatePropagation(); };
+    // preventDefault is required on BOTH branches: stopImmediatePropagation
+    // suppresses the view's own paste handler (which is where preventDefault
+    // lived), so without it the browser also performed its native
+    // contenteditable paste of the image on top of the model insert.
+    const onPaste = (e) => { if (handleImageClipboard(e.clipboardData)) { e.preventDefault(); e.stopImmediatePropagation(); } };
     const onDrop = (e) => { if (handleImageClipboard(e.dataTransfer)) { e.preventDefault(); e.stopImmediatePropagation(); } };
     host.addEventListener('paste', onPaste, true);
     host.addEventListener('drop', onDrop, true);
@@ -228,7 +253,10 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
     const fd = new FormData();
     fd.append('image', file);
     try {
-      const res = await fetch(`${API_BASE}/api/notebooks/${nbId}/images`, { method: 'POST', body: fd, credentials: 'include' });
+      // authFetch, not the global fetch: the bare call bypassed the demo-mode
+      // transport, so an image paste inside a public feature demo escaped the
+      // fixture layer and hit the real API unauthenticated.
+      const res = await authFetch(`${API_BASE}/api/notebooks/${nbId}/images`, { method: 'POST', body: fd, credentials: 'include' });
       const data = await res.json();
       if (data.url) {
         const src = `${API_BASE}${data.url}`;
@@ -254,6 +282,29 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
     setMarkdownContent: (md) => { viewRef.current?.setDoc(markdownToDoc(md), { emitUpdate: false }); refreshChrome(); },
     setMarkdown: (md) => { viewRef.current?.setDoc(markdownToDoc(md), { emitUpdate: false }); refreshChrome(); },
     getEditor: () => facadeRef.current,
+    /**
+     * Persist right now, cancelling the pending debounce.
+     *
+     * Needed because the save debounce lives HERE, not in the autosave hook:
+     * on unmount the timer is simply cleared, so up to 2 seconds of typing
+     * disappeared whenever the user switched notebooks, hit Back, or closed the
+     * tab within the debounce window. The hook's flush could not help — it
+     * replays its own `pendingContentRef`, which is only populated once a save
+     * has already begun.
+     *
+     * Returns the HTML it saved, or null when there was nothing pending.
+     */
+    flush: () => {
+      const view = viewRef.current;
+      if (!view) return null;
+      const hadPending = saveTimer.current != null;
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+      if (!hadPending) return null;
+      const html = view.getHTML();
+      lastHtmlRef.current = html;
+      onSaveRef.current?.(html);
+      return html;
+    },
   }), [refreshChrome]);
 
   const editor = facadeRef.current;
@@ -264,6 +315,16 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
   // The table the caret sits in (for the on-edit add-row/add-column controls).
   const tableInfo = editor && editable ? (viewRef.current?.tableInfo?.() || null) : null;
   const tableCollapsed = tableInfo ? collapsed.has(tableInfo.ordinal) : false;
+  const headersHidden = tableInfo ? hiddenHeaders.has(tableInfo.ordinal) : false;
+  const toggleHeadersFocused = useCallback(() => {
+    const info = viewRef.current?.tableInfo?.();
+    if (!info) return;
+    setHiddenHeaders((prev) => {
+      const n = new Set(prev);
+      if (n.has(info.ordinal)) n.delete(info.ordinal); else n.add(info.ordinal);
+      return n;
+    });
+  }, []);
 
   /* AI action helpers */
   const aiAction = (key, customQuery = null) => {
@@ -295,11 +356,16 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
   const insertMath = () => {
     const view = viewRef.current;
     const text = selectionText(view);
-    view.chain().focus().insertContent(text?.trim() ? `$${text}$` : '$formula$').run();
+    // Insert the node directly. Round-tripping the literal '$formula$' through
+    // the markdown parser produced a math atom whose latex was the word
+    // "formula" — visible placeholder text the user then had to delete. An empty
+    // latex makes MathView open its input straight away instead (BFSF-317).
+    view.chain().focus().insertInlineNode({ type: 'mathInline', attrs: { latex: text?.trim() || '' } }).run();
   };
 
   /* ── block insertion (shared by the status-strip Insert menu + slash menu) ── */
   const insertItems = React.useMemo(() => buildInsertItems(t), [t]);
+  const toolbarInsertItems = React.useMemo(() => insertItems.filter((it) => !it.slashOnly), [insertItems]);
 
   const runInsert = useCallback((item, deleteBack = 0) => {
     const view = viewRef.current;
@@ -353,8 +419,10 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
         <EditorToolbar
           editor={editor}
           t={t}
-          insertItems={insertItems}
+          insertItems={toolbarInsertItems}
           onInsert={runInsert}
+          onToggleColumnNames={toggleHeadersFocused}
+          columnNamesHidden={headersHidden}
           onImportClick={onImportClick}
           onAIFill={onAIFill}
           aiFilling={aiFilling}
@@ -408,7 +476,9 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
 
       {/* table add-row / add-column + collapse controls (caret inside a table) */}
       {editor && editable && tableInfo && (
-        <TableControls view={viewRef.current} info={tableInfo} t={t} collapsed={tableCollapsed} onToggleCollapse={toggleCollapseFocused} />
+        <ChromeBoundary label="table controls">
+          <TableControls view={viewRef.current} info={tableInfo} t={t} collapsed={tableCollapsed} onToggleCollapse={toggleCollapseFocused} headersHidden={headersHidden} />
+        </ChromeBoundary>
       )}
 
       {/* image bubble */}
@@ -441,7 +511,13 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
 
       {/* atom portals */}
       {atoms.map((a) => createPortal(
-        <AtomRenderer node={a.node} view={viewRef.current} selected={selectedAtomNode === a.node} editable={editable} />,
+        <AtomRenderer
+          node={a.node}
+          view={viewRef.current}
+          selected={selectedAtomNode === a.node}
+          editable={editable}
+          brokenLabel={t('notebooks.atom_render_failed', 'Could not display this block')}
+        />,
         a.host, a.id,
       ))}
     </div>
@@ -449,14 +525,51 @@ const BeeEditor = forwardRef(function BeeEditor(props, ref) {
 });
 
 /* ── atom renderer ──────────────────────────────────────── */
-function AtomRenderer({ node, view, selected, editable }) {
-  if (node.type === 'image') return <ImageView node={node} view={view} selected={selected} editable={editable} />;
-  if (node.type === 'mermaid') return <MermaidView node={node} view={view} editable={editable} />;
-  if (node.type === 'mathBlock') return <MathView node={node} view={view} inline={false} editable={editable} />;
-  if (node.type === 'mathInline') return <MathView node={node} view={view} inline editable={editable} />;
-  if (node.type === 'formula') return <FormulaView node={node} view={view} editable={editable} />;
-  if (node.type === 'chart') return <ChartView node={node} view={view} editable={editable} />;
-  return null;
+/**
+ * One bad node view must not take the document down with it.
+ *
+ * Node views render content the user never authored directly — a chart spec or
+ * mermaid source can arrive from an ingested document or an AI write. Without a
+ * boundary here the nearest one wraps ALL of BeeEditor, so a single malformed
+ * spec replaced the whole editor with the error screen, and its retry remounted
+ * from the same content and crashed again: the notebook could not be opened.
+ */
+class AtomErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+
+  static getDerivedStateFromError(error) { return { error }; }
+
+  componentDidCatch(error) {
+    // eslint-disable-next-line no-console
+    console.error(`[BeeEditor] ${this.props.type} node view failed to render`, error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] select-none"
+          style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)', border: '1px dashed var(--border-default)' }}
+          title={String(this.state.error?.message || this.state.error)}
+        >
+          {this.props.label}
+        </span>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function AtomRenderer({ node, view, selected, editable, brokenLabel }) {
+  let el = null;
+  if (node.type === 'image') el = <ImageView node={node} view={view} selected={selected} editable={editable} />;
+  else if (node.type === 'mermaid') el = <MermaidView node={node} view={view} editable={editable} />;
+  else if (node.type === 'mathBlock') el = <MathView node={node} view={view} inline={false} editable={editable} />;
+  else if (node.type === 'mathInline') el = <MathView node={node} view={view} inline editable={editable} />;
+  else if (node.type === 'formula') el = <FormulaView node={node} view={view} editable={editable} />;
+  else if (node.type === 'chart') el = <ChartView node={node} view={view} editable={editable} />;
+  if (!el) return null;
+  return <AtomErrorBoundary type={node.type} label={brokenLabel}>{el}</AtomErrorBoundary>;
 }
 
 /* ── block-insert catalogue (status-strip Insert menu + slash menu) ──────── */
@@ -471,7 +584,12 @@ function buildInsertItems(t) {
     { key: 'task', icon: CheckSquare, label: tt('notebooks.task_list', 'Task list'), keywords: 'todo checkbox', apply: (c) => c.toggleTaskList() },
     { key: 'quote', icon: Quote, label: tt('notebooks.blockquote', 'Quote'), keywords: 'blockquote', apply: (c) => c.toggleBlockquote() },
     { key: 'code', icon: Code, label: tt('notebooks.code_block', 'Code block'), keywords: 'pre snippet', apply: (c) => c.setCodeBlock() },
-    { key: 'table', icon: Table2, label: tt('notebooks.table', 'Table'), keywords: 'grid', apply: (c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }) },
+    // Slash-menu only. The toolbar has a dedicated Table button whose size
+    // picker sits right next to the Insert menu, so offering a second entry
+    // point that silently inserts a fixed 3×3 read as the picker being broken
+    // (BFSF-316). Typing "/table" is a keyboard flow where a sensible default
+    // is what you want, so it stays there.
+    { key: 'table', icon: Table2, label: tt('notebooks.table', 'Table'), keywords: 'grid', slashOnly: true, apply: (c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }) },
     { key: 'divider', icon: Minus, label: tt('notebooks.divider', 'Divider'), keywords: 'hr rule horizontal', apply: (c) => c.setHorizontalRule() },
     { key: 'image', icon: ImageIcon, label: tt('notebooks.upload_image', 'Image'), keywords: 'picture photo', action: 'image' },
     { key: 'math', icon: Sigma, label: tt('notebooks.math_formula', 'Math'), keywords: 'formula latex equation', action: 'math' },
@@ -732,24 +850,85 @@ function LinkPopover({ view, editor }) {
 // Floating "+" affordances glued to the right edge (add column) and bottom edge
 // (add row) of the table the caret is in. Re-measures on scroll/resize and when
 // the table node changes (after an append). Appends always go to the table end.
-function TableControls({ view, info, t, collapsed, onToggleCollapse }) {
+/**
+ * Per-visual-column and per-row screen geometry for a rendered table.
+ *
+ * Derived from the DOM rather than assumed, because colspan/rowspan mean a
+ * row's array index is not its column number. For each visual column we look
+ * for a cell that starts there and is exactly one column wide; if the whole
+ * column is spanned we fall back to slicing a spanning cell evenly.
+ */
+function tableGeometry(tableEl, node) {
+  if (!tableEl || !node) return null;
+  const { grid, rows, cols } = tableGrid(node);
+  // :scope keeps rows of a nested table (legacy artifact) out of the outer
+  // table's geometry — unscoped, every nested row inflated rowY and misplaced
+  // the row gutter and overlays (S8).
+  const rowEls = Array.from(tableEl.querySelectorAll(':scope > tbody > tr'));
+  if (!rowEls.length || !cols) return null;
+
+  const colX = new Array(cols).fill(null);
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      const e = grid[r]?.[c];
+      if (!e) continue;
+      const el = rowEls[e.rowIdx]?.children?.[e.cellIdx];
+      if (!el) continue;
+      const box = el.getBoundingClientRect();
+      const span = Math.max(1, parseInt(e.cell?.attrs?.colspan, 10) || 1);
+      if (span === 1 && e.originC === c) { colX[c] = { left: box.left, width: box.width }; break; }
+      // Spanned: take this column's share of the spanning cell.
+      if (!colX[c]) colX[c] = { left: box.left + ((c - e.originC) * box.width) / span, width: box.width / span };
+    }
+  }
+  const rowY = rowEls.map((el) => { const b = el.getBoundingClientRect(); return { top: b.top, height: b.height }; });
+  return { colX, rowY, cols, rows, grid };
+}
+
+/** Column label: ALWAYS the spreadsheet letter — `A · headertext` when the
+ *  table has a header row — so a formula's `A1` has a visible anchor even on
+ *  tables with named headers. */
+function columnName(node, grid, c) {
+  const letter = colLabel(c);
+  const head = grid[0]?.[c];
+  if (head?.cell?.attrs?.header) {
+    const text = [];
+    const walk = (n) => { if (!n) return; if (n.type === 'text') text.push(n.text || ''); (n.content || []).forEach(walk); };
+    walk(head.cell);
+    const s = text.join('').trim();
+    if (s) return `${letter} · ${s}`;
+  }
+  return letter;
+}
+
+// Exported for TableControls.test.jsx: the crash in BFSF-351 lived in the two
+// gutter .map()s below, and reaching them from a full BeeEditor mount would mean
+// driving a real caret into a real table.
+export function TableControls({ view, info, t, collapsed, onToggleCollapse, headersHidden }) {
   const tt = mkTt(t);
   const [rect, setRect] = useState(null);
+  const [geom, setGeom] = useState(null);
+  // Top of the editable area — the column strip sits above the table and must
+  // not be drawn over the toolbar when a table is the very first block.
+  const [hostTop, setHostTop] = useState(null);
   useEffect(() => {
-    if (!view || !info?.el) { setRect(null); return undefined; }
+    if (!view || !info?.el) { setRect(null); setGeom(null); return undefined; }
     const measure = () => {
       const r = info.el.getBoundingClientRect();
-      if (!r.width && !r.height) { setRect(null); return; }
+      if (!r.width && !r.height) { setRect(null); setGeom(null); return; }
       setRect({ top: r.top, left: r.left, right: r.right, bottom: r.bottom, width: r.width, height: r.height });
+      setGeom(collapsed ? null : tableGeometry(info.el, info.node));
+      try { setHostTop(view.host.getBoundingClientRect().top); } catch (e) { setHostTop(null); }
     };
     measure();
     const scroller = view.host?.closest('.overflow-y-auto') || window;
     scroller.addEventListener('scroll', measure, { passive: true });
     window.addEventListener('resize', measure);
     return () => { scroller.removeEventListener('scroll', measure); window.removeEventListener('resize', measure); };
-  }, [view, info?.el, info?.node, collapsed]);
+  }, [view, info?.el, info?.node, collapsed, headersHidden]);
   if (!rect) return null;
   const run = (cmd) => view.chain().focus()[cmd]().run();
+  const dispatch = (fn, kind = 'structural') => view.dispatch(fn, { kind });
   const btn = 'fixed z-[60] flex items-center justify-center rounded-md border shadow-sm transition-colors hover:text-white hover:bg-[var(--accent-primary)] hover:border-[var(--accent-primary)]';
   const style = { background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' };
   const rows = info.node?.content?.length || 0;
@@ -778,6 +957,55 @@ function TableControls({ view, info, t, collapsed, onToggleCollapse }) {
             className={btn} style={{ ...style, top: rect.bottom + 4, left: rect.left + rect.width / 2 - 11, width: 22, height: 22 }}>
             <Plus className="w-3.5 h-3.5" />
           </button>
+
+          {/* ── Column-name strip ──
+              Shows the header cell's text when the table has one, otherwise the
+              spreadsheet letter, so a formula's A1 always has a visible anchor.
+              Click selects the column; the × deletes it; while a formula editor
+              is open a click inserts a whole-column reference instead. */}
+          {!headersHidden && geom && hostTop != null && rect.top - 20 >= hostTop && geom.colX.map((col, c) => col && (
+            <div key={`c${c}`} className="bf-table-colhead group/col"
+              style={{ position: 'fixed', zIndex: 59, top: rect.top - 20, left: col.left, width: col.width, height: 18 }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                if (view.refPick) {
+                  const tp = view.refPick.tablePath;
+                  if (!tp || tp.join() === info.path.join()) { view.refPick.onPick?.(Tbl.columnRef(c)); view.refPick.onCommitPick?.(); }
+                  return;
+                }
+                dispatch((s) => Tbl.selectColumn(s, info.path, c), 'selection');
+              }}
+              title={tt('notebooks.select_column', 'Select column')}
+            >
+              <span className="bf-table-colhead-label">{columnName(info.node, geom.grid, c)}</span>
+              <button type="button" className="bf-table-gutter-sum opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100"
+                title={tt('notebooks.sum_column', 'Sum column')} aria-label={tt('notebooks.sum_column', 'Sum column')}
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); dispatch((s) => Tbl.addColumnTotal(s, info.path, c)); }}>
+                Σ
+              </button>
+              <button type="button" className="bf-table-gutter-del opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100"
+                title={tt('notebooks.delete_col', 'Delete column')} aria-label={tt('notebooks.delete_col', 'Delete column')}
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); dispatch((s) => Tbl.deleteColumnAt(s, info.path, c)); }}>
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          ))}
+
+          {/* ── Row gutter ── click selects the row, × deletes it. */}
+          {geom && geom.rowY.map((row, r) => (
+            <div key={`r${r}`} className="bf-table-rowhead group/row"
+              style={{ position: 'fixed', zIndex: 59, top: row.top, left: rect.left - 22, width: 20, height: row.height }}
+              onMouseDown={(e) => { e.preventDefault(); dispatch((s) => Tbl.selectRow(s, info.path, r), 'selection'); }}
+              title={tt('notebooks.select_row', 'Select row')}
+            >
+              <span className="bf-table-rowhead-label">{r + 1}</span>
+              <button type="button" className="bf-table-gutter-del opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
+                title={tt('notebooks.delete_row', 'Delete row')} aria-label={tt('notebooks.delete_row', 'Delete row')}
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); dispatch((s) => Tbl.deleteRowAt(s, info.path, r)); }}>
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          ))}
         </>
       )}
     </>
@@ -791,6 +1019,14 @@ function loadCollapsed(notebookId) {
 }
 function saveCollapsed(notebookId, set) {
   try { localStorage.setItem(`bf.table.collapsed.${notebookId || 'doc'}`, JSON.stringify([...set])); }
+  catch (e) { /* noop */ }
+}
+function loadHiddenHeaders(notebookId) {
+  try { return new Set(JSON.parse(localStorage.getItem(`bf.table.noheaders.${notebookId || 'doc'}`) || '[]')); }
+  catch (e) { return new Set(); }
+}
+function saveHiddenHeaders(notebookId, set) {
+  try { localStorage.setItem(`bf.table.noheaders.${notebookId || 'doc'}`, JSON.stringify([...set])); }
   catch (e) { /* noop */ }
 }
 

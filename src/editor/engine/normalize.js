@@ -53,6 +53,18 @@ function recomputeNode(n) {
   return changed ? { ...n, content } : n;
 }
 
+/** Locate a cell's formula atom in the relaxed shape: {blockIdx, inlineIdx, atom}. */
+function locateFormulaAtom(cell) {
+  const blocks = cell?.content || [];
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const inl = blocks[bi]?.content || [];
+    for (let ii = 0; ii < inl.length; ii++) {
+      if (inl[ii]?.type === 'formula') return { blockIdx: bi, inlineIdx: ii, atom: inl[ii] };
+    }
+  }
+  return null;
+}
+
 function recomputeTable(table) {
   let results;
   try { results = evaluateTable(table); } catch (e) { results = new Map(); }
@@ -61,14 +73,23 @@ function recomputeTable(table) {
     let rChanged = false;
     const cells = (row.content || []).map((cell, c) => {
       if (!isFormulaCell(cell)) return cell;
+      // The atom is found by search, not assumed at content[0].content[0]:
+      // the relaxed cell shape allows whitespace-only strays around it.
+      const loc = locateFormulaAtom(cell);
+      if (!loc) return cell;
       const res = results.get(`${r},${c}`);
       const display = displayResult(res);
       const isErr = !!(res && res.error);
-      const atom = cell.content[0].content[0];
+      const { atom } = loc;
       if (atom.attrs?.value === display && !!atom.attrs?.error === isErr) return cell;
       rChanged = true;
       const newAtom = { ...atom, attrs: { ...(atom.attrs || {}), value: display, error: isErr } };
-      return { ...cell, content: [{ ...cell.content[0], content: [newAtom] }] };
+      const block = cell.content[loc.blockIdx];
+      const inl = block.content.slice();
+      inl[loc.inlineIdx] = newAtom;
+      const blocks = cell.content.slice();
+      blocks[loc.blockIdx] = { ...block, content: inl };
+      return { ...cell, content: blocks };
     });
     if (!rChanged) return row;
     tChanged = true;
@@ -81,12 +102,54 @@ function deepNode(n) {
   if (n.type === 'text') return n.text === '' ? null : n;
   if (isAtom(n.type) || !n.content) return n;
   if (isTextblock(n.type)) return { ...n, content: mergeText(n.content) };
+  // Flatten a table nested inside a cell — a legacy S8 artifact (new nesting is
+  // impossible: transforms route table inserts after the host table). One
+  // paragraph per nested row, cell texts joined with " | ". Lossy by design;
+  // Markdown could not represent the nesting anyway.
+  if (n.type === 'tableCell' && (n.content || []).some((c) => c?.type === 'table')) {
+    const content = [];
+    for (const child of n.content) {
+      if (child?.type === 'table') content.push(...flattenNestedTable(child));
+      else { const d = deepNode(child); if (d) content.push(d); }
+    }
+    return { ...n, content: content.length ? content : [emptyParagraph()] };
+  }
+  // Canonicalize a formula cell to exactly [paragraph[formula]] — whitespace
+  // strays (leaked keystrokes, serializer padding) are tolerated at runtime by
+  // the relaxed isFormulaCell but stripped on import. DEEP pass only: the
+  // light (per-transaction) normalizer must never shift live caret positions.
+  if (n.type === 'tableCell' && isFormulaCell(n)) {
+    const loc = locateFormulaAtom(n);
+    if (loc) return { ...n, content: [{ ...n.content[loc.blockIdx], content: [loc.atom] }] };
+  }
   const content = n.content.map(deepNode).filter(Boolean);
   if (content.length === 0) {
     if (n.type === 'listItem' || n.type === 'taskItem' || n.type === 'tableCell') return { ...n, content: [emptyParagraph()] };
     return null; // empty list / blockquote / table / row → drop
   }
   return { ...n, content };
+}
+
+/** One paragraph per nested-table row: the row's cell texts joined " | ". */
+function flattenNestedTable(table) {
+  return (table.content || []).map((row) => {
+    const text = (row.content || []).map(plainTextOf).join(' | ');
+    return text.trim() === ''
+      ? emptyParagraph()
+      : { type: 'paragraph', content: [{ type: 'text', text }] };
+  });
+}
+
+function plainTextOf(n) {
+  const parts = [];
+  const walk = (x) => {
+    if (!x) return;
+    if (x.type === 'text') parts.push(x.text || '');
+    if (x.type === 'formula') parts.push(x.attrs?.src || '');
+    (x.content || []).forEach(walk);
+  };
+  walk(n);
+  return parts.join('').trim();
 }
 
 function mergeText(content) {

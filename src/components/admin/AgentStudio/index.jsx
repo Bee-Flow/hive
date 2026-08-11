@@ -261,18 +261,18 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                     {loading && (
                         <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)] p-3" role="status" aria-busy="true" aria-live="polite">
                             <Loader2 size={12} className="animate-spin" aria-hidden="true" />
-                            <span className="sr-only">{t('agent_studio.loading') || 'Loading agents'}</span>
+                            <span className="sr-only">{t('agent_studio.loading', 'Loading agents')}</span>
                         </div>
                     )}
                     {!loading && loadError && (
                         <div className="text-xs text-red-500 p-3 flex flex-col gap-2" role="alert">
-                            <span>{t('agent_studio.load_error') || 'Failed to load agents'}: {loadError}</span>
+                            <span>{t('agent_studio.load_error', 'Failed to load agents')}: {loadError}</span>
                             <button
                                 type="button"
                                 onClick={fetchAgents}
                                 className="self-start px-2 py-1 rounded-md text-xs bg-[var(--bg-primary)] hover:bg-[var(--bg-secondary)] border border-[var(--border-default)]"
                             >
-                                {t('agent_studio.retry') || 'Retry'}
+                                {t('agent_studio.retry', 'Retry')}
                             </button>
                         </div>
                     )}
@@ -293,12 +293,20 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                                     ? <img src={resolveAvatarSrc(av)} alt="" aria-hidden="true" className="w-5 h-5 rounded-sm object-cover flex-shrink-0" />
                                     : <span className="text-base flex-shrink-0" aria-hidden="true">{av}</span>}
                                 <span className="truncate flex-1">{a.name}</span>
-                                {!systemMode && hasPermission('manage_agents') && (
+                                {/* BFSF-271: server-computed can_edit drives the UI — no
+                                    delete icon and a "View only" badge on agents the user
+                                    may inspect but not modify. */}
+                                {a.can_edit === false && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-[var(--bg-primary)] border border-[var(--border-default)] text-[var(--text-tertiary)] whitespace-nowrap">
+                                        {t('agent_studio.view_only', 'View only')}
+                                    </span>
+                                )}
+                                {!systemMode && hasPermission('manage_agents') && a.can_edit !== false && (
                                     <button
                                         onClick={(e) => { e.stopPropagation(); requestDelete(a); }}
                                         className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] hover:text-red-500"
                                         title={t('agent_studio.delete')}
-                                        aria-label={`${t('agent_studio.delete') || 'Delete'}: ${a.name}`}
+                                        aria-label={`${t('agent_studio.delete', 'Delete')}: ${a.name}`}
                                     >
                                         <Trash2 size={13} />
                                     </button>
@@ -324,6 +332,7 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                     <BuilderSplit
                         key={selectedAgent.id || 'draft'}
                         agent={selectedAgent}
+                        readOnly={selectedAgent.can_edit === false}
                         user={user}
                         plan={null}
                         history={[]}
@@ -355,23 +364,23 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div id={unsavedTitleId} className="px-5 py-4 border-b border-[var(--border-default)] text-sm font-semibold text-[var(--text-primary)]">
-                            {t('agent_studio.unsaved_title') || 'Unsaved changes'}
+                            {t('agent_studio.unsaved_title', 'Unsaved changes')}
                         </div>
                         <div className="px-5 py-4 text-sm text-[var(--text-secondary)]">
-                            {t('agent_studio.unsaved_body') || 'Your draft agent has not been saved yet. Leaving will discard these changes.'}
+                            {t('agent_studio.unsaved_body', 'Your draft agent has not been saved yet. Leaving will discard these changes.')}
                         </div>
                         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--border-default)]">
                             <button
                                 onClick={() => setPendingLeave(null)}
                                 className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition"
                             >
-                                {t('agent_studio.cancel') || 'Cancel'}
+                                {t('agent_studio.cancel', 'Cancel')}
                             </button>
                             <button
                                 onClick={() => { const run = pendingLeave.run; setPendingLeave(null); setIsDirty(false); run(); }}
                                 className="px-4 py-2 rounded-full text-sm bg-red-500 text-white hover:bg-red-600 transition"
                             >
-                                {t('agent_studio.discard') || 'Discard'}
+                                {t('agent_studio.discard', 'Discard')}
                             </button>
                         </div>
                     </div>
@@ -390,12 +399,12 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-start justify-between px-5 py-4 border-b border-[var(--border-default)]">
-                            <div id={deleteTitleId} className="text-sm font-semibold text-[var(--text-primary)]">{t('agent_studio.delete_title') || 'Delete agent'}</div>
+                            <div id={deleteTitleId} className="text-sm font-semibold text-[var(--text-primary)]">{t('agent_studio.delete_title', 'Delete agent')}</div>
                             <button
                                 onClick={() => { if (!deleting) setPendingDelete(null); }}
                                 className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                                 disabled={deleting}
-                                aria-label={t('agent_studio.close') || 'Close'}
+                                aria-label={t('agent_studio.close', 'Close')}
                             >
                                 <X size={18} />
                             </button>
@@ -420,7 +429,7 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                                 className="px-4 py-2 rounded-full text-sm bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 inline-flex items-center gap-1.5"
                             >
                                 {deleting && <Loader2 size={12} className="animate-spin" aria-hidden="true" />}
-                                <span>{deleting ? (t('agent_studio.deleting') || 'Deleting…') : (t('agent_studio.delete') || 'Delete')}</span>
+                                <span>{deleting ? (t('agent_studio.deleting', 'Deleting…')) : (t('agent_studio.delete', 'Delete'))}</span>
                             </button>
                         </div>
                     </div>

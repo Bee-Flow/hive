@@ -74,4 +74,32 @@ describe('OutputView — drag/click mapping', () => {
         expect(th).toBeTruthy();
         expect(th.getAttribute('draggable')).toBeNull();
     });
+
+    // Regression: an array of empty objects used to trigger an unbounded
+    // RecordTable <-> FriendlyArray render loop (both find zero columns and
+    // hand the same array back to each other), hanging/crashing the panel.
+    it('renders an array of empty objects without hanging', () => {
+        expect(() => render(<OutputView value={[{}]} basePath={BASE} />)).not.toThrow();
+        cleanup();
+        expect(() => render(<OutputView value={[{}, {}, {}]} basePath={BASE} />)).not.toThrow();
+    });
+});
+
+describe('OutputView — long text is readable, not silently cut', () => {
+    it('clamps a long string but offers the rest', () => {
+        const long = 'a'.repeat(1200);
+        render(<OutputView value={long} />);
+        const toggle = screen.getByText('Show all 1200 characters');
+        expect(document.body.textContent).not.toContain(long);
+        fireEvent.click(toggle);
+        expect(document.body.textContent).toContain(long);
+        fireEvent.click(screen.getByText('Show less'));
+        expect(document.body.textContent).not.toContain(long);
+    });
+
+    it('leaves short text alone', () => {
+        render(<OutputView value="hello" />);
+        expect(screen.getByText('hello')).toBeTruthy();
+        expect(screen.queryByText(/Show all/)).toBeNull();
+    });
 });

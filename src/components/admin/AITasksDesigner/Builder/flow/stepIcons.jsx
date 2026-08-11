@@ -13,7 +13,9 @@
  * tree-shaking and bloat the bundle. Names are listed explicitly (not derived
  * from `Component.name`, which a production build minifies away).
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { inputClass } from './settings/formStyles';
+import AnchoredMenu from '../../../../shared/AnchoredMenu';
 import {
     Mail, MessageSquare, MessagesSquare, Send, Bell, Phone, AtSign,
     FileText, File, Files, Folder, FolderOpen, Paperclip, Clipboard, ClipboardList,
@@ -84,13 +86,7 @@ export function IconPicker({
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const ref = useRef(null);
-
-    useEffect(() => {
-        if (!open) return;
-        const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-        document.addEventListener('mousedown', onDoc);
-        return () => document.removeEventListener('mousedown', onDoc);
-    }, [open]);
+    const close = useCallback(() => setOpen(false), []);
 
     const results = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -110,52 +106,56 @@ export function IconPicker({
             >
                 {value ? <StepIcon name={value} size={size} /> : (placeholder || <Smile size={size} className="opacity-50" />)}
             </button>
-            {open && (
-                <div
-                    className={`absolute z-50 top-full mt-1 ${align === 'right' ? 'right-0' : 'left-0'} w-64 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,var(--bg-secondary))] shadow-xl overflow-hidden`}
-                >
-                    <div className="p-2 border-b border-[var(--border-default)]">
-                        <input
-                            autoFocus
-                            type="text"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Search symbols…"
-                            className="w-full px-2 py-1.5 text-sm rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-                        />
-                    </div>
-                    <div className="max-h-52 overflow-y-auto p-2 grid grid-cols-7 gap-1">
-                        {results.map((name) => (
-                            <button
-                                key={name}
-                                type="button"
-                                onClick={() => pick(name)}
-                                title={name}
-                                className={`h-8 w-8 rounded-lg flex items-center justify-center transition ${
-                                    value === name
-                                        ? 'bg-[var(--accent)]/15 text-[var(--accent)] ring-1 ring-[var(--accent)]/40'
-                                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
-                                }`}
-                            >
-                                <StepIcon name={name} size={16} />
-                            </button>
-                        ))}
-                        {results.length === 0 && (
-                            <div className="col-span-7 text-center text-xs text-[var(--text-tertiary)] py-4">No matches</div>
-                        )}
-                    </div>
-                    <div className="p-2 border-t border-[var(--border-default)]">
-                        <button
-                            type="button"
-                            onClick={() => pick('')}
-                            disabled={!value}
-                            className="w-full px-3 py-1.5 rounded-lg text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition"
-                        >
-                            Default (no symbol)
-                        </button>
-                    </div>
+            <AnchoredMenu
+                open={open}
+                onClose={close}
+                anchorRef={ref}
+                align={align}
+                width={256}
+                role="dialog"
+                className="rounded-xl !bg-[var(--bg-card,var(--bg-secondary))] shadow-xl"
+            >
+                <div className="p-2 border-b border-[var(--border-default)] sticky top-0 bg-[var(--bg-card,var(--bg-secondary))] z-10">
+                    <input
+                        autoFocus
+                        type="text"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="Search symbols…"
+                        className={inputClass()}
+                    />
                 </div>
-            )}
+                <div className="p-2 grid grid-cols-7 gap-1">
+                    {results.map((name) => (
+                        <button
+                            key={name}
+                            type="button"
+                            onClick={() => pick(name)}
+                            title={name}
+                            className={`h-8 w-8 rounded-lg flex items-center justify-center transition ${
+                                value === name
+                                    ? 'bg-[var(--accent)]/15 text-[var(--accent)] ring-1 ring-[var(--accent)]/40'
+                                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
+                            }`}
+                        >
+                            <StepIcon name={name} size={16} />
+                        </button>
+                    ))}
+                    {results.length === 0 && (
+                        <div className="col-span-7 text-center text-xs text-[var(--text-tertiary)] py-4">No matches</div>
+                    )}
+                </div>
+                <div className="p-2 border-t border-[var(--border-default)]">
+                    <button
+                        type="button"
+                        onClick={() => pick('')}
+                        disabled={!value}
+                        className="w-full px-3 py-1.5 rounded-lg text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition"
+                    >
+                        Default (no symbol)
+                    </button>
+                </div>
+            </AnchoredMenu>
         </div>
     );
 }

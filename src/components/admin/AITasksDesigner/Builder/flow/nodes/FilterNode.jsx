@@ -1,15 +1,17 @@
 import React from 'react';
-import { Filter } from 'lucide-react';
+import { Split } from 'lucide-react';
+import { nodeHelp, nodeTypeLabel } from '../nodeDefs';
 import StepNodeBase from './StepNodeBase';
-import { humanizeExpression } from '../displayHelpers';
+import { ROUTE_STEP_NAME } from '../stepDisplayName';
+import { humanizeExpression, describeRuleExpr } from '../displayHelpers';
 
 export default function FilterNode({ id, data }) {
     const { step, runStep, issues, onAddAfter, stepLabelById } = data;
     const friendlySource = humanizeExpression(step.arrayRef || '', stepLabelById);
-    const friendlyCond = humanizeExpression(step.expr || '', stepLabelById);
+    const friendlyCond = describeRuleExpr(step.expr || '', stepLabelById);
     const body = (
         <div>
-            <div className="font-semibold truncate">{step.label || 'Filter'}</div>
+            <div className="font-semibold truncate">{step.label || ROUTE_STEP_NAME}</div>
             <div className="mt-0.5 text-[10px] text-[var(--text-secondary)] truncate" title={step.arrayRef}>
                 {friendlySource || <span className="italic">no source</span>}
             </div>
@@ -20,8 +22,9 @@ export default function FilterNode({ id, data }) {
     );
     return (
         <StepNodeBase
-            icon={<Filter size={14} />}
-            typeLabel="Filter"
+            icon={<Split size={14} />}
+            typeLabel={nodeTypeLabel('filter')}
+            help={nodeHelp('filter')}
             body={body}
             runStep={runStep}
             issues={issues}

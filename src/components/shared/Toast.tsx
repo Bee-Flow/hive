@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Check, AlertCircle, Info, X } from 'lucide-react';
 
 /**
@@ -10,15 +10,27 @@ import { Check, AlertCircle, Info, X } from 'lucide-react';
  * library. If the project later needs anchored / stacked / interactive toasts,
  * swap this out for Sonner. The public API (toast.success / toast.error /
  * toast.info / toast.dismiss) is compatible enough to make that drop-in.
+ *
+ * Repeats COLLAPSE. A caller in a retry loop — the routines builder re-saves a
+ * debounced draft ~every 500ms, and a definition the server rejects fails every
+ * time — used to paint a fresh toast per attempt, so a single invalid step
+ * buried the screen under a dozen identical 6-second errors (BFSF-348). An
+ * identical kind+message now refreshes the toast that is already up and counts
+ * the repeat instead of queueing behind it.
  */
 
 type ToastKind = 'success' | 'error' | 'info';
+
+/** Beyond this the corner is a wall of text, not a notification. Oldest go. */
+const MAX_TOASTS = 4;
 
 interface ToastItem {
     id: number;
     kind: ToastKind;
     message: string;
     duration: number;
+    /** How many times this exact message has arrived; 1 = shown once. */
+    count?: number;
 }
 
 interface ToastEventDetail {
@@ -57,27 +69,67 @@ const KIND_STYLES: Record<ToastKind, { bg: string; color: string; icon: React.Co
 
 export function Toaster() {
     const [items, setItems] = useState<ToastItem[]>([]);
+    // The list is mutated from DOM event handlers that need to READ it to decide
+    // whether an arriving message is a repeat, so the ref — not the state — is
+    // the working copy; `commit` keeps the two in step.
+    const itemsRef = useRef<ToastItem[]>([]);
+    const timers = useRef<Map<number, number>>(new Map());
 
     useEffect(() => {
+        const commit = (next: ToastItem[]) => { itemsRef.current = next; setItems(next); };
+        const clearTimer = (id: number) => {
+            const t = timers.current.get(id);
+            if (t) { window.clearTimeout(t); timers.current.delete(id); }
+        };
+        // (Re)start the dismiss countdown. A collapsed repeat re-arms the timer
+        // of the toast already on screen, so a message that keeps arriving stays
+        // up rather than expiring mid-retry.
+        const arm = (id: number, duration: number) => {
+            clearTimer(id);
+            if (duration <= 0) return;
+            timers.current.set(id, window.setTimeout(() => {
+                timers.current.delete(id);
+                commit(itemsRef.current.filter((t) => t.id !== id));
+            }, duration));
+        };
+
         const onAdd = (e: Event) => {
-            const detail = (e as CustomEvent<ToastEventDetail>).detail;
-            if (!detail?.item) return;
-            setItems((prev) => [...prev, detail.item]);
-            if (detail.item.duration > 0) {
-                window.setTimeout(() => {
-                    setItems((prev) => prev.filter((t) => t.id !== detail.item.id));
-                }, detail.item.duration);
+            const incoming = (e as CustomEvent<ToastEventDetail>).detail?.item;
+            if (!incoming) return;
+            const cur = itemsRef.current;
+            const at = cur.findIndex((t) => t.kind === incoming.kind && t.message === incoming.message);
+            if (at >= 0) {
+                const next = cur.slice();
+                next[at] = { ...cur[at], count: (cur[at].count || 1) + 1 };
+                commit(next);
+                arm(cur[at].id, incoming.duration);
+                return;
             }
+            const next = [...cur, { ...incoming, count: 1 }];
+            while (next.length > MAX_TOASTS) {
+                const dropped = next.shift();
+                if (dropped) clearTimer(dropped.id);
+            }
+            commit(next);
+            arm(incoming.id, incoming.duration);
         };
         const onDismiss = (e: Event) => {
-            const detail = (e as CustomEvent<{ id?: number }>).detail;
-            setItems((prev) => (detail?.id == null ? [] : prev.filter((t) => t.id !== detail.id)));
+            const id = (e as CustomEvent<{ id?: number }>).detail?.id;
+            if (id == null) {
+                itemsRef.current.forEach((t) => clearTimer(t.id));
+                commit([]);
+                return;
+            }
+            clearTimer(id);
+            commit(itemsRef.current.filter((t) => t.id !== id));
         };
         window.addEventListener(EVENT, onAdd);
         window.addEventListener('beeflow:toast:dismiss', onDismiss);
         return () => {
             window.removeEventListener(EVENT, onAdd);
             window.removeEventListener('beeflow:toast:dismiss', onDismiss);
+            timers.current.forEach((t) => window.clearTimeout(t));
+            timers.current.clear();
         };
     }, []);
 
@@ -111,6 +163,15 @@ export function Toaster() {
                             <Icon className="w-3 h-3" />
                         </span>
                         <span className="text-sm flex-1 min-w-0">{item.message}</span>
+                        {(item.count || 1) > 1 && (
+                            <span
+                                title={`This happened ${item.count} times`}
+                                className="shrink-0 self-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
+                                style={{ background: s.bg, color: s.color }}
+                            >
+                                ×{item.count}
+                            </span>
+                        )}
                         <button
                             type="button"
                             onClick={() => toast.dismiss(item.id)}

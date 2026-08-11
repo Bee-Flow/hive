@@ -2,6 +2,8 @@ import { ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { previewValue, walkPath } from '../../../../../utils/bindingHelpers';
+import { filterFields } from './filterFields';
+import { startPathDrag } from './bindingDnd';
 
 /**
  * Portal-rendered popover that lists upstream variables, filterable by
@@ -31,22 +33,25 @@ export default function VariablePicker({
     onClose,
     previewSample = null,
     title = 'Insert variable',
+    initialQuery = '',
 }) {
     const [query, setQuery] = useState('');
     const [hoverField, setHoverField] = useState(null);
     const position = usePopoverPosition(anchorEl, open);
 
     // Reset query + hover whenever we re-open against a fresh anchor so the
-    // user doesn't see stale filter state. Intentional setState from
-    // useEffect — this is a UI sync (popover lifecycle, not external state).
+    // user doesn't see stale filter state. Inline autocomplete seeds the
+    // query via `initialQuery`; the plain {} button resets it to ''.
+    // Intentional setState from useEffect — this is a UI sync (popover
+    // lifecycle, not external state).
     useEffect(() => {
         if (open) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
-            setQuery('');
-             
+            setQuery(initialQuery || '');
+
             setHoverField(null);
         }
-    }, [open, anchorEl]);
+    }, [open, anchorEl, initialQuery]);
 
     useEffect(() => {
         if (!open) return undefined;
@@ -97,8 +102,8 @@ export default function VariablePicker({
             // z-[1200] keeps the picker ABOVE the Node Detail View overlay
             // (z-[1000]) — it's portaled to <body>, so a lower z renders behind
             // the NDV and the {} button appears to "do nothing".
-            className="fixed z-[1200] w-[320px] max-h-[420px] flex flex-col bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-md shadow-lg"
-            style={{ left: position.left, top: position.top }}
+            className="fixed z-[1200] w-[320px] flex flex-col bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-md shadow-lg"
+            style={{ left: position.left, top: position.top, maxHeight: position.maxHeight }}
             role="dialog"
             aria-label={title}
         >
@@ -211,6 +216,13 @@ function PickerLeaf({ field, depth, onPick, onHoverField }) {
             <div
                 role="button"
                 tabIndex={0}
+                // Also a DRAG SOURCE. Every field editor in both builders already
+                // accepts an `application/x-binding-path` drop, but the only
+                // element that ever produced one was VariableTree's row — a panel
+                // App Studio never renders, so its drop targets were unreachable
+                // there. One attribute here makes them live in both.
+                draggable
+                onDragStart={(e) => startPathDrag(e, field.path)}
                 onClick={handleClick}
                 onMouseEnter={() => onHoverField(field)}
                 onMouseLeave={() => onHoverField(null)}
@@ -257,21 +269,6 @@ function PickerLeaf({ field, depth, onPick, onHoverField }) {
     );
 }
 
-function filterFields(fields, q) {
-    const out = [];
-    for (const f of fields) {
-        const matchesSelf = f.key?.toLowerCase().includes(q) || f.path?.toLowerCase().includes(q);
-        let subs = [];
-        if (Array.isArray(f.children)) subs = filterFields(f.children, q);
-        if (matchesSelf) {
-            out.push(subs.length > 0 ? { ...f, children: subs } : f);
-        } else if (subs.length > 0) {
-            out.push({ ...f, children: subs });
-        }
-    }
-    return out;
-}
-
 function resolveLeafPreview(field, sampleRoot) {
     if (!field) return null;
     if (sampleRoot) {
@@ -282,22 +279,34 @@ function resolveLeafPreview(field, sampleRoot) {
     return null;
 }
 
+/**
+ * Place the popover against its anchor. Same rules AnchoredMenu applies to the
+ * field dropdowns (BFSF-328): prefer below, flip only when it truly does not
+ * fit AND above is roomier, then cap the height to the room that is actually
+ * there so the panel is always fully reachable. It is not AnchoredMenu itself
+ * because this popover is a flex column with a sticky search header and a
+ * preview footer — it owns its own inner scroller.
+ */
 function usePopoverPosition(anchorEl, open) {
-    const [pos, setPos] = useState({ left: 0, top: 0 });
+    const [pos, setPos] = useState({ left: 0, top: 0, maxHeight: 420 });
     useEffect(() => {
         if (!open || !anchorEl) return undefined;
         const update = () => {
             const r = anchorEl.getBoundingClientRect();
             const width = 320;
-            const maxHeight = 420;
-            let top = r.bottom + 4;
+            const margin = 8;
+            const gap = 4;
+            const below = window.innerHeight - r.bottom - margin - gap;
+            const above = r.top - margin - gap;
+            const flip = below < 240 && above > below;
+            const maxHeight = Math.max(160, Math.min(420, Math.floor(flip ? above : below)));
+            const top = flip
+                ? Math.max(margin, Math.round(r.top - gap - maxHeight))
+                : Math.round(r.bottom + gap);
             let left = r.left;
-            if (top + maxHeight > window.innerHeight && r.top > maxHeight) {
-                top = r.top - maxHeight - 4;
-            }
-            if (left + width > window.innerWidth - 8) left = window.innerWidth - width - 8;
-            if (left < 8) left = 8;
-            setPos({ left, top });
+            if (left + width > window.innerWidth - margin) left = window.innerWidth - width - margin;
+            if (left < margin) left = margin;
+            setPos(p => (p.left === left && p.top === top && p.maxHeight === maxHeight ? p : { left, top, maxHeight }));
         };
         update();
         window.addEventListener('resize', update);

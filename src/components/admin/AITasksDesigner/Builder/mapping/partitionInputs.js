@@ -7,9 +7,17 @@
  */
 
 // Frequently-primary field names — shown by default even when not required.
+//
+// `maxresults` / `max_results` are here because a result cap is not an
+// "advanced" concern: collapsed behind "Show N more options" with an empty
+// box, gmail_search's cap of 10 was invisible, so a routine whose query
+// matched 201 mails quietly processed ten of them and nothing on screen
+// explained why (BFSF-358A). A field that decides how much of the user's data
+// the routine even sees belongs in the default view.
 const COMMON_PRIMARY = new Set([
     'query', 'q', 'prompt', 'message', 'body', 'text', 'content', 'input',
     'url', 'to', 'subject', 'name', 'path', 'title', 'email',
+    'maxresults', 'max_results',
 ]);
 
 /**

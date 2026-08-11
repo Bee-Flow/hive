@@ -7,6 +7,8 @@
  */
 import { node, doc, emptyParagraph } from '../model/nodes.js';
 import { mark, addMark, sortMarks, sameMarkSet } from '../model/marks.js';
+import { safeCssColor, safeCssFont, squareUpRows } from './util.js';
+import { rawIsFormula } from '../engine/formula.js';
 
 export function markdownToAst(md) {
   const src = String(md == null ? '' : md).replace(/\r\n?/g, '\n');
@@ -37,7 +39,7 @@ function parseBlocks(lines) {
 
     if (/^ {0,3}>/.test(ln)) { const r = parseBlockquote(lines, i); out.push(r.node); i = r.next; continue; }
 
-    if (ln.includes('|') && i + 1 < lines.length && isAlignRow(lines[i + 1])) {
+    if (isTableStart(lines, i)) {
       const r = parseTable(lines, i); out.push(r.node); i = r.next; continue;
     }
 
@@ -125,7 +127,7 @@ function isBlockStart(lines, j) {
   if (/^ {0,3}>/.test(ln)) return true;
   if (matchListMarker(ln)) return true;
   if (/^\$\$/.test(ln)) return true;
-  if (ln.includes('|') && j + 1 < lines.length && isAlignRow(lines[j + 1])) return true;
+  if (isTableStart(lines, j)) return true;
   return false;
 }
 
@@ -197,6 +199,16 @@ function isAlignRow(line) {
   return /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(line) && line.includes('-');
 }
 
+// GFM: the delimiter row must have exactly as many cells as the header row.
+// Without the count check, any '|' line followed by a bare '---' (which
+// isAlignRow accepts as one cell) became a phantom table instead of an HR.
+function isTableStart(lines, i) {
+  const ln = lines[i];
+  if (!ln.includes('|') || i + 1 >= lines.length) return false;
+  const next = lines[i + 1];
+  return isAlignRow(next) && splitRow(next).length === splitRow(ln).length;
+}
+
 function parseTable(lines, i) {
   const aligns = splitRow(lines[i + 1]).map(parseAlign);
   const rows = [makeRow(splitRow(lines[i]), aligns, true)];
@@ -206,8 +218,10 @@ function parseTable(lines, i) {
     rows.push(makeRow(splitRow(lines[j]), aligns, false));
     j++;
   }
-  return { node: node('table', null, rows), next: j };
+  return { node: node('table', null, squareUpRows(rows, emptyCell)), next: j };
 }
+
+const emptyCell = (header) => node('tableCell', { header }, [node('paragraph', null, [])]);
 
 function splitRow(line) {
   let s = line.trim();
@@ -233,15 +247,46 @@ function parseAlign(spec) {
   return null;
 }
 
+/** Reverse the `\<` / `\>` escaping mdUrl() applies inside an angle-bracket destination. */
+function unescapeAngles(s) { return String(s ?? '').replace(/\\([<>])/g, '$1'); }
+
+// Trailing cell-geometry marker emitted by astToMd (`| Q1+Q2 {cs=2 w=180} |`).
+const CELL_SPAN_RX = /\s*\{((?:cs|rs|w)=\d+(?:\s+(?:cs|rs|w)=\d+)*)\}\s*$/;
+
 function makeRow(cells, aligns, header) {
   const tcs = cells.map((c, idx) => {
+    let raw = c || '';
+    // Pull off the span marker before anything else parses it as text, so a
+    // merged cell reconstructs its geometry instead of leaving the row short
+    // and shifting every cell under a spanned header.
+    let colspan = null, rowspan = null, colwidth = null;
+    const sm = raw.match(CELL_SPAN_RX);
+    if (sm) {
+      raw = raw.slice(0, sm.index);
+      for (const tok of sm[1].split(/\s+/)) {
+        const [k, v] = tok.split('=');
+        const n = parseInt(v, 10);
+        if (!Number.isFinite(n)) continue;
+        if (k === 'w') { if (n > 0) colwidth = n; continue; }
+        if (n <= 1) continue;
+        if (k === 'cs') colspan = n;
+        if (k === 'rs') rowspan = n;
+      }
+    }
     // A cell whose text is a formula (=…) becomes a single formula atom so it
-    // round-trips Markdown and computes live. Header cells stay literal.
-    const trimmed = (c || '').trim();
-    const inline = (!header && /^=\S/.test(trimmed))
+    // round-trips Markdown and computes live. Header cells included — every
+    // other layer allows them (S9) — and the shared rawIsFormula also accepts
+    // "= B3" and a bare "=" (the old /^=\S/ silently de-formula'd both).
+    // Literal text that starts with '=' arrives escaped ("\=") and stays text.
+    const trimmed = raw.trim();
+    const inline = rawIsFormula(trimmed)
       ? [node('formula', { src: trimmed })]
-      : parseInline(c);
-    return node('tableCell', { header, align: aligns[idx] || null }, [node('paragraph', null, inline)]);
+      : parseInline(raw);
+    const attrs = { header, align: aligns[idx] || null };
+    if (colspan) attrs.colspan = colspan;
+    if (rowspan) attrs.rowspan = rowspan;
+    if (colwidth) attrs.colwidth = colwidth;
+    return node('tableCell', attrs, [node('paragraph', null, inline)]);
   });
   return node('tableRow', null, tcs);
 }
@@ -268,11 +313,20 @@ function parseInline(text, marks = []) {
     if (c === '`' && (m = sub.match(/^(`+)([\s\S]*?)\1/))) {
       flush(); out.push(makeText(m[2], addM(marks, 'code'))); p += m[0].length; continue;
     }
+    // Angle-bracket destination FIRST: `![alt](<url with (parens)>)`. Without
+    // this branch the plain form below stops at the first `)`, so any URL
+    // containing parentheses or spaces was truncated on every round-trip.
+    if (c === '!' && (m = sub.match(/^!\[([^\]]*)\]\(<([^>]*)>(?:\s+"([^"]*)")?\)(\{[^}]*\})?/))) {
+      flush(); out.push(parseImageMatch([m[0], m[1], unescapeAngles(m[2]), m[3], m[4]])); p += m[0].length; continue;
+    }
     if (c === '!' && (m = sub.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)(\{[^}]*\})?/))) {
       flush(); out.push(parseImageMatch(m)); p += m[0].length; continue;
     }
     if (c === '$' && s[p + 1] !== '$' && (m = sub.match(/^\$([^$\n]+?)\$/))) {
       flush(); out.push({ type: 'mathInline', attrs: { latex: m[1].trim() } }); p += m[0].length; continue;
+    }
+    if (c === '[' && (m = sub.match(/^\[((?:[^\][]|\[[^\]]*\])*)\]\(<([^>]*)>(?:\s+"([^"]*)")?\)/))) {
+      flush(); out.push(...parseInline(m[1], addM(marks, 'link', { href: unescapeAngles(m[2]) }))); p += m[0].length; continue;
     }
     if (c === '[' && (m = sub.match(/^\[((?:[^\][]|\[[^\]]*\])*)\]\(([^)\s]*)(?:\s+"([^"]*)")?\)/))) {
       flush(); out.push(...parseInline(m[1], addM(marks, 'link', { href: m[2] }))); p += m[0].length; continue;
@@ -323,13 +377,17 @@ function parseImageAttrs(str) {
 }
 
 function parseSpanAttrs(str) {
+  // Values here come from document text (`[x]{color=… bg=… font=…}`), so they
+  // are attacker-controllable and end up inside a style="" attribute in
+  // astToHtml. Validate at the boundary as well as on the way out: a value that
+  // isn't a colour/font is dropped rather than carried through the AST.
   let color = null, font = null, hl = false, hlColor = null, u = false;
   for (const t of str.trim().split(/\s+/)) {
     if (t === 'hl') hl = true;
     else if (t === 'u') u = true;
-    else if (t.startsWith('bg=')) { hl = true; hlColor = t.slice(3); }
-    else if (t.startsWith('color=')) color = t.slice(6);
-    else if (t.startsWith('font=')) font = t.slice(5).replace(/_/g, ' ');
+    else if (t.startsWith('bg=')) { hl = true; hlColor = safeCssColor(t.slice(3)) || null; }
+    else if (t.startsWith('color=')) color = safeCssColor(t.slice(6)) || null;
+    else if (t.startsWith('font=')) font = safeCssFont(t.slice(5).replace(/_/g, ' ')) || null;
   }
   const marks = [];
   if (hl) marks.push(mark('highlight', hlColor ? { color: hlColor } : {}));

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { API_BASE, generateMessageId, authFetch } from '../utils/helpers';
 import scopedStorage from '../utils/scopedStorage';
+import { registerStream, releaseStream, detachStream } from './streamRegistry';
 import { logger } from '../utils/logger';
 import useTranslation from './useTranslation';
 
@@ -12,6 +13,23 @@ const _raf = (cb) => (typeof requestAnimationFrame === 'function')
 const _caf = (id) => (typeof cancelAnimationFrame === 'function')
     ? cancelAnimationFrame(id)
     : clearTimeout(id);
+
+// Attachment shape for history sent to the server. Keeps the sidecar fields
+// the server-side historyHydrator needs to re-inject file content on later
+// turns (extractedText / extractionKey / storageKey / url) — without them the
+// model only sees a "[File previously attached]" placeholder. Deliberately
+// excludes `content`: raw base64 can be megabytes, while extractedText is
+// capped server-side (≤8k chars inline). Only DB-loaded messages carry these
+// fields; live in-session uploads don't have them client-side, and the server
+// re-merges sidecars from the DB whenever a conversation id exists.
+const toHistoryAttachment = (a) => ({
+    name: a.name,
+    type: a.type,
+    ...(a.storageKey ? { storageKey: a.storageKey } : {}),
+    ...(a.url ? { url: a.url } : {}),
+    ...(a.extractionKey ? { extractionKey: a.extractionKey } : {}),
+    ...(typeof a.extractedText === 'string' && a.extractedText ? { extractedText: a.extractedText } : {}),
+});
 
 /**
  * Per-stream content flusher. Coalesces high-frequency 'content' tokens into at
@@ -130,6 +148,10 @@ export default function useChatEngine({
     activeProject,
     onNotebookDocUpdate,
     onNotebookSourceAdded,
+    // Optional: the server refused to persist the turn because the stored
+    // encrypted history can't be opened with this session's key (SSE
+    // `history_locked`). Lets the page lock the composer.
+    onHistoryLocked,
     onNotebookThemeUpdate,
     onWebpageDocUpdate,
     onWebpageSourceAdded,
@@ -153,6 +175,9 @@ export default function useChatEngine({
     // The current stream's content flusher (rAF coalescer). Held in a ref so
     // stopGenerating / unmount can cancel a pending frame from outside sendMessage.
     const activeFlusherRef = useRef(null);
+    // Key of the stream currently owned by this component, so unmount knows
+    // which registry entry to detach.
+    const streamKeyRef = useRef(null);
 
     // Keep a ref in sync with messages so `sendMessage` can read the current
     // conversation without listing `messages` in its dep array. With `messages`
@@ -179,6 +204,9 @@ export default function useChatEngine({
 
     const onNotebookSourceAddedRef = useRef(onNotebookSourceAdded);
     useEffect(() => { onNotebookSourceAddedRef.current = onNotebookSourceAdded; }, [onNotebookSourceAdded]);
+
+    const onHistoryLockedRef = useRef(onHistoryLocked);
+    useEffect(() => { onHistoryLockedRef.current = onHistoryLocked; }, [onHistoryLocked]);
 
     const onNotebookThemeUpdateRef = useRef(onNotebookThemeUpdate);
     useEffect(() => { onNotebookThemeUpdateRef.current = onNotebookThemeUpdate; }, [onNotebookThemeUpdate]);
@@ -224,8 +252,21 @@ export default function useChatEngine({
         return () => {
             const c = abortControllerRef.current;
             if (c) {
-                logger.debug('[useChatEngine] Unmounting, aborting active stream');
-                c.abort();
+                // Aborting here does not merely stop listening: the server tears
+                // down its generation on res close, so it KILLS the answer. Any
+                // navigation unmounts this component, which is how switching
+                // threads mid-reply used to lose the reply outright — and in a
+                // shared thread, lose it for everyone watching.
+                //
+                // A stream whose conversation is being persisted is detached
+                // instead: the fetch drains in the background, the server
+                // finishes and saves, and the returning user reads a complete
+                // answer. An ephemeral stream has nowhere to land, so it is
+                // still aborted.
+                const key = streamKeyRef.current;
+                const canDetach = Boolean(key) && !String(key).startsWith('pending:');
+                const kept = key ? detachStream(key, { canDetach }) : false;
+                if (!kept) c.abort();
                 abortControllerRef.current = null;
             }
             // Cancel any scheduled content frame so it can't fire post-unmount.
@@ -696,6 +737,52 @@ export default function useChatEngine({
                 }));
                 break;
 
+            // ── Live browser preview (browse_web) ──────────────────────
+            // A single `browserPreview` object per message, decoupled from
+            // msg.toolCall (which is last-write-wins across parallel tools).
+            // The <BrowserLivePreview> renders whenever this object exists.
+            case 'browser_session_queued':
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId
+                        ? { ...m, browserPreview: { sessionId: data.sessionId, url: data.url, task: data.task, queued: true, queuePosition: data.queuePosition, frame: null, action: null, ended: false } }
+                        : m
+                ));
+                break;
+
+            case 'browser_session_start':
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const prevPreview = m.browserPreview && m.browserPreview.sessionId === data.sessionId ? m.browserPreview : {};
+                    return { ...m, browserPreview: { ...prevPreview, sessionId: data.sessionId, url: data.url, task: data.task, queued: false, queuePosition: null, frame: prevPreview.frame || null, action: prevPreview.action || null, ended: false } };
+                }));
+                break;
+
+            case 'browser_frame':
+                // Latest frame only — no accumulation, matches Tests Studio's
+                // useTestRunEvents discipline for bounded memory.
+                setMessages(prev => prev.map(m =>
+                    (m.id === assistantMsgId && m.browserPreview?.sessionId === data.sessionId)
+                        ? { ...m, browserPreview: { ...m.browserPreview, frame: data.b64 } }
+                        : m
+                ));
+                break;
+
+            case 'browser_action':
+                setMessages(prev => prev.map(m =>
+                    (m.id === assistantMsgId && m.browserPreview?.sessionId === data.sessionId)
+                        ? { ...m, browserPreview: { ...m.browserPreview, action: data.summary || data.tool || null } }
+                        : m
+                ));
+                break;
+
+            case 'browser_session_end':
+                setMessages(prev => prev.map(m =>
+                    (m.id === assistantMsgId && m.browserPreview?.sessionId === data.sessionId)
+                        ? { ...m, browserPreview: { ...m.browserPreview, ended: true } }
+                        : m
+                ));
+                break;
+
             case 'model_selected':
                 // Server emits this on every turn now. `fromAuto` tells us
                 // whether the user was on Auto (so we render "Auto → Fast")
@@ -862,7 +949,9 @@ export default function useChatEngine({
                 break;
 
             case 'notebook_doc_update':
-                onNotebookDocUpdateRef.current?.(data.content, data.title);
+                // `version` rides along so the page can resync its CAS counter
+                // (AI doc writes bump the notebook version server-side).
+                onNotebookDocUpdateRef.current?.(data.content, data.title, data.version);
                 break;
 
             // Slides-specific aliases (same callbacks as notebook)
@@ -876,6 +965,12 @@ export default function useChatEngine({
 
             case 'notebook_source_added':
                 onNotebookSourceAddedRef.current?.(data.source);
+                break;
+
+            // The store refused to persist this turn over an encrypted history
+            // it cannot open (locked). Page locks the composer in response.
+            case 'history_locked':
+                onHistoryLockedRef.current?.(data);
                 break;
 
             // Webpage-specific events (file: 'html'|'css'|'js', content: string)
@@ -1040,9 +1135,25 @@ export default function useChatEngine({
                 // attachment-level (Privacy Shield) detections. Merge with
                 // any prior tokenisationInfo rather than replacing it — the
                 // two paths can both fire on the same turn (user text + PDF).
+                // Lightweight "scan incomplete" warnings (large upload passed
+                // through unredacted under fail_open) — surfaced as an amber pill
+                // under the USER message. Only rows that were NOT fully tokenised.
+                const scanWarnings = (attachments || [])
+                    .filter(a => a && (a.reason || a.timeout || a.overflow) && a.action !== 'tokenize')
+                    .map(a => ({
+                        filename: a.filename,
+                        reason: a.reason || (a.timeout ? 'timeout' : (a.overflow ? 'overflow' : 'degraded')),
+                        scannedPages: a.scannedPages,
+                        totalPages: a.totalPages,
+                    }));
                 setMessages(prev => prev.map(m => {
                     if (m.id === userMsgId) {
-                        return { ...m, piiTokenizedCount: (m.piiTokenizedCount || 0) + count, piiCategories: [...new Set([...(m.piiCategories || []), ...categories])] };
+                        return {
+                            ...m,
+                            piiTokenizedCount: (m.piiTokenizedCount || 0) + count,
+                            piiCategories: [...new Set([...(m.piiCategories || []), ...categories])],
+                            piiScanWarnings: [...(m.piiScanWarnings || []), ...scanWarnings],
+                        };
                     }
                     if (m.id === assistantMsgId) {
                         const prevInfo = m.tokenisationInfo || null;
@@ -1112,6 +1223,9 @@ export default function useChatEngine({
             }
             case 'dlp_blocked': {
                 window.dispatchEvent(new CustomEvent('beeflow:dlp_blocked', { detail: data }));
+                // Drop any pending append so a buffered token can't overwrite
+                // the block notice composed below.
+                flusher.cancel();
                 const reason = data?.reason || 'policy';
                 let msg;
                 if (reason === 'attachment_pii') {
@@ -1119,6 +1233,30 @@ export default function useChatEngine({
                     const file = data?.filename ? ` in “${data.filename}”` : '';
                     msg = tRef.current('dlp.blocked_attachment_pii',
                         `Attachment blocked: sensitive data (${cats || 'PII'}) was detected${file}. Please remove the PII and re-upload.`);
+                } else if (reason === 'attachment_overflow') {
+                    const file = data?.filename || 'the attachment';
+                    msg = tRef.current('dlp.blocked_attachment_overflow',
+                        `Attachment held: ${file} is too large to fully scan for sensitive data. Split it or reduce the page count, then re-upload.`);
+                } else if (reason === 'attachment_timeout') {
+                    const file = data?.filename || 'the attachment';
+                    msg = tRef.current('dlp.blocked_attachment_timeout',
+                        `Attachment held: scanning ${file} for sensitive data didn't finish in time. Please try again or split the document.`);
+                } else if (reason === 'attachment_degraded') {
+                    const file = data?.filename || 'the attachment';
+                    msg = tRef.current('dlp.blocked_attachment_degraded',
+                        `Attachment held: sensitive-data scanning for ${file} is temporarily unavailable. Please try again shortly.`);
+                } else if (reason === 'pii_unavailable' && data?.kind === 'too_large') {
+                    // Same block, different truth. "Try again in a moment" is
+                    // actively misleading here: the retry scans the same text and
+                    // fails identically. Splitting the message is the only thing
+                    // that works, so say that instead.
+                    msg = tRef.current('dlp.blocked_pii_too_large',
+                        'This message is too large to scan for personal data, so it was not sent. Please split it into smaller parts.');
+                } else if (reason === 'pii_unavailable') {
+                    // Fail-closed: PII detection was degraded (guard down / model
+                    // not ready), so the message was NOT sent unmasked (BFSF-269).
+                    msg = tRef.current('dlp.blocked_pii_unavailable',
+                        'Privacy protection is temporarily unavailable, so your message was not sent. Please try again in a moment.');
                 } else {
                     const labelKey = reason === 'timeout' ? 'dlp.blocked_timeout'
                         : reason === 'user_blocked' ? 'dlp.blocked_user'
@@ -1188,6 +1326,12 @@ export default function useChatEngine({
         }
         const controller = new AbortController();
         abortControllerRef.current = controller;
+        // Track it so navigating away detaches instead of killing the answer —
+        // see hooks/streamRegistry.js. Keyed by conversation so a remount finds
+        // its own stream and a second send supersedes the first.
+        const streamKey = currentConversation?.id || directMode?.conversationId || `pending:${generateMessageId()}`;
+        streamKeyRef.current = streamKey;
+        registerStream(streamKey, controller);
         setIsLoading(true);
 
         const msgId = generateMessageId();
@@ -1225,9 +1369,87 @@ export default function useChatEngine({
         // already in flight (e.g. a long webpage/notebook build that tripped a
         // proxy idle-timeout) isn't misreported as a hard failure (BFSF-221).
         let producedWork = false;
+        // The server sent its terminal `done` event: the turn completed and was
+        // persisted. Anything that fails after this is teardown noise (a socket
+        // the server never closed cleanly, a proxy reset) and must NOT be shown
+        // as "interrupted" — the answer on screen is the whole answer.
+        let sawDone = false;
         // Last work item ({ kind, title }) seen on this stream, so the
         // interrupted/error notices can say WHAT was produced (BFSF-221).
         const workRef = { current: null };
+
+        // The stream ended without completing the turn — either it threw, or it
+        // reached EOF with no terminal `done`. Both mean the same thing to the
+        // user, so they get the same treatment. Shared by the reader's normal
+        // exit and the catch below so a truncated stream can never be finalised
+        // as if it had succeeded.
+        const finishAbnormally = () => {
+            // If the stream already produced content/tool/build activity, it
+            // most likely dropped after the work was underway (e.g. a long
+            // webpage/notebook build that tripped a proxy idle-timeout) — the
+            // result may well have been saved. Surface a non-fatal "interrupted"
+            // notice instead of masquerading it as a hard failure (BFSF-221).
+            const interrupted = producedWork || !!contentRef.current?.trim();
+            setMessages(prev => prev.map(m => {
+                if (m.id !== assistantMsgId) return m;
+                // An explicit terminal event already told the user what
+                // happened — a server `error`, or a privacy-shield block. Those
+                // carry a specific, actionable reason; replacing it with a
+                // generic "interrupted"/"Error generating response." would be
+                // strictly less true. Just close the message out.
+                if (m.isError) return { ...m, isStreaming: false };
+                if (interrupted) {
+                    const prior = (m.content && m.content.trim()) ? m.content.trimEnd() + '\n\n' : '';
+                    // When we know WHAT was produced, lead with an explicit
+                    // success confirmation so users don't retry and duplicate.
+                    const wi = workRef.current;
+                    const summary = summarizeWorkItem(tRef.current, wi);
+                    const notice = summary
+                        ? tRef.current('chat.interrupted_with_work', { workSummary: summary })
+                        : tRef.current('chat.interrupted_generic');
+                    return {
+                        ...m,
+                        isStreaming: false,
+                        isInterrupted: true,
+                        workItem: wi || null,
+                        content: prior + notice,
+                    };
+                }
+                return { ...m, isStreaming: false, isError: true, content: 'Error generating response.' };
+            }));
+            setIsLoading(false);
+
+            // Auto-recover: the server persists the finished reply even when
+            // the SSE connection drops mid/post-stream (confirmed — the saved
+            // message appears on a manual refresh). Poll the persisted
+            // conversation and swap the real reply in so the user doesn't have
+            // to refresh. Bounded (~60s); bails if the user moved on; the
+            // interrupted notice stays if recovery never yields a saved reply.
+            const _reload = reloadConversationRef.current;
+            if (interrupted && typeof _reload === 'function') {
+                (async () => {
+                    const stillOurs = () => {
+                        const c = messagesRef.current;
+                        const l = c[c.length - 1];
+                        return !!(l && l.id === assistantMsgId && l.isInterrupted);
+                    };
+                    // Quick first attempt, then every 4s up to ~60s total.
+                    const delays = [1200, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000];
+                    for (const d of delays) {
+                        await new Promise(r => setTimeout(r, d));
+                        if (!stillOurs()) return;
+                        let reloaded;
+                        try { reloaded = await _reload(); } catch { continue; }
+                        if (!Array.isArray(reloaded) || reloaded.length === 0) continue;
+                        const lastReload = reloaded[reloaded.length - 1];
+                        if (lastReload && lastReload.role === 'assistant' && String(lastReload.content || '').trim()) {
+                            if (stillOurs()) setMessages(reloaded);
+                            return;
+                        }
+                    }
+                })();
+            }
+        };
 
         try {
             // Thinking-effort override from composer (persisted in scopedStorage
@@ -1255,13 +1477,13 @@ export default function useChatEngine({
                     history = historyOverride.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
                         role: m.role,
                         content: m.content,
-                        ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(a => ({ name: a.name, type: a.type })) } : {})
+                        ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(toHistoryAttachment) } : {})
                     }));
                 } else if (!currentConversation?.id) {
                     history = messagesRef.current.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
                         role: m.role,
                         content: m.content,
-                        ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(a => ({ name: a.name, type: a.type })) } : {})
+                        ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(toHistoryAttachment) } : {})
                     }));
                 } else {
                     history = undefined;
@@ -1319,7 +1541,7 @@ export default function useChatEngine({
                         history: historyOverride.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
                             role: m.role,
                             content: m.content,
-                            ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(a => ({ name: a.name, type: a.type })) } : {})
+                            ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(toHistoryAttachment) } : {})
                         }))
                     } : {}),
                     ...(reasoningEffort ? { reasoningEffort } : {}),
@@ -1356,12 +1578,19 @@ export default function useChatEngine({
             let buffer = '';
             let currentEvent = '';
 
-            const processLine = (line) => {
-                if (line.startsWith('event: ')) {
-                    currentEvent = line.slice(7).trim();
-                } else if (line.startsWith('data: ')) {
+            const processLine = (rawLine) => {
+                // Per the SSE spec the space after the colon is OPTIONAL, and a
+                // proxy may re-frame the stream with CRLF. Matching only the
+                // literal 'event: '/'data: ' with LF meant a spec-legal
+                // 'data:{…}' or a CR-terminated line parsed as zero events —
+                // the same blank-bubble failure as a truncated stream, with no
+                // error to explain it. Normalise before dispatching.
+                const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+                if (line.startsWith('event:')) {
+                    currentEvent = line.slice(6).trim();
+                } else if (line.startsWith('data:')) {
                     try {
-                        const data = JSON.parse(line.slice(6));
+                        const data = JSON.parse(line.slice(5).replace(/^ /, ''));
 
                         // Note any event that represents real progress, so a
                         // later stream drop can be reported as "interrupted"
@@ -1374,6 +1603,7 @@ export default function useChatEngine({
                         ].includes(currentEvent)) {
                             producedWork = true;
                         }
+                        if (currentEvent === 'done') sawDone = true;
 
                         // Capture WHAT was produced (kind + best-known title) so the
                         // interrupted/error notices can name it. Latest event wins; a
@@ -1434,76 +1664,48 @@ export default function useChatEngine({
             // Commit any final buffered tokens if the stream ended without a
             // terminal 'done' event (it preserves m.content otherwise).
             flusher.flushNow();
-            setIsLoading(false);
-            setMessages(prev => prev.map(m =>
-                m.id === assistantMsgId ? { ...m, isStreaming: false } : m
-            ));
+
+            // A stream that ends without the server's terminal `done` was CUT,
+            // not completed — and reader.read() cannot tell us that.
+            //
+            // The connector frames SSE responses with `Connection: close` and
+            // no Content-Length (nextcloud-connector/src/proxy.js), because
+            // Nextcloud's AppAPI proxy mangles chunked encoding. Close-framing
+            // has no wire-level completeness signal, so a stream truncated at
+            // byte 0 arrives here as a perfectly successful 200 with an empty
+            // body. Finalising that silently is what left a blank assistant
+            // bubble with the action row and no error anywhere on screen.
+            //
+            // `done` is the only end-of-turn marker we actually control, so
+            // treat its absence as an abnormal end and run the same
+            // interrupted/error handling a thrown stream gets — including the
+            // recovery poll, since the server persists the finished reply even
+            // when the connection dies.
+            if (!sawDone) {
+                console.warn('[useChatEngine] stream ended without a terminal `done` event — treating as interrupted');
+                finishAbnormally();
+            } else {
+                setIsLoading(false);
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId ? { ...m, isStreaming: false } : m
+                ));
+            }
 
         } catch (err) {
             // Commit buffered tokens before the interrupt/error branch reads
             // m.content, so the prior content prepended to the notice is complete.
             flusher.flushNow();
-            if (err.name !== 'AbortError') {
-                console.error("Chat error", err);
-                // If the stream already produced content/tool/build activity,
-                // it most likely dropped after the work was underway (e.g. a long
-                // webpage/notebook build that tripped a proxy idle-timeout) — the
-                // result may well have been saved. Surface a non-fatal "interrupted"
-                // notice instead of masquerading it as a hard failure (BFSF-221).
-                const interrupted = producedWork || !!contentRef.current?.trim();
-                setMessages(prev => prev.map(m => {
-                    if (m.id !== assistantMsgId) return m;
-                    if (interrupted) {
-                        const prior = (m.content && m.content.trim()) ? m.content.trimEnd() + '\n\n' : '';
-                        // When we know WHAT was produced, lead with an explicit
-                        // success confirmation so users don't retry and duplicate.
-                        const wi = workRef.current;
-                        const summary = summarizeWorkItem(tRef.current, wi);
-                        const notice = summary
-                            ? tRef.current('chat.interrupted_with_work', { workSummary: summary })
-                            : tRef.current('chat.interrupted_generic');
-                        return {
-                            ...m,
-                            isStreaming: false,
-                            isInterrupted: true,
-                            workItem: wi || null,
-                            content: prior + notice,
-                        };
-                    }
-                    return { ...m, isStreaming: false, isError: true, content: 'Error generating response.' };
-                }));
+            if (err.name !== 'AbortError' && sawDone) {
+                // The turn already finished on the server. Close the message out
+                // quietly rather than appending a notice to a complete answer.
+                console.debug('[useChatEngine] stream teardown after done', err);
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId ? { ...m, isStreaming: false } : m
+                ));
                 setIsLoading(false);
-
-                // Auto-recover: the server persists the finished reply even when
-                // the SSE connection drops mid/post-stream (confirmed — the saved
-                // message appears on a manual refresh). Poll the persisted
-                // conversation and swap the real reply in so the user doesn't have
-                // to refresh. Bounded (~60s); bails if the user moved on; the
-                // interrupted notice stays if recovery never yields a saved reply.
-                const _reload = reloadConversationRef.current;
-                if (interrupted && typeof _reload === 'function') {
-                    (async () => {
-                        const stillOurs = () => {
-                            const c = messagesRef.current;
-                            const l = c[c.length - 1];
-                            return !!(l && l.id === assistantMsgId && l.isInterrupted);
-                        };
-                        // Quick first attempt, then every 4s up to ~60s total.
-                        const delays = [1200, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000];
-                        for (const d of delays) {
-                            await new Promise(r => setTimeout(r, d));
-                            if (!stillOurs()) return;
-                            let reloaded;
-                            try { reloaded = await _reload(); } catch { continue; }
-                            if (!Array.isArray(reloaded) || reloaded.length === 0) continue;
-                            const lastReload = reloaded[reloaded.length - 1];
-                            if (lastReload && lastReload.role === 'assistant' && String(lastReload.content || '').trim()) {
-                                if (stillOurs()) setMessages(reloaded);
-                                return;
-                            }
-                        }
-                    })();
-                }
+            } else if (err.name !== 'AbortError') {
+                console.error("Chat error", err);
+                finishAbnormally();
             }
         } finally {
             // Release the controller once the stream is done (success, error, or
@@ -1512,6 +1714,9 @@ export default function useChatEngine({
             if (abortControllerRef.current === controller) {
                 abortControllerRef.current = null;
             }
+            // The stream is over (success, error or abort), so it no longer
+            // needs to survive an unmount.
+            releaseStream(streamKey);
             // Drop the flusher reference (guard against a newer concurrent stream
             // having replaced it) so stopGenerating can't act on a dead stream.
             flusher.cancel();
@@ -1528,6 +1733,13 @@ export default function useChatEngine({
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
+        }
+        // An explicit stop is the one case that really should end the
+        // generation, so drop it from the registry too — otherwise the
+        // detach-on-unmount path would keep a stream the user just cancelled.
+        if (streamKeyRef.current) {
+            releaseStream(streamKeyRef.current);
+            streamKeyRef.current = null;
         }
         // Cancel any pending content frame so a late flush can't resurrect
         // streaming text after the user stopped generation.

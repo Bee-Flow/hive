@@ -141,7 +141,7 @@ const ConsumerIntegrationsSection = () => {
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                        {t('settings.integrations') || 'Integrations'}
+                        {t('settings.integrations', 'Integrations')}
                     </h2>
                     <p className="text-sm text-[var(--text-muted)] mt-1">
                         Choose which third-party tools your AI assistants can use

@@ -8,7 +8,7 @@ import React, {
     useRef,
     useState,
 } from 'react';
-import { API_BASE, authFetch } from '../utils/helpers';
+import { API_BASE, authFetch, isDemoPath } from '../utils/helpers';
 import WallpaperLayer from './WallpaperLayer';
 import { applyThemeToDocument } from './theme/applyTheme';
 
@@ -195,18 +195,27 @@ export function ThemeProvider({ children, initialOverride = null }) {
 
     const reload = useCallback(async () => {
         try {
-            console.log('[Theme] GET /api/branding/effective …');
-            let r = await authFetch(`${API_BASE}/api/branding/effective`);
-            let usedFallback = false;
+            // A public feature demo takes its theme from the ?theme= param the
+            // marketing page frames it with (DemoHost), and it is supposed to
+            // reach no API at all. Because the two calls below are PLAIN
+            // fetches they bypass the demo transport entirely — which is the
+            // whole point of the transport being at the authFetch seam, and
+            // also why these two were the only requests still leaving a demo
+            // page after that seam was sealed. Nothing to reconcile here, so
+            // do not ask.
+            if (isDemoPath(window.location.pathname)) return;
+            // Plain fetch, not authFetch: the 401 below is an EXPECTED answer
+            // for a signed-out visitor and is handled two lines down, but
+            // authFetch treats any 401 as an expired session and reloads the
+            // page — which meant every anonymous marketing pageview loaded the
+            // entire site twice before this fallback could run.
+            let r = await fetch(`${API_BASE}/api/branding/effective`, { credentials: 'include' });
             if (r.status === 401) {
                 // Not logged in yet — pull the safe public subset.
-                console.log('[Theme] /effective 401, falling back to /public');
                 r = await fetch(`${API_BASE}/api/branding/public`);
-                usedFallback = true;
             }
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const data = await r.json();
-            console.log(`[Theme] ${usedFallback ? '/public' : '/effective'} response:`, data);
             if (!mountedRef.current) return;
             setState(s => {
                 const next = {
@@ -232,12 +241,6 @@ export function ThemeProvider({ children, initialOverride = null }) {
                     loading: false,
                     error: null,
                 };
-                console.log('[Theme] new state after reload:', {
-                    preset: next.preset, accent: next.accent, glassIntensity: next.glassIntensity,
-                    wallpaperPreset: next.wallpaperPreset, glassLens: next.glassLens,
-                    glassAnimation: next.glassAnimation, glassBorder: next.glassBorder,
-                    source: next.source, allowUserOverride: next.allowUserOverride,
-                });
                 return next;
             });
         } catch (e) {
@@ -289,7 +292,6 @@ export function ThemeProvider({ children, initialOverride = null }) {
     }, [inPreview]);
 
     const setUserOverride = useCallback(async (patch) => {
-        console.log('[Theme] PUT /api/branding/user', patch);
         const r = await authFetch(`${API_BASE}/api/branding/user`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -302,13 +304,11 @@ export function ThemeProvider({ children, initialOverride = null }) {
             throw new Error(msg);
         }
         const result = await r.json().catch(() => ({}));
-        console.log('[Theme] user override saved, server returned:', result);
         await reload();
         return result;
     }, [reload]);
 
     const clearUserOverride = useCallback(async () => {
-        console.log('[Theme] PUT /api/branding/user (clear override)');
         const r = await authFetch(`${API_BASE}/api/branding/user`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -321,13 +321,11 @@ export function ThemeProvider({ children, initialOverride = null }) {
             throw new Error(msg);
         }
         const result = await r.json().catch(() => ({}));
-        console.log('[Theme] override cleared, server returned:', result);
         await reload();
         return result;
     }, [reload]);
 
     const setAdminDefault = useCallback(async (patch) => {
-        console.log('[Theme] PUT /api/branding/admin', patch);
         const r = await authFetch(`${API_BASE}/api/branding/admin`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -340,7 +338,6 @@ export function ThemeProvider({ children, initialOverride = null }) {
             throw new Error(msg);
         }
         const result = await r.json();
-        console.log('[Theme] saved, server returned:', result);
         await reload();
         return result;
     }, [reload]);

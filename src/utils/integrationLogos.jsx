@@ -259,6 +259,15 @@ const NmbrsLogo = (p) => (
     </Wrap>
 );
 
+const VplanLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 24 24">
+        <rect x="2" y="2" width="20" height="20" rx="4" fill="#1D4ED8" />
+        <rect x="6" y="7" width="11" height="2.4" rx="1.2" fill="#fff" fillOpacity="0.95" />
+        <rect x="8.5" y="10.8" width="9.5" height="2.4" rx="1.2" fill="#fff" fillOpacity="0.8" />
+        <rect x="6" y="14.6" width="7" height="2.4" rx="1.2" fill="#fff" fillOpacity="0.65" />
+    </Wrap>
+);
+
 const LinkedInLogo = (p) => (
     <Wrap {...p} viewBox="0 0 24 24">
         <rect width="24" height="24" rx="3" fill="#0A66C2" />
@@ -369,6 +378,91 @@ const AgentSearchLogo = (p) => (
     </Wrap>
 );
 
+// ── Service management, dev & payments ─────────────────────────
+// These ids were surfacing as letter-only fallbacks everywhere the ticket
+// assistant and the marketing integrations wall render them.
+
+const JiraLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 32 32">
+        <path d="M15.9 2 5.1 12.8a1.2 1.2 0 0 0 0 1.7l6 6 4.8-4.8 4.8-4.8L15.9 2z" fill="#2684FF" />
+        <path d="M15.9 12.2a5.7 5.7 0 0 1-.02-8.04L15.9 2l-4.8 4.8 4.8 5.4z" fill="#0052CC" />
+        <path d="M16.1 30l10.8-10.8a1.2 1.2 0 0 0 0-1.7l-6-6-4.8 4.8-4.8 4.8L16.1 30z" fill="#2684FF" />
+        <path d="M16.1 19.8a5.7 5.7 0 0 1 .02 8.04L16.1 30l4.8-4.8-4.8-5.4z" fill="#0052CC" />
+    </Wrap>
+);
+
+const ServiceNowLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="14" fill="#62D84E" />
+        <path d="M16 6.5A9.5 9.5 0 0 0 9.2 22.6a1.5 1.5 0 0 0 2-.1 6.6 6.6 0 0 1 9.6 0 1.5 1.5 0 0 0 2 .1A9.5 9.5 0 0 0 16 6.5z" fill="#1B1D1F" />
+    </Wrap>
+);
+
+const ZendeskLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 32 32">
+        <path d="M15 8v18L2 26 15 8z" fill="#03363D" />
+        <path d="M15 4a6.5 6.5 0 0 1-13 0h13z" fill="#03363D" />
+        <path d="M17 24V6l13 0L17 24z" fill="#03363D" />
+        <path d="M17 28a6.5 6.5 0 0 1 13 0H17z" fill="#03363D" />
+    </Wrap>
+);
+
+const FreshserviceLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 32 32">
+        <rect width="32" height="32" rx="7" fill="#25C16F" />
+        <path d="M16 7a9 9 0 0 0-9 9v6.5A2.5 2.5 0 0 0 9.5 25H13v-7H9.9v-2a6.1 6.1 0 0 1 12.2 0v2H19v7h3.5a2.5 2.5 0 0 0 2.5-2.5V16a9 9 0 0 0-9-9z" fill="#fff" />
+    </Wrap>
+);
+
+const TopDeskLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 32 32">
+        <rect width="32" height="32" rx="7" fill="#004E9E" />
+        <path d="M7 11h18v3.2h-7.2V24h-3.6V14.2H7V11z" fill="#fff" />
+        <circle cx="24" cy="22" r="3" fill="#8DC63F" />
+    </Wrap>
+);
+
+const StripeLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 32 32">
+        <rect width="32" height="32" rx="7" fill="#635BFF" />
+        <path d="M15.3 12.6c0-.8.7-1.1 1.7-1.1 1.5 0 3.4.5 4.9 1.3V9.1a12 12 0 0 0-4.9-.9c-4 0-6.7 2.1-6.7 5.6 0 5.4 7.5 4.5 7.5 6.9 0 .9-.8 1.2-1.9 1.2-1.6 0-3.8-.7-5.5-1.6v4a13.6 13.6 0 0 0 5.5 1.2c4.1 0 6.9-2 6.9-5.6 0-5.9-7.5-4.8-7.5-7.3z" fill="#fff" />
+    </Wrap>
+);
+
+const PlaywrightLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="14" fill="#2D4552" />
+        <path d="M8.5 13.5c1.6-1.4 3.6-1.3 5 .2l-5 1.6v-1.8z" fill="#E2574C" />
+        <path d="M23.5 13.5c-1.6-1.4-3.6-1.3-5 .2l5 1.6v-1.8z" fill="#E2574C" />
+        <path d="M16 25c4 0 6.5-2.4 7.2-5.3-2.2 1-4.6 1.5-7.2 1.5s-5-.5-7.2-1.5C9.5 22.6 12 25 16 25z" fill="#fff" />
+    </Wrap>
+);
+
+const GoogleMeetLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 48 48">
+        <path d="M29 24l9-7v14l-9-7z" fill="#00832d" />
+        <path d="M38 17v14l6 4.5c.9.7 2 0 2-1.1V13.6c0-1.1-1.1-1.8-2-1.1L38 17z" fill="#ffba00" />
+        <path d="M4 17v14a3 3 0 003 3h9V14H7a3 3 0 00-3 3z" fill="#0066da" />
+        <path d="M16 14h13a3 3 0 013 3v14a3 3 0 01-3 3H16V14z" fill="#e94235" />
+        <path d="M29 34h-9v-6h9v6z" fill="#2684fc" />
+    </Wrap>
+);
+
+const EntraIdLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 32 32">
+        <path d="M16 3 4 26h6.5L16 14.5 21.5 26H28L16 3z" fill="#2C7DD6" />
+        <path d="M16 14.5 10.5 26h11L16 14.5z" fill="#41A5EE" />
+    </Wrap>
+);
+
+const McpLogoMark = (p) => (
+    <Wrap {...p} viewBox="0 0 32 32">
+        <rect width="32" height="32" rx="7" fill="#111827" />
+        <path d="M8 21c3.2-3.2 5.5-5.5 7-7 2.2-2.2 5.4.9 3.2 3.1L14 21.5" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" />
+        <path d="M12 21c3.2-3.2 5.5-5.5 7-7 2.2-2.2 5.4.9 3.2 3.1L18 21.5" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" opacity="0.65" />
+    </Wrap>
+);
+
 // ── id → logo registry ─────────────────────────────────────────
 
 export const INTEGRATION_LOGOS = {
@@ -412,12 +506,27 @@ export const INTEGRATION_LOGOS = {
     gamma: GammaLogo,
     afas_profit: AfasLogo,
     nmbrs: NmbrsLogo,
+    vplan: VplanLogo,
     linkedin: LinkedInLogo,
     github: GitHubLogo,
     signrequest: SignRequestLogo,
     n8n: N8nLogo,
     kb_search: KbSearchLogo,
     webpages: WebpagesLogo,
+
+    // Service management
+    jira: JiraLogo,
+    servicenow: ServiceNowLogo,
+    zendesk: ZendeskLogo,
+    freshservice: FreshserviceLogo,
+    topdesk: TopDeskLogo,
+
+    // Dev, payments & meetings
+    stripe: StripeLogo,
+    playwright: PlaywrightLogo,
+    google_meet: GoogleMeetLogo,
+    entra_id: EntraIdLogo,
+    mcp: McpLogoMark,
 
     // AI / Generation
     image_gen: ImageGenLogo,

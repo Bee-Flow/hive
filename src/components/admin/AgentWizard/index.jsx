@@ -49,7 +49,7 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    name: t('agent_studio.untitled') || 'Untitled',
+                    name: t('agent_studio.untitled', 'Untitled'),
                     description: '',
                     systemPrompt: '',
                     config: {
@@ -112,7 +112,7 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
                     </div>
                 </div>
                 <div className="w-full max-w-xl mt-6">
-                    <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">{t('agent_wizard.or_template') || 'Or start from a template'}</div>
+                    <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">{t('agent_wizard.or_template', 'Or start from a template')}</div>
                     <div className="flex flex-col gap-2">
                         {examples.map((ex) => (
                             <button

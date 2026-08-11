@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // NDV fetches the tool catalog on mount — stub the API.
@@ -62,5 +62,105 @@ describe('NodeDetailView', () => {
         expect(screen.queryByText('Output')).toBeNull();
         // Parameters always stays.
         expect(screen.getByText('Parameters')).toBeTruthy();
+    });
+
+    /**
+     * A single click on a node opens the QUICK editor: the settings the step
+     * needs and nothing else. Everything it leaves out has to stay one click
+     * away, or the simplification just hides features.
+     */
+    describe('quick density', () => {
+        const quickProps = (overrides = {}) => baseProps({ density: 'quick', onDensityChange: vi.fn(), ...overrides });
+
+        it('drops the Input column and the step plumbing', () => {
+            render(<NodeDetailView {...quickProps()} />);
+            expect(screen.queryByText('Input')).toBeNull();
+            expect(screen.queryByText('Parameters')).toBeNull();
+            expect(screen.queryByText('Disable')).toBeNull();
+            expect(screen.queryByText('Duplicate')).toBeNull();
+            // The settings themselves are still right there.
+            expect(screen.getByDisplayValue('My AI')).toBeTruthy();
+        });
+
+        it('keeps the run result under the settings, so Execute shows something', () => {
+            // Pressing Execute here used to produce nothing on screen at all —
+            // the result landed in a column this dialog does not render.
+            render(<NodeDetailView {...quickProps()} />);
+            const panel = screen.getByTestId('ndv-quick-output');
+            expect(within(panel).getByText('Output')).toBeTruthy();
+            expect(within(panel).getByRole('button', { name: /pin/i })).toBeTruthy();
+        });
+
+        it('says how the run went ONCE, in the header', () => {
+            const runStep = { status: 'success', output: { id: 'm1' }, durationMs: 120 };
+            render(<NodeDetailView {...quickProps()} runStep={runStep} />);
+            const panel = screen.getByTestId('ndv-quick-output');
+            // One "Success", not one in the header and another in a strip below.
+            expect(within(panel).getAllByText(/Success/)).toHaveLength(1);
+            // …and no standing hint footer eating the little height there is.
+            expect(within(panel).queryByText(/Switch to JSON/)).toBeNull();
+        });
+
+        it('pins the latest output, and refuses when there is nothing to pin', () => {
+            const onSaveStep = vi.fn();
+            const { rerender } = render(<NodeDetailView {...quickProps()} onSaveStep={onSaveStep} />);
+            const pinOf = () => within(screen.getByTestId('ndv-quick-output')).getByRole('button', { name: /pin/i });
+            expect(pinOf().disabled).toBe(true);
+
+            rerender(<NodeDetailView {...quickProps()} onSaveStep={onSaveStep} runStep={{ status: 'success', output: { id: 'm1' } }} />);
+            expect(pinOf().disabled).toBe(false);
+            fireEvent.click(pinOf());
+            expect(onSaveStep).toHaveBeenCalled();
+        });
+
+        it('hides advanced sections but keeps the primary ones', () => {
+            render(<NodeDetailView {...quickProps()} />);
+            expect(screen.getByText('Inputs')).toBeTruthy();
+            expect(screen.queryByText('Advanced')).toBeNull();
+            expect(screen.queryByText('Structured output')).toBeNull();
+        });
+
+        it('offers Execute, a data line, and a counted way into everything else', () => {
+            const onExecuteStep = vi.fn();
+            const onDensityChange = vi.fn();
+            render(<NodeDetailView {...quickProps({ onExecuteStep, onDensityChange })} />);
+            fireEvent.click(screen.getAllByRole('button', { name: /Execute/ })[0]);
+            expect(onExecuteStep).toHaveBeenCalledWith('s1');
+            // ai_step hides 2 sections in quick (Advanced + Structured output).
+            fireEvent.click(screen.getByText(/More options \(2\)/));
+            expect(onDensityChange).toHaveBeenCalledWith('full');
+        });
+
+        it('says what the step produced — or that it has not run', () => {
+            cleanup();
+            render(<NodeDetailView {...quickProps()} />);
+            expect(screen.getByText('not run yet')).toBeTruthy();
+            cleanup();
+            render(<NodeDetailView {...quickProps({ runStep: { status: 'success', output: { results: [{ id: 1 }, { id: 2 }] } } })} />);
+            expect(screen.getByText('2 records')).toBeTruthy();
+        });
+
+        it('the expand control switches to the full view', () => {
+            const onDensityChange = vi.fn();
+            render(<NodeDetailView {...quickProps({ onDensityChange })} />);
+            fireEvent.click(screen.getByLabelText('Expand to the full view'));
+            expect(onDensityChange).toHaveBeenCalledWith('full');
+        });
+
+        it('a validation error in an advanced section is never hidden', () => {
+            // Reachability beats tidiness: the error banner must point at a
+            // control the user can actually see.
+            render(<NodeDetailView {...quickProps({
+                validation: { errors: [{ code: 'ai_step.model_tier', path: 'steps[s1].modelTier', message: 'bad tier' }], warnings: [] },
+            })} />);
+            expect(screen.getByText('Advanced')).toBeTruthy();
+        });
+    });
+
+    it('the full view offers a way back to the simple one', () => {
+        const onDensityChange = vi.fn();
+        render(<NodeDetailView {...baseProps({ density: 'full', onDensityChange })} />);
+        fireEvent.click(screen.getByLabelText('Simple view'));
+        expect(onDensityChange).toHaveBeenCalledWith('quick');
     });
 });

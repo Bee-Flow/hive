@@ -1,0 +1,91 @@
+/*
+ * App Studio runtime — layout + skeleton primitives.
+ *
+ * .app-grid is a 12-column grid (columns set inline by the renderer); every
+ * child carries an inline `grid-column: span N`. Below 640px the layout
+ * stacks: the grid collapses to one column and children go full width — the
+ * !important is what lets the stylesheet beat the inline span.
+ */
+
+.app-grid {
+    display: grid;
+}
+
+/*
+ * A pane's children keep their natural size — the documented promise, and until
+ * now not actually true. A flex item defaults to `flex-shrink: 1`, so in a pane
+ * with a fill child plus a composer, the composer was squeezed the moment the
+ * content grew: the reply box lost rows one by one and eventually collapsed to
+ * a sliver. Only the child that asked to fill may flex.
+ */
+[data-app-pane] > .app-node {
+    flex-shrink: 0;
+}
+
+/*
+ * A surface needs an edge. --bg-card is barely a shade off --bg-primary in the
+ * dark theme and IDENTICAL to it (#000000) in high contrast, so a card was a
+ * rectangle of nothing and every grouping the layout leaned on disappeared.
+ * A hairline is enough; the `border` style knob is there for authors who want
+ * more, and because that knob emits an INLINE border it always wins over this.
+ */
+.app-surface {
+    /* --border-color only exists inside the explicit light/dark appearance
+       blocks; on the default 'auto' this whole declaration was invalid and
+       the hairline simply never drew. */
+    border: 1px solid color-mix(in srgb, var(--border-color, var(--border-default)) 45%, transparent);
+}
+
+@media (max-width: 639.98px) {
+    .app-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+    .app-grid > .app-node {
+        grid-column: 1 / -1 !important;
+    }
+    /* A full-height section is a desktop affordance. On a phone the grid stacks,
+       so keeping the fixed height would squash both panes of a split into a few
+       unreadable lines each — fall back to the ordinary flowing layout. */
+    .app-section-fill {
+        flex: none !important;
+        min-height: 0 !important;
+        grid-template-rows: none !important;
+    }
+    .app-section-fill > .app-node {
+        flex: none !important;
+    }
+    /* Every component that honours height:'fill' tags its own root with
+       .app-fill, so this one rule unwinds all of them here. Without a shared
+       hook each new fill-aware component would need its own selector added
+       above, and the one that got forgotten would silently keep a viewport
+       height on a phone. */
+    .app-fill {
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+    }
+}
+
+/* Shimmering placeholder while a bound action is running. */
+.app-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--bg-tertiary, rgba(128, 128, 128, 0.15));
+    border-radius: var(--app-radius, 8px);
+    min-height: 0.75rem;
+}
+
+.app-skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+    animation: app-skeleton-shimmer 1.4s infinite;
+}
+
+@keyframes app-skeleton-shimmer {
+    to {
+        transform: translateX(100%);
+    }
+}

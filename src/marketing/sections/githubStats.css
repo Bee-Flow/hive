@@ -1,0 +1,58 @@
+/* GitHub-stats band — owned by GitHubStats.jsx (imported there, NOT part of
+   marketing.css: new-component styles live next to their component).
+
+   Scoped under .marketing-root so the tokens (tokens.css + alias layer in
+   marketing.css) resolve and re-derive inside band/dark scopes like the
+   built-in sections. */
+
+.marketing-root .github-stats-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.marketing-root .github-stats-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--pill-radius, 999px);
+    background: var(--surface-2);
+    color: var(--text-primary);
+    font-size: var(--text-small);
+    font-weight: 500;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.marketing-root .github-stats-chip svg {
+    width: 15px;
+    height: 15px;
+    color: var(--accent);
+    flex: none;
+}
+
+.marketing-root .github-stats-value {
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.marketing-root .github-stats-muted {
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+
+/* The one interactive chip — the repo link. */
+.marketing-root a.github-stats-chip {
+    border-color: var(--hairline-strong);
+    transition: border-color var(--motion-fast) var(--ease-soft),
+                background var(--motion-fast) var(--ease-soft);
+}
+.marketing-root a.github-stats-chip:hover {
+    border-color: var(--hairline-accent);
+    background: var(--accent-tint-08);
+}

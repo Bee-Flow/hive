@@ -1,43 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { MessageSquare, Loader2 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-
-const NC_BLUE = '#0082C9';
-const LANGS = [
-    { code: 'nl', label: 'Dutch' }, { code: 'en', label: 'English' }, { code: 'de', label: 'German' },
-    { code: 'fr', label: 'French' }, { code: 'es', label: 'Spanish' }, { code: 'it', label: 'Italian' }, { code: 'pt', label: 'Portuguese' },
-];
-
-const Toggle = ({ on, onClick, disabled }) => (
-    <button
-        type="button" onClick={onClick} disabled={disabled} aria-pressed={on}
-        className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-        style={{ background: on ? NC_BLUE : 'var(--border-default)', opacity: disabled ? 0.6 : 1 }}
-    >
-        <div className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"
-            style={{ transform: on ? 'translateX(20px)' : 'translateX(0)' }} />
-    </button>
-);
-
-const Row = ({ title, desc, children }) => (
-    <div className="flex items-center gap-4 px-5 py-3.5" style={{ background: 'var(--bg-secondary)' }}>
-        <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{title}</p>
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{desc}</p>
-        </div>
-        {children}
-    </div>
-);
-
-const Select = ({ value, onChange, disabled, options }) => (
-    <select
-        value={value} onChange={onChange} disabled={disabled}
-        className="w-40 px-3 py-1.5 rounded-lg border outline-none text-[13px]"
-        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-    >
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-);
+import { NC_BLUE, LANGS, Toggle, Row, Select } from '../../pages/settings/shared/settingsPrimitives';
 
 /**
  * Org-level Nextcloud Talk → Meeting Notes settings. Mirrors the privacy-shield
@@ -45,7 +9,7 @@ const Select = ({ value, onChange, disabled, options }) => (
  */
 export default function MeetingNotesAdminPanel({ user }) {
     const orgId = user?.organizationId;
-    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk', language: 'nl', autoRecord: false, autoRecordScope: 'calendar', recordingMode: 'audio' });
+    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk', language: 'nl', autoRecord: false, autoRecordScope: 'calendar', recordingMode: 'audio', insightsPerPersonStats: true });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
@@ -129,6 +93,10 @@ export default function MeetingNotesAdminPanel({ user }) {
                                 className="w-40 px-3 py-1.5 rounded-lg border outline-none text-[13px]"
                                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                             />
+                        </Row>
+                        <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+                        <Row title="Per-person meeting insights" desc="Show per-person statistics (talk time, longest monologue) on the meeting Insights panel. Off = members see only meeting-level metrics.">
+                            <Toggle on={cfg.insightsPerPersonStats !== false} onClick={() => setCfg(c => ({ ...c, insightsPerPersonStats: c.insightsPerPersonStats === false }))} disabled={saving} />
                         </Row>
                         <div style={{ height: 1, background: 'var(--border-subtle)' }} />
                         <Row title="Default language" desc="Language used when auto-transcribing Talk recordings.">

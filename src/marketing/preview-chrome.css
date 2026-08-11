@@ -1,0 +1,171 @@
+/*
+ * CMS preview-only block chrome — hover/active outlines, name-tag pill,
+ * floating block toolbar and insert-between "+" zones.
+ *
+ * Loaded unconditionally by ProductWebsite.jsx, but EVERY rule is scoped
+ * under `.marketing-root.cms-preview` — the class the renderer adds only
+ * inside the admin preview iframe (?preview=1) — so nothing here can leak
+ * into the published site.
+ *
+ * Owned by the builder workstream (WS3-P1). marketing.css / tokens.css are
+ * deliberately untouched — do not move these rules there.
+ *
+ * Outline (never border) everywhere = zero layout shift when chrome
+ * appears/disappears.
+ */
+
+/* Anchor for the absolutely-positioned chrome inside each block wrapper. */
+.marketing-root.cms-preview [data-cms-block-id] {
+    position: relative;
+}
+
+/* Hover outline — accent at ~45%, inset so it hugs the block edge.
+   Literal amber first as a color-mix() fallback for older engines. */
+.marketing-root.cms-preview [data-cms-block-id]:hover {
+    outline: 1px solid rgba(245, 158, 11, 0.45);
+    outline: 1px solid color-mix(in srgb, var(--accent, #f59e0b) 45%, transparent);
+    outline-offset: -1px;
+}
+
+/* Active (selected in the panel). Same specificity as the :hover rule and
+   declared later, so the stronger outline wins while hovering the active
+   block too. The class is applied by the block map from the cms-active
+   payload — keyed on the wrapper's block id, never its type. */
+.marketing-root.cms-preview [data-cms-block-id].cms-block-active {
+    outline: 2px solid var(--accent, #f59e0b);
+    outline-offset: -2px;
+}
+
+/* ── Name tag — top-left pill, hover/active only ─────────────────── */
+.marketing-root.cms-preview [data-cms-block-id] > .cms-chrome-tag {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 60;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--accent, #f59e0b);
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+    pointer-events: none; /* purely informative — never intercepts clicks */
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+.marketing-root.cms-preview [data-cms-block-id]:hover > .cms-chrome-tag,
+.marketing-root.cms-preview [data-cms-block-id].cms-block-active > .cms-chrome-tag {
+    opacity: 1;
+}
+
+/* ── Floating toolbar — top-right pill, hover/active only ────────── */
+.marketing-root.cms-preview [data-cms-block-id] > .cms-chrome-toolbar {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 61;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: rgba(20, 20, 23, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+}
+.marketing-root.cms-preview [data-cms-block-id]:hover > .cms-chrome-toolbar,
+.marketing-root.cms-preview [data-cms-block-id].cms-block-active > .cms-chrome-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+}
+/* Stream lock — while the AI assistant is editing the toolbar stays
+   visible but dimmed; its buttons are disabled by the component. */
+.marketing-root.cms-preview [data-cms-block-id]:hover > .cms-chrome-toolbar.cms-chrome-toolbar--locked,
+.marketing-root.cms-preview [data-cms-block-id].cms-block-active > .cms-chrome-toolbar.cms-chrome-toolbar--locked {
+    opacity: 0.4;
+}
+
+.marketing-root.cms-preview .cms-chrome-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #fff;
+    cursor: pointer;
+    transition: background 100ms ease;
+}
+.marketing-root.cms-preview .cms-chrome-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
+}
+.marketing-root.cms-preview .cms-chrome-btn--danger:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.85);
+}
+.marketing-root.cms-preview .cms-chrome-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* ── Insert-between "+" zones ────────────────────────────────────── */
+/* A 16px hover band whose negative margins overlap the neighbouring
+   blocks, so it adds ZERO height to the flow. The hairline + centered
+   button only paint on hover / keyboard focus. */
+.marketing-root.cms-preview .cms-insert-zone {
+    position: relative;
+    height: 16px;
+    margin: -8px 0;
+    z-index: 55; /* above the (unstacked) positioned block wrappers */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+.marketing-root.cms-preview .cms-insert-zone:hover,
+.marketing-root.cms-preview .cms-insert-zone:focus-within {
+    opacity: 1;
+}
+.marketing-root.cms-preview .cms-insert-zone::before {
+    content: '';
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    top: 50%;
+    border-top: 1px solid var(--accent, #f59e0b);
+}
+.marketing-root.cms-preview .cms-insert-zone-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid var(--accent, #f59e0b);
+    background: var(--bg-primary, #fff);
+    color: var(--accent, #f59e0b);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+.marketing-root.cms-preview .cms-insert-zone-btn:hover:not(:disabled) {
+    background: var(--accent, #f59e0b);
+    color: #fff;
+}
+.marketing-root.cms-preview .cms-insert-zone-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}

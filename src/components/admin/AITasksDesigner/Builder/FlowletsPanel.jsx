@@ -33,13 +33,16 @@ const STEP_TYPE_LABELS = {
     loop: 'Loop',
     code: 'Code',
     notification: 'Notification',
+    http_request: 'HTTP Request',
+    form_page: 'Form page',
     call_layer: 'Flowlet',
-    set: 'Edit fields',
+    set: 'Edit data',
     datetime: 'Date & time',
     wait: 'Wait',
     stop_error: 'Stop',
-    switch: 'Switch',
-    filter: 'Filter',
+    // All three are the ONE deciding step — same name everywhere.
+    switch: 'Condition',
+    filter: 'Condition',
     limit: 'Limit',
     dedupe: 'Dedupe',
     aggregate: 'Aggregate',
@@ -133,12 +136,19 @@ export default function FlowletsPanel({
             data-surface="default"
             className="absolute bottom-14 left-4 z-30 w-[380px] max-w-[calc(100vw-2rem)] max-h-[min(64vh,460px)] flex flex-col rounded-xl border border-[var(--border-default)] shadow-lg bg-[var(--bg-primary)] overflow-hidden"
         >
-            {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-default)] flex-shrink-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                    <Layers size={14} className="text-[var(--text-primary)] flex-shrink-0" />
-                    <span className="text-xs font-semibold text-[var(--text-primary)] truncate">Flowlets</span>
-                    <span className="text-[10px] text-[var(--text-tertiary)] flex-shrink-0">{layers.length}</span>
+            {/* Header. The explanation of what a flowlet IS used to live only
+                in the empty state, so it disappeared the moment you had one —
+                exactly when you start needing it (BFSF-340). */}
+            <div className="flex items-start justify-between px-3 py-2 border-b border-[var(--border-default)] flex-shrink-0">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        <Layers size={14} className="text-[var(--text-primary)] flex-shrink-0" />
+                        <span className="text-xs font-semibold text-[var(--text-primary)] truncate">Flowlets</span>
+                        <span className="text-[10px] text-[var(--text-tertiary)] flex-shrink-0">{layers.length}</span>
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-[var(--text-tertiary)] leading-snug">
+                        Reusable sub-flows. Build one once, then call it from the main flow — or from another flowlet — with a “Call flowlet” step.
+                    </div>
                 </div>
                 <div className="flex items-center gap-0.5">
                     <button
@@ -258,13 +268,19 @@ export default function FlowletsPanel({
 /** Stop a control click from bubbling to a row's open-on-click handler. */
 const stop = (fn) => (e) => { e.stopPropagation(); fn?.(e); };
 
+// The two directions read as jargon on their own — say which way each points.
+const DEP_HINT = {
+    'Used by': 'The flows that call this flowlet. Listed once per flow, however many times it calls in.',
+    Calls: 'The other flowlets this one calls.',
+};
+
 /** A line of clickable dependency targets ("Used by" / "Calls"). */
 function DepLine({ icon: Icon, label, targets, titleByKey, onNavigate }) {
     if (!targets || targets.length === 0) return null;
     return (
         <div className="mt-0.5 pl-5 flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] min-w-0">
             <Icon size={10} className="flex-shrink-0" />
-            <span className="flex-shrink-0">{label}</span>
+            <span className="flex-shrink-0 cursor-help" title={DEP_HINT[label]}>{label}</span>
             <div className="flex flex-wrap gap-1 min-w-0">
                 {targets.map((k) => (
                     <button
@@ -357,7 +373,16 @@ function LayerRow({
         else if (e.key === 'Escape') { e.stopPropagation(); setDraft(layer.title); setEditing(false); }
     };
 
-    const inUse = refCount > 0;
+    // An EMPTY flowlet stays deletable even when something calls it: the
+    // palette's "Create flowlet" drops a call node as part of creating one, so
+    // a brand-new flowlet was born un-deletable and the user had to hunt down
+    // that node first (BFSF-340). Deleting it takes the call sites with it.
+    const inUse = refCount > 0 && layer.stepCount > 0;
+    const deleteTitle = inUse
+        ? `Used by ${refCount} step${refCount === 1 ? '' : 's'} — open it and remove those first`
+        : (refCount > 0
+            ? `Delete this empty flowlet (and the ${refCount} “Call flowlet” step${refCount === 1 ? '' : 's'} that use${refCount === 1 ? 's' : ''} it)`
+            : 'Delete this flowlet');
     const metaParts = [
         `${layer.stepCount} step${layer.stepCount === 1 ? '' : 's'}`,
         `${layer.params.length} in`,
@@ -431,7 +456,7 @@ function LayerRow({
                     type="button"
                     onClick={inUse ? stop() : stop(onDelete)}
                     disabled={inUse}
-                    title={inUse ? `Used by ${refCount} step${refCount === 1 ? '' : 's'}` : 'Delete this flowlet'}
+                    title={deleteTitle}
                     aria-label="Delete flowlet"
                     className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-red-600 hover:bg-[var(--bg-tertiary)] transition disabled:opacity-40 disabled:hover:text-[var(--text-tertiary)] disabled:hover:bg-transparent flex-shrink-0"
                 >

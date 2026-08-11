@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Plus, Search, Pencil, Trash2, FolderOpen } from 'lucide-react';
 import { RequireTier } from './LicenseContext';
+import { formatRelativeTime } from '../utils/dateFormatters';
 
 // Matches the Studio (Webpages) list-view shell: single-row header, inline
 // create+search toolbar, card grid body with a top visual band per card.
@@ -21,17 +22,6 @@ const roleLabel = (perm) => {
     if (perm === 'editor') return 'Editor';
     return 'Viewer';
 };
-
-function timeAgo(dateStr) {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    const diff = (Date.now() - d.getTime()) / 1000;
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return d.toLocaleDateString();
-}
 
 const ProjectCard = React.memo(({ project, onSelect, onEdit, onDelete }) => {
     const role = project.permission || 'viewer';
@@ -102,7 +92,7 @@ const ProjectCard = React.memo(({ project, onSelect, onEdit, onDelete }) => {
                     >
                         {roleLabel(role)}
                     </span>
-                    {project.updatedAt && <span>· {timeAgo(project.updatedAt)}</span>}
+                    {project.updatedAt && <span>· {formatRelativeTime(project.updatedAt)}</span>}
                     {(project.knowledgeBaseIds?.length || 0) > 0 && (
                         <span>· {project.knowledgeBaseIds.length} KB{project.knowledgeBaseIds.length === 1 ? '' : 's'}</span>
                     )}

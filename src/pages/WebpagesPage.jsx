@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
     ArrowLeft, Plus, Trash2, Loader2, AlertCircle, Search,
-    X, Pencil, Globe, FileCode2, Check, Copy,
+    X, Pencil, Globe, FileCode2, Copy,
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { formatRelativeTime } from '../utils/dateFormatters';
 import { resizeImageForUpload } from '../utils/imageResize';
 import useChatEngine from '../hooks/useChatEngine';
 import WebpageIDE from './webpages/WebpageIDE';
@@ -26,17 +27,6 @@ function fallbackAccent(id) {
     let hash = 0;
     for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
     return ACCENT_FALLBACKS[hash % ACCENT_FALLBACKS.length];
-}
-
-function timeAgo(dateStr) {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diff = (now - d) / 1000;
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return d.toLocaleDateString();
 }
 
 // Map an (possibly resize-converted) MIME type back to a file extension so the
@@ -92,7 +82,11 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
     const [viewMode, setViewMode] = useState(true);
     const [sources, setSources] = useState([]);
     const [versions, setVersions] = useState([]);
+    const [versionsHasMore, setVersionsHasMore] = useState(false);
+    const [versionsLoadingMore, setVersionsLoadingMore] = useState(false);
     const [showVersions, setShowVersions] = useState(false);
+    const versionsCloseBtnRef = useRef(null);
+    const versionsDialogRef = useRef(null);
 
     // Extra files (multi-file projects) — array of file metadata, plus a map
     // of path → content for text files / dataUrl for binaries. Hydrated on
@@ -116,6 +110,10 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
     useEffect(() => { jsRef.current   = js;   }, [js]);
 
     const [loading, setLoading] = useState(true);
+    // Which list-card's fetch is in flight — the list view doesn't switch to
+    // the editor until loadWebpage resolves, so without this a click on a slow
+    // network looked like nothing happened.
+    const [loadingWebpageId, setLoadingWebpageId] = useState(null);
     const [creating, setCreating] = useState(false);
     const [newName, setNewName] = useState('');
     const [search, setSearch] = useState('');
@@ -143,6 +141,20 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
     // so we only PUT when something actually changed.
     const lastSavedChatRef = useRef('[]');
     const chatSaveTimerRef = useRef(null);
+
+    // Tracks the webpage whose data is currently loaded into local state. Async
+    // handlers (uploads, create/delete/rename, extra-update SSE) capture the id
+    // at call time and re-check this before applying their result, so a response
+    // that lands after the user switched pages can't mutate the wrong page or
+    // resurrect a just-deleted file.
+    const lastLoadedIdRef = useRef(null);
+    // One AbortController for page-scoped in-flight mutations; replaced (and the
+    // previous one aborted) whenever we load a different webpage so a switch
+    // cancels outstanding uploads instead of letting them land on the new page.
+    const inflightAbortRef = useRef(null);
+    // Latest persist() so loadWebpage can flush the OUTGOING page before its
+    // state is overwritten (persist is declared after loadWebpage).
+    const persistRef = useRef(null);
 
     // Layout
     const [leftOpen, setLeftOpen] = useState(true);
@@ -317,6 +329,7 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
         onWebpageExtraUpdate: useCallback(async (data) => {
             const { path, meta } = data || {};
             if (!path || !selected?.id) return;
+            const targetId = selected.id;
             setExtraFiles(prev => {
                 const idx = prev.findIndex(f => f.path === path);
                 if (idx >= 0) {
@@ -327,7 +340,9 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                 return [...prev, meta];
             });
             try {
-                const r = await api(`/${selected.id}/files?path=${encodeURIComponent(path)}`);
+                const r = await api(`/${targetId}/files?path=${encodeURIComponent(path)}`);
+                // Drop the fetched content if the user switched pages meanwhile.
+                if (lastLoadedIdRef.current !== targetId) return;
                 setExtraContents(prev => ({
                     ...prev,
                     [path]: r?.contentBase64
@@ -440,9 +455,21 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
 
     /* ── Load a webpage (deep-link or click) ─────────────────── */
     const loadWebpage = useCallback(async (id, { edit = false } = {}) => {
+        setLoadingWebpageId(id);
+        // Flush the OUTGOING page's pending edits before we overwrite state, so
+        // manual edits made within the save debounce window aren't lost on a fast
+        // page switch. persist() captures its snapshot synchronously and no-ops
+        // when nothing is dirty. Never let a flush failure block the load.
+        try { await persistRef.current?.(); } catch (_) { /* best-effort flush */ }
+        // Cancel any in-flight page-scoped mutations from the previous page and
+        // arm a fresh controller for this one.
+        try { inflightAbortRef.current?.abort(); } catch (_) { /* ignore */ }
+        inflightAbortRef.current = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         try {
             const { webpage, sources: srcs, files, chatMessages: persistedChat, extraFiles: extras } = await api(`/${id}`);
             setSelected(webpage);
+            lastLoadedIdRef.current = webpage?.id || id;
+            setLoadingWebpageId(null);
             setViewMode(!edit);
             setSources(srcs || []);
             const fHtml = files?.html || '', fCss = files?.css || '', fJs = files?.js || '';
@@ -488,6 +515,7 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
             setExtraContents(contents);
         } catch (err) {
             setError(err.message);
+            setLoadingWebpageId(null);
         }
     }, [setChatMessages, onWebpageChange]);
 
@@ -582,23 +610,33 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
         }
     }, [selected]); // stable — html/css/js read via refs at call time
 
+    // Keep persistRef pointed at the latest persist so loadWebpage can flush the
+    // outgoing page without a forward reference.
+    useEffect(() => { persistRef.current = persist; }, [persist]);
+
+    // Single owner of saveTimerRef. Both primary-slot edits (the effect below)
+    // and extra-file edits (handleExtraChange) schedule through here so two
+    // schedulers never race on one timer. The id captured at schedule time is
+    // re-checked against the currently-loaded page at fire time.
+    const scheduleSave = useCallback(() => {
+        if (!selected?.id) return;
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        const scheduledId = selected.id;
+        saveTimerRef.current = setTimeout(() => {
+            if (lastLoadedIdRef.current !== scheduledId) return;
+            persist();
+        }, 1500);
+    }, [selected?.id, persist]);
+
     useEffect(() => {
         if (!selected) return;
         if (skipNextSaveRef.current) {
             skipNextSaveRef.current = false;
             return;
         }
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        // Capture the selected id at scheduling time. If the user switches
-        // webpages before the timer fires, the latest selected.id won't match
-        // and we skip — the new selection's own effect will queue its own save.
-        const scheduledId = selected.id;
-        saveTimerRef.current = setTimeout(() => {
-            if (selected?.id !== scheduledId) return;
-            persist();
-        }, 1500);
+        scheduleSave();
         return () => saveTimerRef.current && clearTimeout(saveTimerRef.current);
-    }, [html, css, js, selected, persist]);
+    }, [html, css, js, selected, scheduleSave]);
 
     // Mark a primary slot dirty when the user types into Monaco. SSE-driven
     // updates (AI edits via setHtml/setCss/setJs called from loadWebpage / chat
@@ -631,13 +669,8 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
         dirtyExtrasRef.current.add(path);
         const key = `extra:${path}`;
         setDirtyFiles(prev => prev[key] ? prev : { ...prev, [key]: true });
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        const scheduledId = selected?.id;
-        saveTimerRef.current = setTimeout(() => {
-            if (selected?.id !== scheduledId) return;
-            persist();
-        }, 1500);
-    }, [persist, selected?.id]);
+        scheduleSave();
+    }, [scheduleSave]);
 
     /* ── Manual file / asset management (owner-only; mirrors the AI tools) ── */
 
@@ -652,38 +685,55 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
         if (contentEntry) setExtraContents(prev => ({ ...prev, [meta.path]: contentEntry }));
     }, []);
 
+    // Page-scoped guard: ignore an async result whose webpage is no longer the
+    // one loaded (the user switched away), so a late response can't mutate the
+    // wrong page's state or resurrect a deleted file. Aborted requests are
+    // silent (the switch cancelled them on purpose).
+    const isStillCurrent = useCallback((targetId) => lastLoadedIdRef.current === targetId, []);
+    const reportHandlerError = useCallback((targetId, err) => {
+        if (err?.name === 'AbortError') return;
+        if (isStillCurrent(targetId)) setError(err.message);
+    }, [isStillCurrent]);
+
     const handleCreateFile = useCallback(async (path) => {
         if (!selected?.id || !path) return;
+        const targetId = selected.id;
         try {
-            const r = await api(`/${selected.id}/files`, { method: 'PUT', body: JSON.stringify({ path, content: '' }) });
+            const r = await api(`/${targetId}/files`, { method: 'PUT', body: JSON.stringify({ path, content: '' }), signal: inflightAbortRef.current?.signal });
+            if (!isStillCurrent(targetId)) return;
             mergeExtra(r.file, { mimeType: r.file.mimeType, isText: true, content: '' });
-        } catch (err) { setError(err.message); }
-    }, [selected?.id, mergeExtra]);
+        } catch (err) { reportHandlerError(targetId, err); }
+    }, [selected?.id, mergeExtra, isStillCurrent, reportHandlerError]);
 
     const handleDeleteFile = useCallback(async (path) => {
         if (!selected?.id || !path) return;
+        const targetId = selected.id;
         try {
-            await api(`/${selected.id}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+            await api(`/${targetId}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE', signal: inflightAbortRef.current?.signal });
+            if (!isStillCurrent(targetId)) return;
             setExtraFiles(prev => prev.filter(f => f.path !== path));
             setExtraContents(prev => { const n = { ...prev }; delete n[path]; return n; });
-        } catch (err) { setError(err.message); }
-    }, [selected?.id]);
+        } catch (err) { reportHandlerError(targetId, err); }
+    }, [selected?.id, isStillCurrent, reportHandlerError]);
 
     const handleRenameFile = useCallback(async (oldPath, newPath) => {
         if (!selected?.id || !oldPath || !newPath || oldPath === newPath) return;
+        const targetId = selected.id;
         try {
-            const res = await authFetch(`${API_BASE}/api/webpages/${selected.id}/assets/move`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: oldPath, to: newPath }),
+            const res = await authFetch(`${API_BASE}/api/webpages/${targetId}/assets/move`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: oldPath, to: newPath }), signal: inflightAbortRef.current?.signal,
             });
             if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Rename ${res.status}`); }
             const { file: meta } = await res.json();
+            if (!isStillCurrent(targetId)) return;
             setExtraFiles(prev => prev.filter(f => f.path !== oldPath).concat(meta));
             setExtraContents(prev => { const n = { ...prev }; const c = n[oldPath]; delete n[oldPath]; if (c) n[meta.path] = c; return n; });
-        } catch (err) { setError(err.message); }
-    }, [selected?.id]);
+        } catch (err) { reportHandlerError(targetId, err); }
+    }, [selected?.id, isStillCurrent, reportHandlerError]);
 
     const handleAssetUpload = useCallback(async (file, folder = 'assets') => {
         if (!selected?.id || !file) return;
+        const targetId = selected.id;
         try {
             let blob = file;
             let mimeType = file.type || 'application/octet-stream';
@@ -701,13 +751,14 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
             const form = new FormData();
             form.append('file', blob, path.split('/').pop());
             form.append('path', path);
-            const res = await authFetch(`${API_BASE}/api/webpages/${selected.id}/assets`, { method: 'POST', body: form });
+            const res = await authFetch(`${API_BASE}/api/webpages/${targetId}/assets`, { method: 'POST', body: form, signal: inflightAbortRef.current?.signal });
             if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Upload ${res.status}`); }
             const { file: meta, contentBase64 } = await res.json();
+            if (!isStillCurrent(targetId)) return;
             mergeExtra(meta, { mimeType: meta.mimeType, isText: false, dataUrl: `data:${meta.mimeType};base64,${contentBase64}` });
             return meta.path;
-        } catch (err) { setError(err.message); }
-    }, [selected?.id, extraFiles, mergeExtra]);
+        } catch (err) { reportHandlerError(targetId, err); }
+    }, [selected?.id, extraFiles, mergeExtra, isStillCurrent, reportHandlerError]);
 
     // Cmd/Ctrl+S → flush. Only intercept the browser's native save when the
     // user is actually inside the IDE pane (Monaco editor, chat input, etc.).
@@ -778,12 +829,47 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
         try {
             const data = await api(`/${selected.id}/versions`);
             setVersions(data.versions || []);
+            setVersionsHasMore(!!data.hasMore);
         } catch (err) {
             console.warn('[Webpages] Failed to load versions:', err.message);
         }
     }, [selected]);
 
+    const loadMoreVersions = useCallback(async () => {
+        if (!selected || versionsLoadingMore) return;
+        setVersionsLoadingMore(true);
+        try {
+            const data = await api(`/${selected.id}/versions?offset=${versions.length}`);
+            setVersions(prev => [...prev, ...(data.versions || [])]);
+            setVersionsHasMore(!!data.hasMore);
+        } catch (err) {
+            console.warn('[Webpages] Failed to load more versions:', err.message);
+        } finally {
+            setVersionsLoadingMore(false);
+        }
+    }, [selected, versions.length, versionsLoadingMore]);
+
     useEffect(() => { if (showVersions && selected) fetchVersions(); }, [showVersions, selected, fetchVersions]);
+
+    // Escape closes the overlay; a minimal focus trap keeps Tab cycling within
+    // the dialog instead of leaking focus to the page behind it. Focus lands on
+    // the close button when the dialog opens.
+    useEffect(() => {
+        if (!showVersions) return;
+        versionsCloseBtnRef.current?.focus();
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') { setShowVersions(false); return; }
+            if (e.key !== 'Tab' || !versionsDialogRef.current) return;
+            const focusable = versionsDialogRef.current.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
+            else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [showVersions]);
 
     const handleRestoreVersion = async (vid) => {
         if (!selected) return;
@@ -949,7 +1035,7 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                     <Globe className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--text-tertiary)' }} />
                     <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Webpages disabled</h3>
                     <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        Webpages isn't enabled for your account. Ask an admin to enable the Webpages beta feature for your organization, and verify your plan includes it.
+                        Webpages isn't enabled for your account. Ask an admin to enable Webpages for your organization, and verify your plan includes it.
                     </p>
                 </div>
             </div>
@@ -1009,9 +1095,9 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                 </div>
 
                 {error && (
-                    <div className="shrink-0 px-4 py-2 text-xs flex items-center gap-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#991b1b' }}>
+                    <div className="shrink-0 px-4 py-2 text-xs flex items-center gap-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#991b1b' }} role="alert">
                         <AlertCircle className="w-3.5 h-3.5" /> {error}
-                        <button onClick={() => setError(null)} className="ml-auto"><X className="w-3 h-3" /></button>
+                        <button onClick={() => setError(null)} className="ml-auto" aria-label="Dismiss error"><X className="w-3 h-3" /></button>
                     </div>
                 )}
 
@@ -1041,11 +1127,19 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                                 const thumbnailUrl = w.thumbnailSha
                                     ? `${API_BASE}/api/webpages/${w.id}/thumbnail?v=${w.thumbnailSha}`
                                     : null;
+                                const isOpening = loadingWebpageId === w.id;
                                 return (
                                 <div key={w.id}
-                                     onClick={() => loadWebpage(w.id, { edit: false })}
-                                     className="group rounded-xl border hover:shadow-md cursor-pointer transition-all overflow-hidden"
-                                     style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
+                                     onClick={() => { if (!loadingWebpageId) loadWebpage(w.id, { edit: false }); }}
+                                     aria-busy={isOpening}
+                                     className="group rounded-xl border hover:shadow-md cursor-pointer transition-all overflow-hidden relative"
+                                     style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)', opacity: loadingWebpageId && !isOpening ? 0.6 : 1 }}>
+                                    {isOpening && (
+                                        <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.7)' }} role="status" aria-live="polite">
+                                            <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent-primary)' }} />
+                                            <span className="sr-only">Opening…</span>
+                                        </div>
+                                    )}
                                     {/* Visual: thumbnail when present, otherwise an emoji-on-accent tile. */}
                                     <div className="relative w-full h-32 flex items-center justify-center" style={{ background: thumbnailUrl ? '#fff' : `${accent}1a` }}>
                                         {thumbnailUrl ? (
@@ -1116,7 +1210,7 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                                             )}
                                         </div>
                                         <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                                            <span>{timeAgo(w.updatedAt)}</span>
+                                            <span>{formatRelativeTime(w.updatedAt)}</span>
                                             <span>·</span>
                                             <span>HTML {(w.htmlSize / 1024).toFixed(1)}KB</span>
                                             {w.cssSize > 0 && <><span>·</span><span>CSS {(w.cssSize / 1024).toFixed(1)}KB</span></>}
@@ -1185,6 +1279,17 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                 )}
             </div>
 
+            {/* Errors from file/asset handlers (upload, create, delete, rename)
+                previously had nowhere to render in the editor view — setError
+                fired but no banner ever showed it. Same pattern as the list
+                view's banner below. */}
+            {error && (
+                <div className="shrink-0 px-4 py-2 text-xs flex items-center gap-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#991b1b' }} role="alert">
+                    <AlertCircle className="w-3.5 h-3.5" /> {error}
+                    <button onClick={() => setError(null)} className="ml-auto" aria-label="Dismiss error"><X className="w-3 h-3" /></button>
+                </div>
+            )}
+
             {/* Body: sandboxed preview (view mode) OR full IDE (edit mode). */}
             <div className="flex-1 min-h-0">
                 {viewMode ? (
@@ -1242,6 +1347,7 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                     onTierChange={setSelectedTier}
                     saveState={saveState}
                     lastSavedAt={lastSavedAt}
+                    onRetrySave={persist}
                     onVersionsClick={() => setShowVersions(true)}
                     onDownload={handleDownloadZip}
                     user={user}
@@ -1255,11 +1361,17 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                 <div className="absolute inset-0 z-40 flex items-start justify-center pt-20" style={{ background: 'rgba(0,0,0,0.5)' }}
                      onClick={() => setShowVersions(false)}>
                     <div onClick={(e) => e.stopPropagation()}
+                         ref={versionsDialogRef}
+                         role="dialog"
+                         aria-modal="true"
+                         aria-labelledby="webpage-versions-title"
                          className="rounded-xl border shadow-2xl p-4 w-[480px] max-h-[70vh] overflow-y-auto"
                          style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}>
                         <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Version history</h3>
-                            <button onClick={() => setShowVersions(false)}><X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} /></button>
+                            <h3 id="webpage-versions-title" className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Version history</h3>
+                            <button ref={versionsCloseBtnRef} onClick={() => setShowVersions(false)} aria-label="Close version history">
+                                <X className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />
+                            </button>
                         </div>
                         {versions.length === 0 ? (
                             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>No versions yet. Auto-snapshots are created every 5 minutes when you edit.</p>
@@ -1270,7 +1382,7 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                                         <div className="flex-1 min-w-0">
                                             <div className="text-[12px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{v.summary || 'Snapshot'}</div>
                                             <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                                                {timeAgo(v.createdAt)} · {(v.contentLength / 1024).toFixed(1)}KB
+                                                {formatRelativeTime(v.createdAt)} · {(v.contentLength / 1024).toFixed(1)}KB
                                             </div>
                                         </div>
                                         <button
@@ -1282,6 +1394,16 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                                         </button>
                                     </div>
                                 ))}
+                                {versionsHasMore && (
+                                    <button
+                                        onClick={loadMoreVersions}
+                                        disabled={versionsLoadingMore}
+                                        className="w-full py-1.5 rounded-lg text-[11px] font-medium border disabled:opacity-50"
+                                        style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
+                                    >
+                                        {versionsLoadingMore ? 'Loading…' : 'Load more'}
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1289,32 +1411,6 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
             )}
         </div>
     );
-}
-
-// eslint-disable-next-line no-unused-vars
-function SaveIndicator({ state, lastSavedAt }) {
-    if (state === 'saving') {
-        return (
-            <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                <Loader2 className="w-3 h-3 animate-spin" /> Saving…
-            </span>
-        );
-    }
-    if (state === 'error') {
-        return (
-            <span className="flex items-center gap-1 text-[11px]" style={{ color: '#991b1b' }}>
-                <AlertCircle className="w-3 h-3" /> Save failed
-            </span>
-        );
-    }
-    if (state === 'saved' && lastSavedAt) {
-        return (
-            <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                <Check className="w-3 h-3" /> Saved {timeAgo(lastSavedAt.toISOString())}
-            </span>
-        );
-    }
-    return null;
 }
 
 // Licence-gated wrapper. Community-tier sessions see the upgrade panel

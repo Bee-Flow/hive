@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, LayoutGrid, Scale } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Users, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, LayoutGrid, Scale, AppWindow } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import { useLicenseContext } from './LicenseContext';
+import { useEntitlements } from './EntitlementsContext';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../utils/agentAvatar';
 import NotificationCenter from './NotificationCenter';
@@ -167,9 +168,9 @@ const EditLabelInline = ({ label, onSave, onCancel, t }) => {
 const ConvRow = ({
     conv, t, active,
     selectConv, deleteConv,
-    conversationLabels, projects,
+    conversationLabels, projects, activeProjectId,
     onRenameConversation, onPinConversation, onLabelConversation,
-    onDeleteLabel, onEditLabel, onCreateLabel, onMoveToProject,
+    onDeleteLabel, onEditLabel, onCreateLabel, onMoveToProject, onShareToProject,
     agentBadge,
 }) => {
     const [showMenu, setShowMenu] = useState(false);
@@ -266,6 +267,26 @@ const ConvRow = ({
             <span className={`text-[14px] truncate flex-1 leading-snug min-w-0 ${active ? TEXT_ACTIVE : TEXT_IDLE}`}>
                 {conv.title || t('sidebar.untitled_chat')}
             </span>
+            {/* Which project this chat is filed under. Project chats are no
+                longer hidden from the general lists, so the chip is what keeps
+                the filing visible — otherwise they would look identical to
+                unfiled ones. Suppressed while inside that project, where every
+                row would carry the same chip. */}
+            {(() => {
+                if (!conv.project_id || activeProjectId === conv.project_id) return null;
+                const p = projects?.find(pr => pr.id === conv.project_id);
+                if (!p) return null;
+                return (
+                    <span
+                        className="flex-shrink-0 text-[10px] px-1 py-px rounded flex items-center gap-0.5 max-w-[80px]"
+                        style={{ background: (p.color || '#6366f1') + '20', color: p.color || '#6366f1' }}
+                        title={`In project: ${p.name}`}
+                    >
+                        <span>{p.icon || '📁'}</span>
+                        <span className="truncate">{p.name}</span>
+                    </span>
+                );
+            })()}
             {/* Three-dot menu */}
             <div className="relative" ref={menuRef}>
                 <button
@@ -370,6 +391,28 @@ const ConvRow = ({
                                     ))}
                                 </>
                             )}
+                            {/* Share into the project this chat is filed under.
+                                Separate from "move to project" on purpose:
+                                filing is private bookkeeping, sharing publishes
+                                the conversation to every member and re-encrypts
+                                it. Conflating the two would share people's chats
+                                without them asking. Only offered once the chat
+                                is already in a project, so the target is
+                                unambiguous. */}
+                            {conv.project_id && onShareToProject && (
+                                <>
+                                    <div className="mx-1 my-1 border-t border-[var(--border-subtle)]" />
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onShareToProject(conv); setShowMenu(false); }}
+                                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-secondary)]"
+                                    >
+                                        <Users className="w-3.5 h-3.5" />
+                                        {conv.shared_scope === 'project'
+                                            ? t('projects.unshare_thread')
+                                            : t('projects.share_thread')}
+                                    </button>
+                                </>
+                            )}
                             {/* Delete */}
                             <div className="mx-1 my-1 border-t border-[var(--border-subtle)]" />
                             <button
@@ -407,7 +450,9 @@ const Sidebar = ({
     onSelectProject,
     onCreateProject,
     onEditProject,
+    onBrowseProjects,
     onMoveToProject,
+    onShareToProject,
     onRenameConversation,
     onPinConversation,
     onLabelConversation,
@@ -436,6 +481,11 @@ const Sidebar = ({
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const themeCtx = useTheme();
     const { hasFeature: hasLicenseFeature, deploymentMode } = useLicenseContext();
+    // App Studio consumers/builders get an "Apps" nav entry (the published-apps
+    // directory at /app/apps). Gated on the app_studio capability — apps are
+    // only shareable inside the licensed org, so anyone who can be an audience
+    // holds the capability (see the Wave-8 viewer-entitlement decision).
+    const { can: canUseCapability } = useEntitlements();
     // White-label override: in self-hosted deploys swap the Bee Flow logo for
     // the org's uploaded logo (and show a "Powered by Bee Flow" footer below).
     // Cloud is unchanged. Falls back to the Bee Flow logo if no org logo set.
@@ -533,25 +583,29 @@ const Sidebar = ({
     const typeOf = () => 'Chat';
 
     const allConvs = (() => {
+        // Inside a project: only that project's chats. That IS the point of
+        // selecting one.
+        //
+        // Outside a project, project chats used to be HIDDEN entirely. Combined
+        // with Projects having no URL, a chat filed into a project became very
+        // easy to lose: it was absent from every list the user could reach
+        // without first remembering which project they had put it in. They are
+        // shown now, and ConvRow renders a project chip so the filing is still
+        // visible.
+        const withinProject = (convs) => (activeProject
+            ? convs.filter(c => c.project_id === activeProject.id)
+            : convs);
+
         // "All Chats" mode — unified timeline from all agents + direct
         if (chatHistoryMode === 'all-chats') {
-            let convs = allAgentConversations;
-            if (activeProject) {
-                return convs.filter(c => c.project_id === activeProject.id);
-            }
-            return convs.filter(c => !c.project_id);
+            return withinProject(allAgentConversations);
         }
         // Default: per-agent mode
         let convs;
         if (directChatMode) convs = directConversations;
         else if (!groupedConversations) convs = [];
         else convs = groupedConversations.flatMap(([, c]) => c);
-        // Filter by active project
-        if (activeProject) {
-            return convs.filter(c => c.project_id === activeProject.id);
-        }
-        // In "All Chats" view, hide conversations assigned to a project
-        return convs.filter(c => !c.project_id);
+        return withinProject(convs);
     })();
 
     /* ── Time-grouped conversations (with pinned section) ── */
@@ -640,14 +694,20 @@ const Sidebar = ({
         || showSkillsPanel || showTicketAssistant
         || ['studio', 'notebooks', 'legal', 'admin'].includes(currentPage);
     const coreNav = [
-        { key: 'new-chat', label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent && !_otherViewActive },
+        { key: 'new-chat', label: t('sidebar.new_chat', 'New Chat'), icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent && !_otherViewActive },
         { key: 'search', label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false },
     ];
 
     const secondaryNav = [
-        { key: 'agents', label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: showMarketplace },
+        { key: 'agents', label: t('sidebar.agents', 'Agents'), icon: Store, onClick: onOpenMarketplace, active: showMarketplace },
         ...(!_simpleMode && !isMobile && (_isAdminLike || _permissions.includes('manage_agents') || _permissions.includes('manage_skills') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin')
-            ? [{ key: 'studio', label: t('studio.sidebar_link') || 'Studio', icon: LayoutGrid, onClick: () => onNavigate && onNavigate('studio'), active: currentPage === 'studio' }]
+            ? [{ key: 'studio', label: t('studio.sidebar_link', 'Studio'), icon: LayoutGrid, onClick: () => onNavigate && onNavigate('studio'), active: currentPage === 'studio' }]
+            : []),
+        // Apps — the published-apps directory. Shown to anyone with the
+        // app_studio capability (builders and org members who can be an
+        // audience). Reachable on phones too (the directory stacks).
+        ...(canUseCapability('app_studio')
+            ? [{ key: 'apps', label: t('sidebar.apps', 'Apps'), icon: AppWindow, onClick: () => onNavigate && onNavigate('apps'), active: currentPage === 'apps' }]
             : []),
         // hasLicenseFeature short-circuits each entry on community-tier
         // installs — the licence gate is the source of truth; the beta
@@ -655,15 +715,15 @@ const Sidebar = ({
         // Meeting Notes lives inside Studio (Mic tab) and is reached there;
         // no top-level sidebar entry.
         ...(!_simpleMode && !isMobile && hasLicenseFeature('ticket_assistant') && (_betaFeatures.includes('itil_ticket_assistant') || _betaFeatures.includes('email_knowledge_base'))
-            ? [{ key: 'ticket-assistant', label: t('ticket_assistant.sidebar_label') || 'Ticket Assistant', icon: Ticket, onClick: () => onNavigate && onNavigate('ticketAssistant'), active: showTicketAssistant, beta: true }]
+            ? [{ key: 'ticket-assistant', label: t('ticket_assistant.sidebar_label', 'Ticket Assistant'), icon: Ticket, onClick: () => onNavigate && onNavigate('ticketAssistant'), active: showTicketAssistant, beta: true }]
             : []),
         ...(!_simpleMode && !isMobile && hasLicenseFeature('notebooks') && _featureFlags.notebooks !== false && _featureFlags.notebooksMenu !== false && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
-            ? [{ key: 'notebooks', label: t('sidebar.notebooks') || 'Notebooks', icon: FileText, onClick: () => onNavigate && onNavigate('notebooks'), active: currentPage === 'notebooks' }]
+            ? [{ key: 'notebooks', label: t('sidebar.notebooks', 'Notebooks'), icon: FileText, onClick: () => onNavigate && onNavigate('notebooks'), active: currentPage === 'notebooks' }]
             : []),
         // Legal Studio — gated by the dutch_legal_sources beta + use_notebooks
         // (a matter is a notebook of type 'legal_matter').
         ...(!_simpleMode && !isMobile && hasLicenseFeature('notebooks') && _betaFeatures.includes('dutch_legal_sources') && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
-            ? [{ key: 'legal', label: t('sidebar.legal') || 'Juridisch', icon: Scale, onClick: () => onNavigate && onNavigate('legal'), active: currentPage === 'legal', beta: true }]
+            ? [{ key: 'legal', label: t('sidebar.legal', 'Juridisch'), icon: Scale, onClick: () => onNavigate && onNavigate('legal'), active: currentPage === 'legal', beta: true }]
             : []),
     ];
 
@@ -730,7 +790,7 @@ const Sidebar = ({
                         <button
                             onClick={onDirectChat}
                             className="flex items-center gap-2.5 rounded-xl transition-transform hover:scale-105"
-                            aria-label={t('sidebar.new_chat') || 'New Chat'}
+                            aria-label={t('sidebar.new_chat', 'New Chat')}
                         >
                             {useOrgBrand
                                 ? <div className="w-[4.5rem] h-[4.5rem] rounded-xl overflow-hidden flex items-center justify-center bg-[var(--bg-primary)]">
@@ -879,6 +939,18 @@ const Sidebar = ({
                                     </button>
                                 );
                             })}
+
+                            {/* The project LIST had no entry point at all: it only
+                                rendered once the detail view was closed, and
+                                nothing opened it directly. Members, activity and
+                                shared threads all live behind it. */}
+                            <button
+                                onClick={() => onBrowseProjects?.()}
+                                className={`${ROW} ${ROW_IDLE} text-[var(--text-tertiary)]`}
+                            >
+                                <FolderOpen className="w-4 h-4" />
+                                <span className="text-[13px]">{t('sidebar.all_projects')}</span>
+                            </button>
                         </div>
                     )}
                     <div className="mx-3 my-0.5 border-t border-[var(--border-subtle)]" />
@@ -973,7 +1045,7 @@ const Sidebar = ({
                                     {group.label}
                                 </h3>
                                 <div className="space-y-px">
-                                    {group.items.map(c => <ConvRow key={c.id} conv={c} t={t} active={convIsActive(c)} selectConv={selectConv} deleteConv={deleteConv} conversationLabels={conversationLabels} projects={projects} onRenameConversation={onRenameConversation} onPinConversation={onPinConversation} onLabelConversation={onLabelConversation} onDeleteLabel={onDeleteLabel} onEditLabel={onEditLabel} onCreateLabel={onCreateLabel} onMoveToProject={onMoveToProject} agentBadge={isAllChats ? (c._source === 'direct' ? { icon: '💬', name: 'Direct Chat' } : (() => { const a = agents.find(x => x.id === c.agent_id); if (!a) return { icon: DEFAULT_AGENT_EMOJI, name: c.agent_name || 'Agent' }; return isImageAvatar(a.avatar) ? { avatarUrl: resolveAvatarSrc(a.avatar), name: a.name } : { icon: a.avatar || DEFAULT_AGENT_EMOJI, name: a.name }; })()) : null} />)}
+                                    {group.items.map(c => <ConvRow key={c.id} conv={c} t={t} active={convIsActive(c)} selectConv={selectConv} deleteConv={deleteConv} conversationLabels={conversationLabels} projects={projects} activeProjectId={activeProject?.id} onRenameConversation={onRenameConversation} onPinConversation={onPinConversation} onLabelConversation={onLabelConversation} onDeleteLabel={onDeleteLabel} onEditLabel={onEditLabel} onCreateLabel={onCreateLabel} onMoveToProject={onMoveToProject} onShareToProject={onShareToProject} agentBadge={isAllChats ? (c._source === 'direct' ? { icon: '💬', name: 'Direct Chat' } : (() => { const a = agents.find(x => x.id === c.agent_id); if (!a) return { icon: DEFAULT_AGENT_EMOJI, name: c.agent_name || 'Agent' }; return isImageAvatar(a.avatar) ? { avatarUrl: resolveAvatarSrc(a.avatar), name: a.name } : { icon: a.avatar || DEFAULT_AGENT_EMOJI, name: a.name }; })()) : null} />)}
                                 </div>
                             </div>
                         ))

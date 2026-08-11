@@ -16,10 +16,17 @@ export default function useTranscription(id) {
     }, []);
 
     useEffect(() => {
-        if (!id) { setData(null); return; }
+        // Clear the PREVIOUS note before fetching the new one. This only reset
+        // `data` when `id` went falsy, so selecting a note that then failed to
+        // load left the old note on screen while the library highlighted the
+        // new one — and every action in the detail view (rename, delete,
+        // action items) targeted the note still in `data`. A user who trusted
+        // the highlight and pressed Delete destroyed a different meeting.
+        setData(null);
+        setError(null);
+        if (!id) { setLoading(false); return; }
         let cancelled = false;
         setLoading(true);
-        setError(null);
         api.getTranscription(id)
             .then((res) => { if (!cancelled && mounted.current) setData(res); })
             .catch((err) => { if (!cancelled && mounted.current) setError(err); })
@@ -36,6 +43,14 @@ export default function useTranscription(id) {
             if (mounted.current) setError(err);
         }
     }, [id]);
+
+    // While this note is still transcribing (async pipeline), poll so the detail
+    // view fills in transcript/speakers/summary the moment processing finishes.
+    useEffect(() => {
+        if (data?.status !== 'processing') return;
+        const interval = setInterval(() => { refresh(); }, 4000);
+        return () => clearInterval(interval);
+    }, [data?.status, refresh]);
 
     const setLocal = useCallback((updater) => {
         setData((prev) => (typeof updater === 'function' ? updater(prev) : updater));
