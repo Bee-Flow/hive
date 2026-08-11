@@ -1,8 +1,15 @@
-import { Plus, Trash2, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Sparkles, Workflow } from 'lucide-react';
 import React, { useMemo, useRef, useState } from 'react';
 import BindingField from './BindingField';
+import { onBindingDragOver, getBindingDropPath } from './bindingDnd';
 import { partitionInputs, isEmptyBinding } from './partitionInputs';
+import useVariablePicker from './useVariablePicker';
+import ValueBuilder from './ValueBuilder';
+import VariablePicker from './VariablePicker';
+import { useVariablePickerContext } from './VariablePickerContext';
 import CollapsibleSection from '../flow/CollapsibleSection';
+import { suggestKeyFromPath } from '../../../../../utils/bindingHelpers';
+import { cardClass, rowInputClass, subLabelClass, FOCUS_RING } from '../flow/settings/formStyles';
 
 /**
  * Schema-driven inputs editor for a step's `inputs` map.
@@ -37,6 +44,17 @@ export default function ToolInputForm({
     // remove the field. Tool-param editors leave this off so clearing a value
     // omits the param.
     keepEmptyFields = false,
+    // Generic rows only. `visualValues` swaps the raw BindingField for the
+    // point-and-click ValueBuilder (Edit data), and the two labels name the
+    // slots — an unlabelled "field" box next to an unlabelled value box told
+    // the user nothing about what either one does.
+    visualValues = false,
+    nameLabel = null,
+    valueLabel = null,
+    namePlaceholder = 'field name',
+    valuePlaceholder = 'value',
+    // Offer the "write it as a formula" escape up front (full density only).
+    allowRawValues = true,
 }) {
     const properties = inputSchema?.properties || null;
     const required = useMemo(() => new Set(inputSchema?.required || []), [inputSchema]);
@@ -53,6 +71,7 @@ export default function ToolInputForm({
     // local until it's non-empty fixes that. (Set / layer_output use
     // keepEmptyFields and persist empty named fields, so they add directly.)
     const [pending, setPending] = useState([]); // [{ id, key, binding }]
+    const [focusKey, setFocusKey] = useState(null); // name input to select on mount
     const pidRef = useRef(0);
     const uniqueKey = (base = 'field') => {
         const taken = new Set([...Object.keys(inputs || {}), ...pending.map(p => p.key)]);
@@ -125,7 +144,12 @@ export default function ToolInputForm({
         if (keepEmptyFields) {
             // Set / layer_output: empty NAMED fields are valid and persist.
             const next = { ...(inputs || {}) };
-            next[uniqueKey()] = { kind: 'literal', value: '' };
+            const key = uniqueKey();
+            next[key] = { kind: 'literal', value: '' };
+            // Focus + select the generated name so the first thing the user
+            // types replaces it. Without this the row reads as a box labelled
+            // "field" whose meaning nobody explained.
+            setFocusKey(key);
             onChange?.(next);
             return;
         }
@@ -134,12 +158,41 @@ export default function ToolInputForm({
         setPending(p => [...p, { id: ++pidRef.current, key: uniqueKey(), binding: { kind: 'literal', value: '' } }]);
     };
 
+    // "Add field from a previous step" (Set / layer_output only): pick an
+    // upstream value and land a named ref field in one click — name suggested
+    // from the path's last segment, value already bound.
+    const upstreamPicker = useVariablePicker();
+    const upstreamCtx = useVariablePickerContext();
+    const addFieldFromUpstream = (path) => {
+        const key = uniqueKey(suggestKeyFromPath(path));
+        onChange?.({ ...(inputs || {}), [key]: { kind: 'ref', path: String(path || '').trim() } });
+        upstreamPicker.closePicker();
+    };
+    const AddFromStepButton = keepEmptyFields ? (
+        <>
+            <button
+                type="button"
+                onClick={(e) => upstreamPicker.openPicker(e.currentTarget)}
+                className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            >
+                <Workflow size={12} /> Add field from a previous step
+            </button>
+            <VariablePicker
+                {...upstreamPicker.pickerProps}
+                groups={upstreamCtx.groups}
+                previewSample={previewSample ?? upstreamCtx.previewSample}
+                onPick={addFieldFromUpstream}
+                title="Add field from a previous step"
+            />
+        </>
+    ) : null;
+
     const WandButton = onAutoMap ? (
         <button
             type="button"
             onClick={onAutoMap}
             title="Auto-map empty inputs from upstream steps"
-            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition"
+            className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition ${FOCUS_RING}`}
         >
             <Sparkles size={12} /> Auto-map
         </button>
@@ -173,6 +226,7 @@ export default function ToolInputForm({
                 {essentialKeys.map(renderField)}
                 {advancedKeys.length > 0 && (
                     <CollapsibleSection
+                        variant="disclosure"
                         count={advancedKeys.length}
                         badge={advAutoCount > 0 ? `${advAutoCount} auto` : null}
                     >
@@ -181,7 +235,7 @@ export default function ToolInputForm({
                 )}
                 {(extras.length > 0 || pending.length > 0) && (
                     <div className="pt-2 border-t border-[var(--border-default)] space-y-2">
-                        <div className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">
+                        <div className={subLabelClass()}>
                             Extra inputs (not in tool schema)
                         </div>
                         {extras.map(k => (
@@ -226,9 +280,31 @@ export default function ToolInputForm({
                 <GenericRow
                     key={k}
                     fieldKey={k}
+                    siblingKeys={entries.map(([ek]) => ek).filter(ek => ek !== k)}
                     value={v}
+                    visual={visualValues}
+                    nameLabel={nameLabel}
+                    valueLabel={valueLabel}
+                    namePlaceholder={namePlaceholder}
+                    valuePlaceholder={valuePlaceholder}
+                    allowRaw={allowRawValues}
+                    autoFocusName={k === focusKey}
                     onChange={(b) => updateField(k, b)}
                     onRename={(n) => renameField(k, n)}
+                    // A path dropped/typed into the NAME slot means "bind this
+                    // value": name = last segment, value = ref to the path
+                    // (only when the row's value is still empty — never
+                    // clobber a configured binding).
+                    onAdoptPath={(path, suggested) => {
+                        const nextKey = suggested && !Object.prototype.hasOwnProperty.call(inputs || {}, suggested) ? suggested : `${suggested || 'field'}_2`;
+                        const cur = (inputs || {})[k];
+                        const next = {};
+                        for (const [ek, ev] of Object.entries(inputs || {})) {
+                            if (ek === k) next[nextKey] = isEmptyBinding(cur) ? { kind: 'ref', path } : ev;
+                            else next[ek] = ev;
+                        }
+                        onChange?.(next);
+                    }}
                     onRemove={() => removeField(k)}
                     onFocusField={onFocusField}
                     previewSample={previewSample}
@@ -237,49 +313,160 @@ export default function ToolInputForm({
             ))}
             {renderPendingRows()}
             {allowExtraFields && (
-                <button
-                    type="button"
-                    onClick={addField}
-                    className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                >
-                    <Plus size={12} /> Add field
-                </button>
+                <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                        type="button"
+                        onClick={addField}
+                        className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    >
+                        <Plus size={12} /> Add field
+                    </button>
+                    {AddFromStepButton}
+                </div>
             )}
         </div>
     );
 }
 
-function GenericRow({ fieldKey, value, onChange, onRename, onRemove, onFocusField, previewSample, autoMapped = false }) {
+/**
+ * Names JavaScript must never see as assigned object keys: `__proto__`
+ * assignment doesn't create an own property, so the field silently vanishes
+ * from the step output while everything validates green. Mirrors the server's
+ * parse_json name guard.
+ */
+const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** Does this look like a binding path rather than a field name? */
+const looksLikePath = (s) => /[.\s[\]]/.test(s);
+
+/**
+ * Field-NAME input that commits on blur/Enter instead of per keystroke
+ * (node-audit B12 + user report).
+ *
+ * The old live-controlled input had three failure modes:
+ *   - every keystroke renamed the map key → the row remounted and focus was
+ *     lost after each character;
+ *   - a native TEXT DROP from the variable tree landed the FULL PATH as the
+ *     field name (`steps.act_x.output.results[*].subject`) — dots make the
+ *     output key unbindable downstream;
+ *   - `__proto__` as a name made the field silently vanish at run time.
+ *
+ * Dropping/typing a path now does what the user meant: the name becomes the
+ * path's last segment (suggestKeyFromPath) and — for a drop on an empty row —
+ * the VALUE gets bound to that path.
+ */
+function FieldNameInput({ fieldKey, siblingKeys = [], onCommit, onAdoptPath = null, placeholder = 'field name', autoFocus = false }) {
+    const [text, setText] = useState(fieldKey);
+    const [error, setError] = useState(null);
+    const ref = useRef(null);
+    React.useEffect(() => { setText(fieldKey); setError(null); }, [fieldKey]);
+    // A freshly added row lands with a generated name ("field"): select it so
+    // the first keystroke replaces it instead of appending to it.
+    React.useEffect(() => { if (autoFocus) ref.current?.select(); }, [autoFocus]);
+
+    const commit = (raw) => {
+        let cleaned = String(raw ?? text ?? '').trim();
+        if (cleaned === fieldKey) { setText(fieldKey); setError(null); return; }
+        if (!cleaned) { setText(fieldKey); setError('Name required — reverted.'); return; }
+        if (looksLikePath(cleaned)) {
+            // A pasted/typed path: keep the meaningful tail as the name.
+            const suggested = suggestKeyFromPath(cleaned);
+            if (onAdoptPath && /^(trigger|steps|vars|secrets|loop)[.[]/.test(cleaned)) {
+                onAdoptPath(cleaned, suggested);
+                setError(null);
+                return;
+            }
+            cleaned = suggested;
+        }
+        if (RESERVED_FIELD_NAMES.has(cleaned)) { setError(`“${cleaned}” is a reserved name.`); return; }
+        if (siblingKeys.includes(cleaned)) { setError(`A field named “${cleaned}” already exists.`); return; }
+        setError(null);
+        if (cleaned !== fieldKey) onCommit(cleaned);
+        setText(cleaned);
+    };
+
     return (
-        <div className="rounded border border-[var(--border-default)] bg-[var(--bg-primary)] p-2 space-y-1.5">
-            <div className="flex items-center gap-1">
-                <input
-                    type="text"
-                    value={fieldKey}
-                    onChange={(e) => onRename(e.target.value)}
-                    placeholder="field name"
-                    className="flex-1 min-w-0 px-2 py-1 text-xs font-mono rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-                />
-                {autoMapped && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--accent)]/15 text-[var(--accent)] uppercase tracking-wide" title="Auto-mapped">auto</span>
-                )}
-                <button
-                    type="button"
-                    onClick={onRemove}
-                    title="Remove field"
-                    aria-label="Remove field"
-                    className="shrink-0 p-1 rounded text-[var(--text-tertiary)] hover:text-red-500 hover:bg-[var(--bg-secondary)]"
-                >
-                    <Trash2 size={12} />
-                </button>
-            </div>
-            <BindingField
-                value={value}
-                onChange={onChange}
-                placeholder="value"
-                onFocusField={onFocusField}
-                previewSample={previewSample}
+        <div className="flex-1 min-w-0">
+            <input
+                ref={ref}
+                type="text"
+                value={text}
+                onChange={(e) => { setText(e.target.value); if (error) setError(null); }}
+                onBlur={() => commit()}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+                onDragOver={onBindingDragOver}
+                onDrop={(e) => {
+                    const path = getBindingDropPath(e);
+                    if (path) commit(path);
+                }}
+                placeholder={placeholder}
+                aria-invalid={!!error}
+                className={rowInputClass('w-full font-mono', { invalid: !!error })}
             />
+            {error && <div className="mt-0.5 text-[10px] text-red-500">{error}</div>}
+        </div>
+    );
+}
+
+function GenericRow({
+    fieldKey, siblingKeys = [], value, onChange, onRename, onAdoptPath = null, onRemove,
+    onFocusField, previewSample, autoMapped = false,
+    visual = false, nameLabel = null, valueLabel = null,
+    namePlaceholder = 'field name', valuePlaceholder = 'value',
+    allowRaw = true, autoFocusName = false,
+}) {
+    const slotLabel = (text) => (
+        <div className={`${subLabelClass()} mb-0.5`}>{text}</div>
+    );
+    return (
+        <div className={cardClass()}>
+            <div>
+                {nameLabel && slotLabel(nameLabel)}
+                <div className="flex items-center gap-1">
+                    <FieldNameInput
+                        fieldKey={fieldKey}
+                        siblingKeys={siblingKeys}
+                        onCommit={onRename}
+                        onAdoptPath={onAdoptPath}
+                        placeholder={namePlaceholder}
+                        autoFocus={autoFocusName}
+                    />
+                    {autoMapped && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--accent)]/15 text-[var(--accent)] uppercase tracking-wide" title="Auto-mapped">auto</span>
+                    )}
+                    <button
+                        type="button"
+                        onClick={onRemove}
+                        title="Remove field"
+                        aria-label="Remove field"
+                        className="shrink-0 p-1 rounded text-[var(--text-tertiary)] hover:text-red-500 hover:bg-[var(--bg-secondary)]"
+                    >
+                        <Trash2 size={12} />
+                    </button>
+                </div>
+            </div>
+            <div>
+                {valueLabel && slotLabel(valueLabel)}
+                {visual ? (
+                    <ValueBuilder
+                        value={value}
+                        onChange={onChange}
+                        placeholder={valuePlaceholder}
+                        onFocusField={onFocusField}
+                        previewSample={previewSample}
+                        allowRaw={allowRaw}
+                        label={fieldKey}
+                    />
+                ) : (
+                    <BindingField
+                        value={value}
+                        onChange={onChange}
+                        placeholder={valuePlaceholder}
+                        onFocusField={onFocusField}
+                        previewSample={previewSample}
+                    />
+                )}
+            </div>
         </div>
     );
 }

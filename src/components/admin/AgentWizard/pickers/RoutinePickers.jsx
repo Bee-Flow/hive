@@ -68,9 +68,9 @@ export function RoutinesPicker({ t, agent, routines, onClose, onCreate, onEdit, 
         >
             <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-[var(--text-primary)]">{t('routines.title') || 'Routines'}</span>
+                    <span className="text-sm font-medium text-[var(--text-primary)]">{t('routines.title', 'Routines')}</span>
                     <span className="text-[10px] uppercase tracking-wide font-medium px-1.5 py-0.5 rounded-full bg-[var(--accent)]/15 text-[var(--accent)]">
-                        {t('routines.beta_badge') || 'Beta'}
+                        {t('routines.beta_badge', 'Beta')}
                     </span>
                 </div>
                 <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
@@ -81,11 +81,11 @@ export function RoutinesPicker({ t, agent, routines, onClose, onCreate, onEdit, 
                     onClick={onCreate}
                     className="w-full mb-2 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card,#fff)] text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] text-sm font-medium transition"
                 >
-                    <Plus size={14} /> {t('routines.new') || 'New routine'}
+                    <Plus size={14} /> {t('routines.new', 'New routine')}
                 </button>
                 {routines.length === 0 ? (
                     <div className="text-xs text-[var(--text-tertiary)] py-6 text-center">
-                        {t('routines.no_routines_for_agent') || 'No routines yet for this agent.'}
+                        {t('routines.no_routines_for_agent', 'No routines yet for this agent.')}
                     </div>
                 ) : (
                     <div className="divide-y divide-[var(--border-default)]">
@@ -95,21 +95,21 @@ export function RoutinesPicker({ t, agent, routines, onClose, onCreate, onEdit, 
                                     <div className="text-sm text-[var(--text-primary)] truncate">{r.title}</div>
                                     <div className="text-[11px] text-[var(--text-tertiary)] truncate">
                                         {r.isActive
-                                            ? `${t('routines.scheduled_for') || 'Scheduled for'}: ${formatRoutineNextRun(r.nextRunAt, t)}`
-                                            : (t('routines.paused') || 'Paused')}
+                                            ? `${t('routines.scheduled_for', 'Scheduled for')}: ${formatRoutineNextRun(r.nextRunAt, t)}`
+                                            : (t('routines.paused', 'Paused'))}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-0.5 flex-shrink-0">
-                                    <button onClick={() => onRunNow(r)} title={t('routines.run_now') || 'Run now'} className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition">
+                                    <button onClick={() => onRunNow(r)} title={t('routines.run_now', 'Run now')} className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition">
                                         <Play size={13} />
                                     </button>
-                                    <button onClick={() => onToggle(r)} title={r.isActive ? (t('routines.pause') || 'Pause') : (t('routines.resume') || 'Resume')} className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition">
+                                    <button onClick={() => onToggle(r)} title={r.isActive ? (t('routines.pause', 'Pause')) : (t('routines.resume', 'Resume'))} className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition">
                                         {r.isActive ? <Pause size={13} /> : <Play size={13} />}
                                     </button>
-                                    <button onClick={() => onEdit(r)} title={t('routines.edit') || 'Edit'} className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition">
+                                    <button onClick={() => onEdit(r)} title={t('routines.edit', 'Edit')} className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition">
                                         <Sliders size={13} />
                                     </button>
-                                    <button onClick={() => onDelete(r)} title={t('routines.delete') || 'Delete'} className="p-1.5 rounded hover:bg-red-500/10 text-[var(--text-tertiary)] hover:text-red-500 transition">
+                                    <button onClick={() => onDelete(r)} title={t('routines.delete', 'Delete')} className="p-1.5 rounded hover:bg-red-500/10 text-[var(--text-tertiary)] hover:text-red-500 transition">
                                         <Trash2 size={13} />
                                     </button>
                                 </div>
@@ -182,8 +182,8 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
 
     const submit = async () => {
         setError(null);
-        if (!title.trim()) { setError(t('routines.error_title_required') || 'Title is required'); return; }
-        if (!prompt.trim()) { setError(t('routines.error_prompt_required') || 'Prompt is required'); return; }
+        if (!title.trim()) { setError(t('routines.error_title_required', 'Title is required')); return; }
+        if (!prompt.trim()) { setError(t('routines.error_prompt_required', 'Prompt is required')); return; }
         setBusy(true);
         try {
             const body = {
@@ -221,7 +221,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
             >
                 <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-default)]">
                     <span className="text-base font-semibold text-[var(--text-primary)]">
-                        {isEdit ? (t('routines.edit') || 'Edit routine') : (t('routines.new') || 'New routine')}
+                        {isEdit ? (t('routines.edit', 'Edit routine')) : (t('routines.new', 'New routine'))}
                     </span>
                     <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={18} /></button>
                 </div>
@@ -229,19 +229,19 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                     {/* Repeat cadence picker — drives which body fields show. */}
                     <div>
                         <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
-                            {t('routines.repeat') || 'Repeat'}
+                            {t('routines.repeat', 'Repeat')}
                         </div>
                         <select
                             value={mode}
                             onChange={(e) => setMode(e.target.value)}
                             className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] cursor-pointer"
                         >
-                            <option value="hourly">{t('routines.cadence_hourly') || 'Hourly'}</option>
-                            <option value="daily">{t('routines.cadence_daily') || 'Daily'}</option>
-                            <option value="weekdays">{t('routines.cadence_weekdays') || 'Weekdays (Mon–Fri)'}</option>
-                            <option value="weekly">{t('routines.cadence_weekly') || 'Weekly'}</option>
-                            <option value="biweekly">{t('routines.cadence_biweekly') || 'Every 2 weeks'}</option>
-                            <option value="monthly">{t('routines.cadence_monthly') || 'Monthly'}</option>
+                            <option value="hourly">{t('routines.cadence_hourly', 'Hourly')}</option>
+                            <option value="daily">{t('routines.cadence_daily', 'Daily')}</option>
+                            <option value="weekdays">{t('routines.cadence_weekdays', 'Weekdays (Mon–Fri)')}</option>
+                            <option value="weekly">{t('routines.cadence_weekly', 'Weekly')}</option>
+                            <option value="biweekly">{t('routines.cadence_biweekly', 'Every 2 weeks')}</option>
+                            <option value="monthly">{t('routines.cadence_monthly', 'Monthly')}</option>
                         </select>
                     </div>
 
@@ -249,7 +249,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                     {mode === 'hourly' && (
                         <div>
                             <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
-                                {t('routines.run_every') || 'Run every'}
+                                {t('routines.run_every', 'Run every')}
                             </div>
                             <select
                                 value={hours}
@@ -257,7 +257,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                                 className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] cursor-pointer"
                             >
                                 {[1, 2, 3, 4, 6, 8, 12, 24].map(n => (
-                                    <option key={n} value={n}>{n === 1 ? (t('routines.hour_one') || '1 hour') : `${n} hours`}</option>
+                                    <option key={n} value={n}>{n === 1 ? (t('routines.hour_one', '1 hour')) : `${n} hours`}</option>
                                 ))}
                             </select>
                         </div>
@@ -268,7 +268,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                     {usesDayPicker && mode !== 'weekdays' && (
                         <div>
                             <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
-                                {mode === 'daily' ? (t('routines.run_every') || 'Run every') : (t('routines.day_of_week') || 'Day of week')}
+                                {mode === 'daily' ? (t('routines.run_every', 'Run every')) : (t('routines.day_of_week', 'Day of week'))}
                             </div>
                             <div className="flex gap-1">
                                 {ROUTINE_DOW_TOKENS.map(d => {
@@ -294,7 +294,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                     {usesDayOfMonth && (
                         <div>
                             <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
-                                {t('routines.day_of_month') || 'Day of month'}
+                                {t('routines.day_of_month', 'Day of month')}
                             </div>
                             <select
                                 value={dayOfMonth}
@@ -302,7 +302,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                                 className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] cursor-pointer"
                             >
                                 {Array.from({ length: 28 }, (_, i) => i + 1).map(n => (
-                                    <option key={n} value={n}>{(t('routines.day_n') || 'Day {n}').replace('{n}', n)}</option>
+                                    <option key={n} value={n}>{(t('routines.day_n', 'Day {n}')).replace('{n}', n)}</option>
                                 ))}
                             </select>
                         </div>
@@ -313,7 +313,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
-                                    {t('routines.time') || 'Time'}
+                                    {t('routines.time', 'Time')}
                                 </div>
                                 <input
                                     type="time"
@@ -324,7 +324,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                             </div>
                             <div>
                                 <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
-                                    {t('routines.timezone') || 'Timezone'}
+                                    {t('routines.timezone', 'Timezone')}
                                 </div>
                                 <select
                                     value={timezone}
@@ -341,24 +341,24 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
 
                     <div>
                         <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
-                            {t('routines.task_name') || 'Routine name'}
+                            {t('routines.task_name', 'Routine name')}
                         </div>
                         <input
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
-                            placeholder={t('routines.title_placeholder') || 'e.g. Daily standup brief'}
+                            placeholder={t('routines.title_placeholder', 'e.g. Daily standup brief')}
                             className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                         />
                     </div>
                     <div>
                         <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
-                            {t('routines.additional_instructions_optional') || 'Additional instructions (optional)'}
+                            {t('routines.additional_instructions_optional', 'Additional instructions (optional)')}
                         </div>
                         <textarea
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
                             rows={4}
-                            placeholder={(t('routines.placeholder_what_should_agent_do') || 'What should {agent} do?').replace('{agent}', agent?.name || 'this agent')}
+                            placeholder={(t('routines.placeholder_what_should_agent_do', 'What should {agent} do?')).replace('{agent}', agent?.name || 'this agent')}
                             className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
                         />
                     </div>
@@ -371,7 +371,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                         onClick={onClose}
                         className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition"
                     >
-                        {t('routines.cancel') || 'Cancel'}
+                        {t('routines.cancel', 'Cancel')}
                     </button>
                     <button
                         type="button"
@@ -379,7 +379,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                         disabled={busy}
                         className="px-5 py-2 rounded-full bg-[var(--text-primary)] text-[var(--bg-primary)] text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
                     >
-                        {busy ? '…' : (isEdit ? (t('routines.save_changes') || 'Save changes') : (t('routines.add') || 'Add routine'))}
+                        {busy ? '…' : (isEdit ? (t('routines.save_changes', 'Save changes')) : (t('routines.add', 'Add routine')))}
                     </button>
                 </div>
             </div>

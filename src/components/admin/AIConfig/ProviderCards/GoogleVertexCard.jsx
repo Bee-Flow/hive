@@ -1,105 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import { API_BASE, authFetch } from '../../../../utils/helpers';
+import React, { useState } from 'react';
+import DeleteConfirmButtons from './shared/DeleteConfirmButtons';
+import useProviderConfig from '../../../../hooks/useProviderConfig';
 
 const GoogleVertexConfigCard = ({ onMessage }) => {
     const [project, setProject] = useState('');
     const [location, setLocation] = useState('europe-west4');
     const [serviceAccountKey, setServiceAccountKey] = useState('');
-    const [hasProject, setHasProject] = useState(false);
-    const [hasKey, setHasKey] = useState(false);
-    const [saving, setSaving] = useState(false);
     const [showKeyInput, setShowKeyInput] = useState(false);
-    const [confirmDeleteProject, setConfirmDeleteProject] = useState(false);
-    const [confirmDeleteKey, setConfirmDeleteKey] = useState(false);
 
-    useEffect(() => {
-        fetchStatus();
-    }, []);
-
-    const fetchStatus = async () => {
-        try {
-            const res = await authFetch(`${API_BASE}/ai/config`);
-            if (res.ok) {
-                const data = await res.json();
-                setHasProject(!!data.hasGoogleVertexProject);
-                setHasKey(!!data.hasGoogleVertexServiceAccountKey);
-                if (data.googleVertexLocation) setLocation(data.googleVertexLocation);
-            }
-        } catch (e) {
-            console.error('Failed to fetch Vertex AI status:', e);
+    const { config, saving, save, deleteKey, deleteSetting, patchConfig } = useProviderConfig({
+        onMessage,
+        onLoaded: data => {
+            if (data.googleVertexLocation) setLocation(data.googleVertexLocation);
         }
-    };
+    });
+    const hasProject = !!config?.hasGoogleVertexProject;
+    const hasKey = !!config?.hasGoogleVertexServiceAccountKey;
 
     const handleSave = async () => {
         if (!project.trim() && !serviceAccountKey.trim()) return;
-        setSaving(true);
-        try {
-            const body = {};
-            if (project.trim()) body.googleVertexProject = project;
-            body.googleVertexLocation = location;
-            if (serviceAccountKey.trim()) {
-                // Validate JSON before sending
-                try {
-                    JSON.parse(serviceAccountKey);
-                } catch {
-                    onMessage?.({ type: 'error', text: 'Invalid JSON — please paste a valid service account key' });
-                    setSaving(false);
-                    return;
-                }
-                body.googleVertexServiceAccountKey = serviceAccountKey;
+        const body = {};
+        if (project.trim()) body.googleVertexProject = project;
+        body.googleVertexLocation = location;
+        if (serviceAccountKey.trim()) {
+            // Validate JSON before sending
+            try {
+                JSON.parse(serviceAccountKey);
+            } catch {
+                onMessage?.({ type: 'error', text: 'Invalid JSON — please paste a valid service account key' });
+                return;
             }
+            body.googleVertexServiceAccountKey = serviceAccountKey;
+        }
 
-            const res = await authFetch(`${API_BASE}/ai/config`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
+        const ok = await save(body, { success: 'Google Vertex AI config saved!', error: 'Failed to save config' });
+        if (ok) {
+            patchConfig({
+                ...(project.trim() ? { hasGoogleVertexProject: true } : {}),
+                ...(serviceAccountKey.trim() ? { hasGoogleVertexServiceAccountKey: true } : {})
             });
-            if (res.ok) {
-                if (project.trim()) setHasProject(true);
-                if (serviceAccountKey.trim()) setHasKey(true);
-                setProject('');
-                setServiceAccountKey('');
-                setShowKeyInput(false);
-                onMessage?.({ type: 'success', text: 'Google Vertex AI config saved!' });
-            } else {
-                onMessage?.({ type: 'error', text: 'Failed to save config' });
-            }
-        } catch (e) {
-            onMessage?.({ type: 'error', text: 'Failed to save config' });
-        } finally {
-            setSaving(false);
+            setProject('');
+            setServiceAccountKey('');
+            setShowKeyInput(false);
         }
     };
 
     const handleDeleteProject = async () => {
-        try {
-            const res = await authFetch(`${API_BASE}/ai/config/setting/google_vertex_project`, { method: 'DELETE' });
-            if (res.ok) {
-                setHasProject(false);
-                setProject('');
-                setConfirmDeleteProject(false);
-                onMessage?.({ type: 'success', text: 'Vertex AI project removed' });
-            } else {
-                onMessage?.({ type: 'error', text: 'Failed to delete project' });
-            }
-        } catch (e) {
-            onMessage?.({ type: 'error', text: 'Failed to delete project' });
+        const ok = await deleteSetting('google_vertex_project', { success: 'Vertex AI project removed', error: 'Failed to delete project' });
+        if (ok) {
+            patchConfig({ hasGoogleVertexProject: false });
+            setProject('');
         }
     };
 
     const handleDeleteServiceKey = async () => {
-        try {
-            const res = await authFetch(`${API_BASE}/ai/config/key/google_vertex_service_account_key`, { method: 'DELETE' });
-            if (res.ok) {
-                setHasKey(false);
-                setServiceAccountKey('');
-                setConfirmDeleteKey(false);
-                onMessage?.({ type: 'success', text: 'Vertex AI service account key removed' });
-            } else {
-                onMessage?.({ type: 'error', text: 'Failed to delete service account key' });
-            }
-        } catch (e) {
-            onMessage?.({ type: 'error', text: 'Failed to delete service account key' });
+        const ok = await deleteKey('google_vertex_service_account_key', { success: 'Vertex AI service account key removed', error: 'Failed to delete service account key' });
+        if (ok) {
+            patchConfig({ hasGoogleVertexServiceAccountKey: false });
+            setServiceAccountKey('');
         }
     };
 
@@ -175,37 +133,11 @@ const GoogleVertexConfigCard = ({ onMessage }) => {
                 {/* Save + Delete buttons */}
                 <div className="flex justify-between items-center">
                     <div className="flex gap-2">
-                        {hasProject && !confirmDeleteProject && (
-                            <button
-                                onClick={() => setConfirmDeleteProject(true)}
-                                className="px-3 py-2 rounded-lg text-xs transition-all hover:bg-red-500/20"
-                                style={{ color: 'var(--text-muted)' }}
-                                title="Remove Vertex project"
-                            >
-                                🗑️ Project
-                            </button>
+                        {hasProject && (
+                            <DeleteConfirmButtons onConfirm={handleDeleteProject} label="🗑️ Project" title="Remove Vertex project" size="xs" />
                         )}
-                        {confirmDeleteProject && (
-                            <>
-                                <button onClick={handleDeleteProject} className="px-3 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30">Confirm</button>
-                                <button onClick={() => setConfirmDeleteProject(false)} className="px-2 py-2 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
-                            </>
-                        )}
-                        {hasKey && !confirmDeleteKey && (
-                            <button
-                                onClick={() => setConfirmDeleteKey(true)}
-                                className="px-3 py-2 rounded-lg text-xs transition-all hover:bg-red-500/20"
-                                style={{ color: 'var(--text-muted)' }}
-                                title="Remove service account key"
-                            >
-                                🗑️ Key
-                            </button>
-                        )}
-                        {confirmDeleteKey && (
-                            <>
-                                <button onClick={handleDeleteServiceKey} className="px-3 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30">Confirm</button>
-                                <button onClick={() => setConfirmDeleteKey(false)} className="px-2 py-2 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
-                            </>
+                        {hasKey && (
+                            <DeleteConfirmButtons onConfirm={handleDeleteServiceKey} label="🗑️ Key" title="Remove service account key" size="xs" />
                         )}
                     </div>
                     <button

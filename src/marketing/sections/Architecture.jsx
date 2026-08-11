@@ -2,13 +2,14 @@ import React from 'react';
 import SectionHeader from '../components/SectionHeader';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
+import { sectionBgClass } from './sectionBg';
 import { inlineTextStyle } from './textStyle';
 
 export default function Architecture({ data }) {
     if (!data?.enabled) return null;
     return (
         <SectionFrame id="architecture" name="Architecture" enabled={data.enabled}>
-            <section id="architecture">
+            <section id="architecture" className={sectionBgClass(data)}>
                 <div className="container">
                     <SectionHeader
                         pathPrefix="architecture"

@@ -1,0 +1,36 @@
+/* Skip-to-content link — the first focusable element on every marketing
+   page. Visually hidden until keyboard focus reaches it, then it drops in
+   as a small pill above all site chrome (announcement bar sits at
+   z-index ~1100, header ~1000 — see marketing.css; this must beat both).
+
+   Owned by SkipLink.jsx. Deliberately NOT in marketing.css: new-component
+   styles live in their own file next to the component. Tokens carry hard
+   fallbacks because this renders before any design payload applies. */
+
+.marketing-root .skip-link {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 12000;
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: var(--brand-surface, #ffffff);
+    color: var(--brand-text, #1F2937);
+    border: 1px solid var(--hairline-strong, rgba(15, 23, 42, 0.16));
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-decoration: none;
+    /* Hidden-but-focusable: clipped to nothing instead of display:none,
+       so it stays in the tab order. */
+    clip-path: inset(50%);
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.marketing-root .skip-link:focus-visible,
+.marketing-root .skip-link:focus {
+    clip-path: none;
+    outline: 2px solid var(--brand-primary, #F5A623);
+    outline-offset: 2px;
+}

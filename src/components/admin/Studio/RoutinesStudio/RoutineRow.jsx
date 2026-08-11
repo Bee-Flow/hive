@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Trash2, Copy, Code2, Hash, Pause, Play, Mail, Clock, Webhook, Bot, MousePointer2, History } from 'lucide-react';
 import ContextMenu from './ContextMenu';
+import { describeCron } from '../../AITasksDesigner/Builder/flow/scheduleBuilderUtils';
 
 /**
  * One row in the unified Routines sidebar. Used for both Automations and
@@ -160,9 +161,12 @@ function automationMeta(a) {
     const kind = a.triggerType || a.definition?.trigger?.kind || 'manual';
     if (kind === 'schedule' && a.scheduleCron) {
         if (!isCronShapeValid(a.scheduleCron)) {
-            return `⚠ invalid cron: ${a.scheduleCron}`;
+            return `⚠ invalid schedule: ${a.scheduleCron}`;
         }
-        return `${a.scheduleCron} · ${a.scheduleTz || 'UTC'}`;
+        // "Every day at 09:00 · Europe/Amsterdam", not `0 9 * * *` — this list
+        // is where you check how often a routine runs, and a raw pattern is
+        // not something most authors can read.
+        return `${describeCron(a.scheduleCron)} · ${a.scheduleTz || 'UTC'}`;
     }
     if (kind === 'app_event') {
         const ev = a.definition?.trigger?.appEvent;

@@ -10,27 +10,35 @@
  *   onError    surface an error message to the page
  *   onChanged  refresh the notebook list counts after a mutation (notebook-level)
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { notebookApi, uploadSourceFile, getSourceContent, renameSource as renameSourceApi, reorderSourcesApi, bulkDeleteSourcesApi } from './notebookApi';
 
 export default function useSourcesPolling({ entityId, onError, onChanged } = {}) {
     const [sources, setSources] = useState([]);
+
+    // onError routed through a ref so refreshSources stays identity-stable per
+    // entity — it feeds the poll effect below, which must not restart when a
+    // page passes an inline error handler.
+    const onErrorRef = useRef(onError);
+    useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
     const refreshSources = useCallback(async () => {
         if (!entityId) return;
         try {
             const data = await notebookApi(`/${entityId}/sources`);
             setSources(data.sources || []);
-        } catch (e) { onError?.(e.message); }
-    }, [entityId, onError]);
+        } catch (e) { onErrorRef.current?.(e.message); }
+    }, [entityId]);
 
-    // Poll while any source is still processing; stop once all settle.
+    // Poll while any source is still processing; stop once all settle. Depends
+    // on the boolean, not the sources array: every poll tick produces a fresh
+    // array identity, which used to tear down and rebuild the interval each 3s.
+    const hasProcessing = useMemo(() => sources.some(s => s.status === 'processing'), [sources]);
     useEffect(() => {
-        if (!entityId) return;
-        if (!sources.some(s => s.status === 'processing')) return;
+        if (!entityId || !hasProcessing) return;
         const interval = setInterval(() => { refreshSources(); }, 3000);
         return () => clearInterval(interval);
-    }, [entityId, sources, refreshSources]);
+    }, [entityId, hasProcessing, refreshSources]);
 
     const handleFileUpload = useCallback(async (files) => {
         if (!files?.length || !entityId) return;

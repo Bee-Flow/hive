@@ -10,11 +10,16 @@ import Info from '../../../guardrails/Info';
  *
  * Renders nothing when there's no hint, so call-sites can pass it
  * unconditionally.
+ *
+ * BFSF-362 — the `placement` prop is gone. `Info` now renders through the
+ * AnchoredMenu portal, which measures the viewport and flips on its own; a
+ * caller-declared side was exactly what left a hint on a bottom-edge field
+ * opening downwards into the clipped void. No call site ever passed it.
  */
-export default function FieldHint({ children, title = null, placement = 'bottom', className = '' }) {
+export default function FieldHint({ children, title = null, className = '' }) {
     if (children == null || children === '') return null;
     return (
-        <Info title={title} placement={placement} className={className}>
+        <Info title={title} className={className}>
             {children}
         </Info>
     );

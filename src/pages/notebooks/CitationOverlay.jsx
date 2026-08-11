@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { X, FileText } from 'lucide-react';
+import useTranslation from '../../hooks/useTranslation';
 
 /* ── Citation Overlay — shows source name + chunk content ────── */
 export default function CitationOverlay({ source, onClose }) {
+    const { t } = useTranslation();
     if (!source) return null;
 
     return (
@@ -25,12 +27,13 @@ export default function CitationOverlay({ source, onClose }) {
                         </div>
                         {source.score > 0 && (
                             <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                                Relevance: {Math.round(source.score * 100)}%
+                                {t('notebooks.relevance_pct', { pct: Math.round(source.score * 100) })}
                             </div>
                         )}
                     </div>
                     <button
                         onClick={onClose}
+                        aria-label={t('notebooks.close', 'Close')}
                         className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
                     >
                         <X className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
@@ -40,21 +43,21 @@ export default function CitationOverlay({ source, onClose }) {
                 {/* Content */}
                 <div className="px-5 py-4 max-h-[400px] overflow-y-auto custom-scrollbar">
                     <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
-                        {source.content || 'No content preview available.'}
+                        {source.content || t('notebooks.no_content_preview', 'No content preview available.')}
                     </div>
                 </div>
 
                 {/* Footer */}
                 <div className="px-5 py-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
                     <span className="text-[10px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
-                        Source #{source.index}
+                        {t('notebooks.source_number', { index: source.index })}
                     </span>
                     <button
                         onClick={onClose}
                         className="px-3 py-1 text-xs font-medium rounded-lg transition-colors hover:bg-[var(--bg-tertiary)]"
                         style={{ color: 'var(--text-secondary)' }}
                     >
-                        Close
+                        {t('notebooks.close', 'Close')}
                     </button>
                 </div>
             </div>

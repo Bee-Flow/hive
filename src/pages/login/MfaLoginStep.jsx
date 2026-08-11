@@ -72,6 +72,12 @@ const MfaLoginStep = ({ onVerify, onCancel, isLoading, inputClass, labelClass })
             >
                 <ArrowLeft className="w-4 h-4" /> {t('login.back', 'Back')}
             </button>
+
+            {/* BFSF-274: a discoverable escalation path — before this, a user
+                whose codes kept failing had no idea recovery even existed. */}
+            <p className="text-xs text-center text-[var(--text-muted)]">
+                {t('mfa.locked_out_hint', 'Locked out? Use a recovery code, or ask your organization admin to reset two-factor authentication for your account.')}
+            </p>
         </form>
     );
 };

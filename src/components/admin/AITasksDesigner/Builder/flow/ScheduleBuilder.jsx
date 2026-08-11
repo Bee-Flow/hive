@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, Clock, AlertCircle } from 'lucide-react';
 import useAutomationApi from '../../../../../hooks/useAutomationApi';
+import { fieldLabelClass, inputClass } from './settings/formStyles';
 import {
     WEEKDAYS,
     TIMEZONE_OPTIONS,
@@ -100,7 +101,7 @@ export default function ScheduleBuilder({ cron, tz, onChange }) {
                         <option value="daily">Daily</option>
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
-                        <option value="custom">Custom (cron expression)</option>
+                        <option value="custom">Advanced — custom pattern</option>
                     </select>
                 </Field>
                 <Field label="Timezone">
@@ -194,8 +195,16 @@ export default function ScheduleBuilder({ cron, tz, onChange }) {
                 </Field>
             )}
 
+            {/* The word "cron" appears nowhere in this editor: nearly every
+                author has never met it, and the five presets above cover what
+                they actually want. This escape hatch stays for the rare
+                schedule the presets can't express — described by its shape
+                ("minute hour …") rather than by its name. */}
             {preset.mode === 'custom' && (
-                <Field label="Cron expression" hint="Five-field cron: min hour dom month dow. Supports *, N, N-M, N,M, */N.">
+                <Field
+                    label="Timing pattern"
+                    hint="Five values: minute · hour · day of month · month · day of week. Use * for “every”, N for a value, N-M for a range, N,M for a list, */N for every Nth."
+                >
                     <input
                         type="text"
                         value={customDraft}
@@ -206,16 +215,20 @@ export default function ScheduleBuilder({ cron, tz, onChange }) {
                 </Field>
             )}
 
-            {/* Preview chip — always visible. Shows the generated cron,
-                a human description, and the next 3 actual firing times
-                from the server. Errors render inline below. */}
+            {/* Preview chip — always visible. A plain-English description plus
+                the next 3 actual firing times from the server. Errors render
+                inline below. The raw pattern is shown only in Advanced mode,
+                where the author typed it themselves; everywhere else it was
+                machine noise next to a sentence that already said it. */}
             <div className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)]/40 p-3 text-xs space-y-1.5">
                 <div className="flex items-center gap-2">
                     <Calendar size={12} className="text-[var(--text-tertiary)] flex-shrink-0" />
                     <span className="text-[var(--text-secondary)]">{description}</span>
-                    <code className="ml-auto font-mono text-[10px] text-[var(--text-tertiary)] bg-[var(--bg-primary)] border border-[var(--border-default)] rounded px-1.5 py-0.5">
-                        {generatedCron || '—'}
-                    </code>
+                    {preset.mode === 'custom' && (
+                        <code className="ml-auto font-mono text-[10px] text-[var(--text-tertiary)] bg-[var(--bg-primary)] border border-[var(--border-default)] rounded px-1.5 py-0.5">
+                            {generatedCron || '—'}
+                        </code>
+                    )}
                 </div>
                 {!preview.valid && preview.error && (
                     <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
@@ -303,15 +316,11 @@ function TimePicker({ hour, minute, onChange }) {
 function Field({ label, hint, children }) {
     return (
         <div>
-            <div className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)] mb-1">{label}</div>
+            <div className={`${fieldLabelClass()} mb-1`}>{label}</div>
             {children}
             {hint && <div className="text-[11px] text-[var(--text-tertiary)] mt-1 leading-snug">{hint}</div>}
         </div>
     );
-}
-
-function inputClass() {
-    return 'w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]';
 }
 
 function pad2(n) {

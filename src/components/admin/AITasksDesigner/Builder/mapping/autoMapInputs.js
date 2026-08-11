@@ -10,6 +10,7 @@
  */
 
 import { isEmptyBinding } from './partitionInputs';
+import { buildSampleRoot } from './realOutputs';
 import {
     computeUpstreamGroups,
     buildToolOutputMap,
@@ -18,6 +19,7 @@ import {
     suggestItemVar,
 } from './upstream';
 import { getLayerContract } from '../flow/flowletScope';
+import { reconcileRouteEdges } from '../flow/routeEdges';
 
 // ── small pure helpers (exported for tests) ───────────────────────────────
 
@@ -64,6 +66,11 @@ function flattenCandidates(groups) {
         for (const f of (g.fields || [])) {
             out.push({ key: f.key, path: f.path, type: sampleType(f.sample), groupIndex: gi, fieldIndex: fi++ });
             for (const c of (f.children || [])) {
+                // Element children (`items[*].<key>`) carry a SCALAR sample but
+                // resolve to an ARRAY at runtime ([*] flatten-maps) — auto-mapping
+                // one into a scalar tool param would be wrong. Skip them here;
+                // they stay pickable by hand in the tree/picker.
+                if (/\[\*\]/.test(c.path)) continue;
                 out.push({ key: c.key, path: c.path, type: sampleType(c.sample), groupIndex: gi, fieldIndex: fi++ });
             }
         }
@@ -104,6 +111,42 @@ export function nearestArrayRef(groups) {
     return null;
 }
 
+// Field names that carry the free text a person actually wrote — where
+// personal data lives, as opposed to an id or a status flag.
+//
+// ORDERED, not one alternation: a mail has both `subject` and `body`, and
+// whichever came first in the field list would win. The long-form fields are
+// where a name or an address actually turns up, so they are preferred over a
+// one-line subject.
+const SCANNABLE_NAME_RES = [
+    /^(body|text|content|transcript|full_?text)$/i,
+    /body|text|content|transcript|message|description|summary|notes?|comment|answer|html/i,
+    /subject|title|name/i,
+];
+
+/**
+ * The nearest upstream value worth handing a PII detector.
+ *
+ * Prefers a text field by name, then any string, and falls back to the whole
+ * output of the nearest step — an object is scanned as its JSON, so "check
+ * everything that step produced" is a real answer rather than a guess.
+ */
+export function nearestScannableRef(groups) {
+    for (const re of SCANNABLE_NAME_RES) {
+        for (let gi = (groups || []).length - 1; gi >= 0; gi--) {
+            const fields = groups[gi].fields || [];
+            const named = fields.find(f => sampleType(f.sample) === 'string' && re.test(f.key));
+            if (named) return named.path;
+        }
+    }
+    for (let gi = (groups || []).length - 1; gi >= 0; gi--) {
+        const anyText = (groups[gi].fields || []).find(f => sampleType(f.sample) === 'string');
+        if (anyText) return anyText.path;
+    }
+    const nearest = (groups || [])[(groups || []).length - 1];
+    return nearest?.basePath || null;
+}
+
 // ── iteration ("run once per item") detection ─────────────────────────────
 
 function lastSegmentKey(path) {
@@ -137,7 +180,9 @@ function tryIterationMapping(schema, existingInputs, groups, definition, catalog
     if (!required.size) return null;               // only auto-iterate to satisfy required inputs
     const overRef = nearestArrayRef(groups);
     if (!overRef) return null;
-    const elementSample = inferLoopItemSample(overRef, definition, buildToolOutputMap(catalog));
+    // Resolve the element against the groups' own sample tree — with real
+    // run/pinned data in the groups, the element shape is a real row.
+    const elementSample = inferLoopItemSample(overRef, definition, buildToolOutputMap(catalog), buildSampleRoot(groups));
     if (!elementSample || typeof elementSample !== 'object' || Array.isArray(elementSample)) return null;
 
     const itemVar = suggestItemVar(lastSegmentKey(overRef));
@@ -233,8 +278,25 @@ function layerParamSchema(step, definition) {
     return { properties: Object.fromEntries(keys.map(k => [k, {}])), required: [] };
 }
 
+/**
+ * Is this over/arrayRef still the palette scaffold (never user-chosen)?
+ * The literal 'trigger.output.items' is the legacy seed every Lists/Loop node
+ * used to carry — treating it as scaffold lets auto-map heal already-saved
+ * nodes on re-connect. New nodes seed '' (C20).
+ */
 function isScaffoldOverRef(ref) {
     return !ref || ref === 'trigger.output.items';
+}
+
+/**
+ * Is this condition still the untouched palette scaffold? `buildStepFromPayload`
+ * seeds `expr: 'true'` (the parser needs something valid); anything else means
+ * the author has already said what the step decides, and auto-detection must
+ * keep its hands off.
+ */
+function isScaffoldExpr(expr) {
+    const src = String(expr || '').trim();
+    return src === '' || src === 'true';
 }
 
 /**
@@ -245,7 +307,10 @@ function isScaffoldOverRef(ref) {
  */
 export function autoMapStep(step, definition, catalog, opts = {}) {
     if (!step || !definition) return { step, mappedKeys: [] };
-    const groups = computeUpstreamGroups(definition, step.id, catalog);
+    // opts.realOutputById (mapping/realOutputs.js) folds run/pinned outputs
+    // into the groups — so a node added below a step that just produced 10
+    // real records maps against those records, not against placeholders.
+    const groups = computeUpstreamGroups(definition, step.id, catalog, opts.realOutputById || null);
     if (!groups.length) return { step, mappedKeys: [] };
 
     const type = step.type;
@@ -289,7 +354,39 @@ export function autoMapStep(step, definition, catalog, opts = {}) {
         return { step: { ...step, inputs: { ...(step.inputs || {}), ...patch } }, mappedKeys: keys };
     }
 
+    if (type === 'guard' || type === 'tokenize' || type === 'untokenize') {
+        // A guard dropped below a step almost always means "check what that
+        // step just produced". Binding it on arrival is the difference between
+        // a node that works and one that greets you with a warning — and an
+        // author who has already chosen a source is never overridden.
+        if (typeof step.sourceRef === 'string' && step.sourceRef.trim()) return { step, mappedKeys: [] };
+        const ref = nearestScannableRef(groups);
+        if (!ref) return { step, mappedKeys: [] };
+        return { step: { ...step, sourceRef: ref }, mappedKeys: ['sourceRef'] };
+    }
+
     if (type === 'set') {
+        // Auto-detect list input, mirroring the condition→filter detection
+        // below: a PRISTINE scaffold (no fields, no forEach, no arrayRef, no
+        // operations — i.e. the user hasn't said anything yet) wired below a
+        // step that hands it a list almost always means "edit these rows", so
+        // it becomes a list-mode Edit data with the source already bound. The
+        // mode stays overridable under Advanced, and a step the user has
+        // touched in ANY way is left alone.
+        const pristine = !Object.keys(step.fields || {}).length
+            && !step.forEach
+            && typeof step.arrayRef !== 'string'
+            && !(Array.isArray(step.operations) && step.operations.length);
+        if (pristine) {
+            const ref = nearestArrayRef(groups);
+            if (ref) return { step: { ...step, arrayRef: ref }, mappedKeys: ['arrayRef'] };
+        }
+        // List mode with a blank source ('' — e.g. flipped on under Advanced)
+        // binds like any collection op.
+        if (typeof step.arrayRef === 'string' && isScaffoldOverRef(step.arrayRef)) {
+            const ref = nearestArrayRef(groups);
+            if (ref) return { step: { ...step, arrayRef: ref }, mappedKeys: ['arrayRef'] };
+        }
         const patch = autoMapInputs(null, step.fields || {}, groups, opts);
         const keys = Object.keys(patch);
         if (!keys.length) return { step, mappedKeys: [] };
@@ -303,15 +400,47 @@ export function autoMapStep(step, definition, catalog, opts = {}) {
         return { step: { ...step, overRef: ref }, mappedKeys: ['overRef'] };
     }
 
-    if (['filter', 'limit', 'dedupe', 'aggregate', 'summarize'].includes(type)) {
-        if (step.arrayRef) return { step, mappedKeys: [] };
+    // The Condition node detects what it is deciding ABOUT instead of asking. A
+    // freshly dropped one is a `condition` (the whole run); if the step it is
+    // wired to hands it a list, working through that list is what the author
+    // almost always means — so it becomes a list-mode Filter with the source
+    // already bound, and the form has nothing left to fill in.
+    //
+    // Guarded three ways so it can never fight the user: only while the
+    // condition still carries its scaffold expression, only when it has no
+    // outgoing edges yet (nothing to re-point), and never for a switch that
+    // already declares cases. The mode stays overridable under Advanced.
+    if (type === 'condition') {
+        if (!isScaffoldExpr(step.expr)) return { step, mappedKeys: [] };
+        const ref = nearestArrayRef(groups);
+        if (!ref) return { step, mappedKeys: [] };
+        return { step: { ...step, type: 'filter', arrayRef: ref }, mappedKeys: ['arrayRef'] };
+    }
+
+    // A switch already IN list mode (the key is present but blank) gets its
+    // source bound like any collection op; a branch-mode switch is left alone
+    // — binding a source there would silently change what it decides about.
+    if (type === 'switch') {
+        if (typeof step.arrayRef !== 'string' || !isScaffoldOverRef(step.arrayRef)) return { step, mappedKeys: [] };
         const ref = nearestArrayRef(groups);
         if (!ref) return { step, mappedKeys: [] };
         return { step: { ...step, arrayRef: ref }, mappedKeys: ['arrayRef'] };
     }
 
-    // condition / switch / code / notification / datetime / wait / stop_error:
-    // no safe automatic binding.
+    if (['filter', 'limit', 'dedupe', 'aggregate', 'summarize'].includes(type)) {
+        // Scaffold-aware like the loop branch above: the old `if (step.arrayRef)`
+        // guard bailed on ANY truthy value, and the palette always seeded the
+        // 'trigger.output.items' literal — so auto-map NEVER bound a Lists
+        // node's source list, and manual/schedule-triggered flows silently ran
+        // the op over a non-existent array (C20).
+        if (!isScaffoldOverRef(step.arrayRef)) return { step, mappedKeys: [] };
+        const ref = nearestArrayRef(groups);
+        if (!ref) return { step, mappedKeys: [] };
+        return { step: { ...step, arrayRef: ref }, mappedKeys: ['arrayRef'] };
+    }
+
+    // switch / code / notification / datetime / wait / stop_error: no safe
+    // automatic binding.
     return { step, mappedKeys: [] };
 }
 
@@ -334,5 +463,13 @@ export function applyAutoMapToStep(definition, stepId, catalog, opts = {}) {
         : mapped;
     const nextSteps = steps.slice();
     nextSteps[idx] = withMarker;
-    return { definition: { ...definition, steps: nextSteps }, mappedKeys, forEachEnabled: !!forEachEnabled };
+    let next = { ...definition, steps: nextSteps };
+    // Detecting list mode changes the Condition node's TYPE, which renames its
+    // output ports (then/else → one plain continuation). Re-point its edges in
+    // the same commit — a step spliced onto an existing connection already has
+    // an outgoing edge by the time auto-map runs.
+    if (withMarker.type !== steps[idx].type) {
+        next = reconcileRouteEdges(next, stepId, steps[idx], withMarker);
+    }
+    return { definition: next, mappedKeys, forEachEnabled: !!forEachEnabled };
 }

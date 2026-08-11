@@ -15,10 +15,14 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import AppIcon from '../../AppIcon';
+import { showToast } from '../guardrails/Toast';
+import { BLOCK_DEFAULTS } from './editors';
+import ModalShell from './dialogs/ModalShell';
+import { slugIssues } from '../../../utils/cmsPublicRouting';
 
 // ── Single draggable page row ────────────────────────────────────────
 
-function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename, onEditSlug, onDelete, onSaveAsTemplate, onExport, onImport }) {
+function PageRow({ page, allSlugs, isActive, onClick, onSetHomepage, onDuplicate, onRename, onEditSlug, onDelete, onSaveAsTemplate, onExport, onImport }) {
     const {
         attributes, listeners, setNodeRef, transform, transition, isDragging,
     } = useSortable({ id: page.id });
@@ -99,6 +103,7 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
                         <SlugInput
                             initial={page.slug || ''}
                             isHomepage={!!page.isHomepage}
+                            allSlugs={allSlugs}
                             onConfirm={handleSlugSubmit}
                             onCancel={() => setEditingSlug(false)}
                         />
@@ -129,7 +134,7 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
                         type="button"
                         className={`w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-tertiary)]
                             text-[var(--text-muted)] hover:text-[var(--text-secondary)]
-                            ${menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                            ${menuOpen ? 'opacity-100' : 'opacity-40 group-hover:opacity-100'}`}
                         onClick={() => setMenuOpen(v => !v)}
                         title="Page actions"
                     >
@@ -196,11 +201,20 @@ function normalizeSlugForInput(raw) {
         .replace(/[^a-z0-9_-]/g, '');
 }
 
-function SlugInput({ initial, isHomepage, onConfirm, onCancel }) {
+function SlugInput({ initial, isHomepage, allSlugs = null, onConfirm, onCancel }) {
     const [value, setValue] = useState(initial);
     const inputRef = useRef(null);
 
     useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+
+    // Routing lint while typing. Reserved slugs and duplicates BLOCK the
+    // commit (the server rejects reserved and would silently -2-suffix a
+    // duplicate); `_` slugs warn but stay allowed (legacy data).
+    const issue = slugIssues(value, { existingSlugs: allSlugs, currentSlug: initial });
+    const commit = () => {
+        if (issue?.blocking) { onCancel(); return; }
+        onConfirm(value);
+    };
 
     return (
         <span className="flex flex-col w-full gap-0.5">
@@ -213,14 +227,14 @@ function SlugInput({ initial, isHomepage, onConfirm, onCancel }) {
                     onChange={e => setValue(normalizeSlugForInput(e.target.value))}
                     onClick={e => e.stopPropagation()}
                     onMouseDown={e => e.stopPropagation()}
-                    onBlur={() => onConfirm(value)}
+                    onBlur={commit}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter')  { e.preventDefault(); onConfirm(value); }
+                        if (e.key === 'Enter')  { e.preventDefault(); commit(); }
                         if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
                     }}
                     placeholder="page-slug"
                     spellCheck={false}
-                    className="flex-1 min-w-0 px-1.5 py-0.5 rounded text-[10px] font-mono border bg-[var(--bg-primary)] border-[var(--accent-primary)] text-[var(--text-primary)] focus:outline-none"
+                    className={`flex-1 min-w-0 px-1.5 py-0.5 rounded text-[10px] font-mono border bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none ${issue?.blocking ? 'border-red-400' : 'border-[var(--accent-primary)]'}`}
                 />
             </span>
             {isHomepage ? (
@@ -229,6 +243,11 @@ function SlugInput({ initial, isHomepage, onConfirm, onCancel }) {
                 // modal); the user can still cancel via Escape.
                 <span className="text-[10px] leading-tight text-amber-500/90">
                     ⚠ Homepage slug. Changing it may break external links.
+                </span>
+            ) : null}
+            {issue ? (
+                <span className={`text-[10px] leading-tight ${issue.blocking ? 'text-red-400' : 'text-amber-500/90'}`}>
+                    ⚠ {issue.message}{issue.blocking ? ' (press Esc to keep the old slug)' : ''}
                 </span>
             ) : null}
         </span>
@@ -320,12 +339,12 @@ function MenuBtn({ icon, label, onClick, danger }) {
 
 // ── Add page dialog ──────────────────────────────────────────────────
 //
-// Lives inline at the top of the pages list (not a portal-modal). When
-// templates exist, a "Start from" picker is appended below the slug
+// A ModalShell dialog (used to live inline at the top of the pages list).
+// When templates exist, a "Start from" picker is appended below the slug
 // input — picking a template causes the new page to be seeded with a
 // deep copy of the template's blocks (fresh ids generated server-side).
 
-function AddPageDialog({ onConfirm, onCancel, templates = [] }) {
+function AddPageDialog({ onConfirm, onCancel, templates = [], existingSlugs = [] }) {
     const [title, setTitle]            = useState('');
     const [slug, setSlug]              = useState('');
     const [templateId, setTemplateId]  = useState('');   // '' = blank
@@ -344,8 +363,9 @@ function AddPageDialog({ onConfirm, onCancel, templates = [] }) {
     };
 
     return (
-        <div className="p-4 bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)] max-h-[60vh] overflow-y-auto">
-            <p className="text-xs font-semibold text-[var(--text-secondary)] mb-3">New page</p>
+        <ModalShell onClose={onCancel} labelledBy="add-page-title">
+            <div className="p-5">
+            <p id="add-page-title" className="text-sm font-semibold text-[var(--text-primary)] mb-3">New page</p>
             <input
                 autoFocus
                 type="text"
@@ -359,8 +379,16 @@ function AddPageDialog({ onConfirm, onCancel, templates = [] }) {
                 placeholder="slug (auto)"
                 value={slug}
                 onChange={e => handleSlugChange(e.target.value)}
-                className="w-full px-3 py-2 mb-3 rounded-md text-sm border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] font-mono"
+                className="w-full px-3 py-2 mb-1 rounded-md text-sm border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] font-mono"
             />
+            {(() => {
+                const issue = slugIssues(slug, { existingSlugs });
+                return issue ? (
+                    <p className={`text-[10px] leading-tight mb-2 ${issue.blocking ? 'text-red-400' : 'text-amber-500/90'}`}>
+                        ⚠ {issue.message}
+                    </p>
+                ) : <span className="block mb-2" />;
+            })()}
 
             {/* "Start from" — only when there's at least one saved template.
                 Hidden completely otherwise so the empty state stays clean. */}
@@ -397,7 +425,7 @@ function AddPageDialog({ onConfirm, onCancel, templates = [] }) {
                 <button
                     type="button"
                     onClick={() => onConfirm({ title, slug, templateId: templateId || undefined })}
-                    disabled={!title.trim()}
+                    disabled={!title.trim() || !!slugIssues(slug, { existingSlugs })?.blocking}
                     className="flex-1 px-3 py-1.5 text-sm rounded-md bg-[var(--accent-primary)] text-white disabled:opacity-40"
                 >
                     Add page
@@ -410,7 +438,8 @@ function AddPageDialog({ onConfirm, onCancel, templates = [] }) {
                     Cancel
                 </button>
             </div>
-        </div>
+            </div>
+        </ModalShell>
     );
 }
 
@@ -445,37 +474,9 @@ function TemplateCard({ selected, onClick, title, subtitle }) {
     );
 }
 
-// ── Modal overlay primitive ──────────────────────────────────────────
-//
-// Portals to <body>, dims the rest of the UI, and centers a card that
-// scrolls internally on small screens. Used by SaveTemplateDialog and
-// TemplatesManagerDialog. Esc + backdrop click close.
-
-function ModalOverlay({ children, onClose, labelledBy }) {
-    useEffect(() => {
-        const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [onClose]);
-    return ReactDOM.createPortal(
-        <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={labelledBy}
-            className="fixed inset-0 z-[1100] flex items-start sm:items-center justify-center p-4 overflow-y-auto"
-            onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
-            style={{ background: 'rgba(0,0,0,0.55)' }}
-        >
-            <div
-                className="w-full max-w-md rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-xl my-8 max-h-[calc(100vh-4rem)] overflow-y-auto"
-                onMouseDown={(e) => e.stopPropagation()}
-            >
-                {children}
-            </div>
-        </div>,
-        document.body,
-    );
-}
+// The old local ModalOverlay grew into the shared ./dialogs/ModalShell —
+// same markup and behavior (Esc + backdrop close, aria-modal), plus
+// width presets. All three dialogs below use it.
 
 // ── Save-as-template dialog ──────────────────────────────────────────
 
@@ -485,7 +486,7 @@ export function SaveTemplateDialog({ page, onConfirm, onCancel }) {
     const [saving, setSaving]           = useState(false);
     const trimmed = name.trim();
     return (
-        <ModalOverlay onClose={onCancel} labelledBy="save-tpl-title">
+        <ModalShell onClose={onCancel} labelledBy="save-tpl-title">
             <div className="p-5">
                 <h3 id="save-tpl-title" className="text-sm font-semibold text-[var(--text-primary)] mb-1">
                     Save as template
@@ -537,7 +538,7 @@ export function SaveTemplateDialog({ page, onConfirm, onCancel }) {
                     </button>
                 </div>
             </div>
-        </ModalOverlay>
+        </ModalShell>
     );
 }
 
@@ -548,7 +549,7 @@ export function TemplatesManagerDialog({ templates, onDelete, onClose }) {
     // there's no second modal stacked on top of this one.
     const [confirmId, setConfirmId] = useState(null);
     return (
-        <ModalOverlay onClose={onClose} labelledBy="tpl-mgr-title">
+        <ModalShell onClose={onClose} labelledBy="tpl-mgr-title">
             <div className="p-5">
                 <div className="flex items-center justify-between mb-1">
                     <h3 id="tpl-mgr-title" className="text-sm font-semibold text-[var(--text-primary)]">
@@ -617,7 +618,7 @@ export function TemplatesManagerDialog({ templates, onDelete, onClose }) {
                     </ul>
                 )}
             </div>
-        </ModalOverlay>
+        </ModalShell>
     );
 }
 
@@ -687,14 +688,36 @@ export default function PageList({
                         Templates{templates.length > 0 ? ` (${templates.length})` : ''}
                     </button>
                     {onImportPage ? (
-                        <button
-                            type="button"
-                            onClick={() => importInputRef.current?.click()}
-                            className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                            title="Import page from JSON file"
-                        >
-                            <AppIcon name="Upload" className="w-4 h-4" />
-                        </button>
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => importInputRef.current?.click()}
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                                title="Import page from JSON file"
+                            >
+                                <AppIcon name="Upload" className="w-4 h-4" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    // A known-good template so users can see the
+                                    // exact shape import expects (fields under
+                                    // `content`, one of the valid block types).
+                                    const { exportPage } = await import('./pageIO');
+                                    const mk = (type) => ({
+                                        id: `blk_${Math.random().toString(36).slice(2, 10)}`,
+                                        type, enabled: true,
+                                        content: JSON.parse(JSON.stringify(BLOCK_DEFAULTS[type] || {})),
+                                        style: {},
+                                    });
+                                    exportPage({ title: 'Example page', slug: 'example', blocks: [mk('hero'), mk('features')] });
+                                }}
+                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                                title="Download an example page JSON (import template)"
+                            >
+                                <AppIcon name="FileDown" className="w-4 h-4" />
+                            </button>
+                        </>
                     ) : null}
                     <button
                         type="button"
@@ -728,7 +751,7 @@ export default function PageList({
                             const parsed = await importPage(file);
                             onImportPage(parsed);
                         } catch (err) {
-                            alert('Import failed: ' + (err?.message || err));
+                            showToast('error', err?.message || String(err));
                         }
                     }}
                 />
@@ -737,6 +760,7 @@ export default function PageList({
             {adding && (
                 <AddPageDialog
                     templates={templates}
+                    existingSlugs={pages.map(p => p.slug)}
                     onConfirm={(payload) => { onAdd(payload); setAdding(false); }}
                     onCancel={() => setAdding(false)}
                 />
@@ -749,6 +773,7 @@ export default function PageList({
                             <PageRow
                                 key={page.id}
                                 page={page}
+                                allSlugs={pages.map(p => p.slug)}
                                 isActive={page.id === activePageId}
                                 onClick={onSelect}
                                 onSetHomepage={onSetHomepage}

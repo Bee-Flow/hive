@@ -33,10 +33,13 @@ const DATE_INPUT = {
     color: 'var(--text-primary)', outline: 'none', fontFamily: 'inherit',
 };
 
-export default function RangeControl({ range, onChange, t }) {
+export default function RangeControl({ range, onChange, t, presets }) {
     const tr = (k, fb) => (t ? t(k, fb) : fb);
     const setPreset = (preset) => onChange({ ...range, preset });
     const setCustom = (patch) => onChange({ ...range, ...patch, preset: 'custom' });
+    // Optional subset (array of preset ids) for compact hosts — the Privacy
+    // Shield Activity tab shows 7d/30d/90d only. Default: all presets.
+    const shown = Array.isArray(presets) ? PRESETS.filter(p => presets.includes(p.id)) : PRESETS;
 
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -44,7 +47,7 @@ export default function RangeControl({ range, onChange, t }) {
                 {tr('usage.range', 'Range')}
             </span>
             <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
-                {PRESETS.map(p => {
+                {shown.map(p => {
                     const active = range.preset === p.id;
                     return (
                         <button key={p.id} onClick={() => setPreset(p.id)} style={{

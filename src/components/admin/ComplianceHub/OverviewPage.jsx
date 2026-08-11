@@ -1,7 +1,8 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Clock, RefreshCw, ArrowRight, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, RefreshCw, ArrowRight, ShieldCheck, FileDown } from 'lucide-react';
 import { useTranslation } from '../../../hooks/useTranslation';
 import ScoreRing from './shared/ScoreRing';
+import ScoreSparkline from './shared/ScoreSparkline';
 import { OverviewSkeleton, CheckCardSkeleton } from './shared/Skeleton';
 
 function timeAgo(iso) {
@@ -15,7 +16,7 @@ function timeAgo(iso) {
     return `${Math.floor(h / 24)}d ago`;
 }
 
-export default function OverviewPage({ overview, checks, running, loading, onRunNow, onNavigate, onStartWizard }) {
+export default function OverviewPage({ overview, checks, scoreHistory, reportUrl, running, loading, onRunNow, onNavigate, onStartWizard }) {
     const { t } = useTranslation();
     if (loading || !overview) {
         return (
@@ -92,8 +93,9 @@ export default function OverviewPage({ overview, checks, running, loading, onRun
                             <Stat label={t('compliance.failing')} value={overview.overall.fail} color="#ef4444" />
                             <Stat label={t('compliance.not_applicable')} value={overview.overall.na} color="#6b7280" />
                         </div>
+                        <VerificationSplit summary={overview.verification_summary} />
                     </div>
-                    <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
                         <button onClick={onRunNow} disabled={running} style={primaryBtn}>
                             <RefreshCw size={14} style={{ animation: running ? 'spin 1s linear infinite' : 'none' }} />
                             {running ? t('compliance.running') : t('compliance.run_now')}
@@ -101,6 +103,16 @@ export default function OverviewPage({ overview, checks, running, loading, onRun
                         <span style={{ fontSize: 11, color: 'var(--text-muted, #888)', display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
                             <Clock size={11} /> {t('compliance.last_run')}: {timeAgo(overview.last_run_at)}
                         </span>
+                        {reportUrl && (
+                            <a href={reportUrl} download style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end',
+                                fontSize: 11.5, fontWeight: 600, textDecoration: 'none',
+                                color: 'var(--accent-primary, #6366f1)',
+                            }}>
+                                <FileDown size={13} /> {t('compliance.download_report')}
+                            </a>
+                        )}
+                        <ScoreSparkline history={scoreHistory} />
                     </div>
                 </div>
             </div>
@@ -158,6 +170,34 @@ export default function OverviewPage({ overview, checks, running, loading, onRun
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+/* "N verified automatically · M self-attested" — keeps the score honest about
+ * what the tool actually verified vs what the admin merely declared. */
+function VerificationSplit({ summary }) {
+    const { t } = useTranslation();
+    if (!summary) return null;
+    const automated = (summary.automated?.total || 0) + (summary.hybrid?.total || 0);
+    const automatedPass = (summary.automated?.pass || 0) + (summary.hybrid?.pass || 0);
+    const attested = summary.attestation?.total || 0;
+    const attestedPass = summary.attestation?.pass || 0;
+    if (!automated && !attested) return null;
+    return (
+        <div style={{ marginTop: 12, fontSize: 11.5, color: 'var(--text-muted, #888)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ color: '#10b981', fontWeight: 600 }}>
+                {t('compliance.verification_split_automated', { pass: automatedPass, total: automated }) ||
+                    `${automatedPass}/${automated} verified automatically`}
+            </span>
+            <span>·</span>
+            <span style={{ color: '#f59e0b', fontWeight: 600 }}>
+                {t('compliance.verification_split_attested', { pass: attestedPass, total: attested }) ||
+                    `${attestedPass}/${attested} self-attested`}
+            </span>
+            <span style={{ flexBasis: '100%', fontWeight: 400 }}>
+                {t('compliance.verification_split_note')}
+            </span>
         </div>
     );
 }

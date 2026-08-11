@@ -4,6 +4,12 @@ import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
 import { inlineTextStyle } from './textStyle';
 
+// True inside the CMS editor's preview iframe (?preview) — empty fields keep
+// their clickable placeholder there, but never on the published site.
+const isEditable = () =>
+    typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).has('preview');
+
 /**
  * CTA Banner — louder Conversion section. Two layouts (centered vs split),
  * always-rendered primary CTA, optional secondary CTA, four background
@@ -52,27 +58,34 @@ export default function CtaBanner({ data }) {
                 <div className="container">
                     <div className={innerClass}>
                         <div className="cta-banner-block-text">
-                            <EditableText
-                                path="cta-banner.heading"
-                                as="h2"
-                                multiline
-                                placeholder="Heading"
-                                className="headline-md cta-banner-block-heading"
-                                style={headingStyle}
-                            >
-                                {heading}
-                            </EditableText>
+                            {/* Published site: empty heading/subheading render
+                                nothing (an empty <h2> is a nameless heading in
+                                the outline). Editor keeps the placeholders. */}
+                            {(heading || isEditable()) ? (
+                                <EditableText
+                                    path="cta-banner.heading"
+                                    as="h2"
+                                    multiline
+                                    placeholder="Heading"
+                                    className="headline-md cta-banner-block-heading"
+                                    style={headingStyle}
+                                >
+                                    {heading}
+                                </EditableText>
+                            ) : null}
 
-                            <EditableText
-                                path="cta-banner.subheading"
-                                as="p"
-                                multiline
-                                placeholder="Subheading"
-                                className="cta-banner-block-subheading"
-                                style={subheadingStyle}
-                            >
-                                {subheading}
-                            </EditableText>
+                            {(subheading || isEditable()) ? (
+                                <EditableText
+                                    path="cta-banner.subheading"
+                                    as="p"
+                                    multiline
+                                    placeholder="Subheading"
+                                    className="cta-banner-block-subheading"
+                                    style={subheadingStyle}
+                                >
+                                    {subheading}
+                                </EditableText>
+                            ) : null}
                         </div>
 
                         <div className="cta-banner-block-actions">

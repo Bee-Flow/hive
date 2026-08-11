@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
+import { MISTRAL_MODEL_META, getModelMeta } from '../../../utils/modelMeta.js';
 
 const AGENT_TYPES = [
     { key: 'chat', label: 'Chat Agents', icon: '💬', color: '#8b5cf6', desc: 'Standard conversational agents (AgentDesigner)' },
@@ -190,7 +191,7 @@ const AllowedModelsConfig = ({ providers, allModels, fetchAllModels }) => {
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                             {allModels.map(m => {
                                                 const allowed = isAllowed(key, m.id);
-                                                const meta = MISTRAL_MODEL_META[m.id];
+                                                const meta = MISTRAL_MODEL_META[m.id] || getModelMeta(m.id);
                                                 const displayName = meta?.name || m.id;
                                                 const category = meta?.cat || '';
                                                 return (

@@ -1,91 +1,38 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import AppIcon from '../../AppIcon';
-import { BLOCK_EDITORS } from './editors';
-import { getLocalePath } from './localeMerge';
+import AiTranslateControl from '../AiTranslateControl';
+import { buildPageGroups, buildSiteGroups } from './translatable';
 
 /**
- * TranslationPanel — the dedicated per-locale translation list shown in Pane B
- * when the editor is in a non-default locale ("translation mode").
+ * TranslationPanel — the translate-mode inspector, shown when the editor is
+ * in a non-default locale.
  *
  * It enumerates every translatable string for the active page (block content +
  * SEO + title) or the site chrome (header/footer/page-titles) and renders each
  * as a source → translation row. Editing a row writes a sparse text override
  * via the on*Leaf callbacks; an empty input re-inherits the source text.
  *
- * The denylist of structural (non-text) keys is kept in sync with
- * server/core/cmsTranslate.js so the manual list and the AI translate cover the
- * same fields.
+ * Field-enumeration rules live in ./translatable.js (single client copy,
+ * kept in sync with server/core/cmsTranslate.js).
+ *
+ * Honesty rules (deferred D3): a filled field is NOT necessarily fresh — the
+ * override doesn't know when the source text changed. Coverage wording stays
+ * soft, and per-block "Clear & retranslate" is the recovery path.
  */
-
-// Keys whose value (and subtree) are structural — never translatable.
-const DENY_KEYS = new Set([
-    'id', 'kind', 'type', 'slug', 'src', 'href', 'url', 'link', 'anchor',
-    'path', 'pageId', 'page', 'target', 'rel', 'icon', 'platform',
-    'code', 'codeRight', 'popupEmbed', 'embed', 'iframe',
-    'planType', 'defaultInterval', 'enableToggle', 'interval',
-    'layout', 'columnLayout', 'verticalAlign', 'mediaPosition', 'mediaSize',
-    'backgroundVariant', 'background', 'gradient', 'theme', 'radius',
-    'number', 'enabled', 'noIndex', 'ogImage', 'favicon', 'role', 'value',
-    'style', 'align', 'variant',
-]);
-const DENY_SUFFIX = /(Style|Color|Font|Align|Size|Variant|Url|Src|Id|Link)$/;
-
-function isDeniedKey(k) {
-    if (typeof k !== 'string') return false;
-    return DENY_KEYS.has(k) || DENY_SUFFIX.test(k);
-}
-
-function isTranslatableValue(s) {
-    const t = s.trim();
-    if (!t) return false;
-    if (/^#[0-9a-fA-F]{3,8}$/.test(t)) return false;
-    if (/^(https?:|mailto:|tel:|data:|\/|#)/i.test(t)) return false;
-    return true;
-}
-
-// Walk content emitting { fieldPath, source } for every translatable leaf.
-function collectStrings(node, path, out) {
-    if (Array.isArray(node)) {
-        node.forEach((el, i) => collectStrings(el, [...path, i], out));
-        return;
-    }
-    if (node && typeof node === 'object') {
-        for (const [k, v] of Object.entries(node)) {
-            if (isDeniedKey(k)) continue;
-            collectStrings(v, [...path, k], out);
-        }
-        return;
-    }
-    if (typeof node === 'string' && isTranslatableValue(node)) out.push({ fieldPath: path, source: node });
-}
-
-function humanize(key) {
-    return String(key)
-        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-        .replace(/[_-]+/g, ' ')
-        .replace(/^\w/, c => c.toUpperCase());
-}
-
-// "Title (#3)" / "Text (#1)" — last string key, with array positions.
-function labelForPath(fieldPath) {
-    const lastKey = [...fieldPath].reverse().find(s => typeof s === 'string');
-    const indices = fieldPath.filter(s => typeof s === 'number');
-    const base = lastKey ? humanize(lastKey) : 'Text';
-    return indices.length ? `${base} (#${indices.map(i => i + 1).join('·')})` : base;
-}
 
 function isMultiline(s) {
     return typeof s === 'string' && (s.length > 64 || s.includes('\n'));
 }
 
-function TranslationRow({ label, source, value, onChange, onFocus }) {
+function TranslationRow({ label, source, value, onChange, onFocus, disabled }) {
     const multi = isMultiline(source);
     const common = {
         value: value || '',
         placeholder: source,
         onFocus,
+        disabled,
         onChange: (e) => onChange(e.target.value),
-        className: 'w-full px-2 py-1.5 rounded-md text-xs border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)] focus:border-[var(--accent-primary)] outline-none',
+        className: 'w-full px-2 py-1.5 rounded-md text-xs border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)] focus:border-[var(--accent-primary)] outline-none disabled:opacity-50 disabled:cursor-not-allowed',
     };
     return (
         <div className="px-4 py-2 border-b border-[var(--border-subtle)]">
@@ -107,8 +54,17 @@ function TranslationRow({ label, source, value, onChange, onFocus }) {
 export default function TranslationPanel({
     scope, site, page, localeName, defaultLocaleName,
     pageOverride, siteOverride, aiStatus,
+    tier = 'fast', onTierChange,
     onPageLeaf, onPageSeo, onChromeLeaf, onSelectBlock, onAiTranslate,
+    onClearAndRetranslateBlock,     // (blockId) — D3 recovery, optional
+    onResetTranslations,            // () — remove every override for this scope, optional
 }) {
+    const [search, setSearch] = useState('');
+    const [onlyUntranslated, setOnlyUntranslated] = useState(false);
+    // Group collapse — keyed by group key; default: groups with every field
+    // filled start collapsed (review-on-demand), unfinished ones open.
+    const [collapsed, setCollapsed] = useState({});
+
     // Build the row groups (data only — onChange is dispatched at render).
     const groups = useMemo(() => {
         if (scope === 'site') return buildSiteGroups(site, siteOverride);
@@ -127,6 +83,28 @@ export default function TranslationPanel({
     const pct = total ? Math.round((done / total) * 100) : 0;
     const running = aiStatus?.state === 'running';
 
+    const q = search.trim().toLowerCase();
+    const visibleGroups = groups
+        .map(g => {
+            let rows = g.rows;
+            if (onlyUntranslated) rows = rows.filter(r => !(r.value || '').trim());
+            if (q) {
+                rows = rows.filter(r =>
+                    (r.source || '').toLowerCase().includes(q)
+                    || (r.label || '').toLowerCase().includes(q)
+                    || (r.value || '').toLowerCase().includes(q));
+            }
+            return { ...g, visibleRows: rows };
+        })
+        .filter(g => g.visibleRows.length > 0);
+
+    const isCollapsed = (g) => {
+        if (q || onlyUntranslated) return false; // filters override collapse
+        if (g.key in collapsed) return collapsed[g.key];
+        const groupDone = g.rows.every(r => (r.value || '').trim());
+        return groupDone; // fully-filled groups start collapsed
+    };
+
     return (
         <div className="flex flex-col h-full">
             {/* mode banner */}
@@ -134,6 +112,17 @@ export default function TranslationPanel({
                 <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-primary)]">
                     <AppIcon name="Languages" className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
                     Translating {localeName}
+                    {onResetTranslations && (
+                        <button
+                            type="button"
+                            onClick={onResetTranslations}
+                            disabled={running || done === 0}
+                            className="ml-auto text-[10px] font-normal text-[var(--text-muted)] hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={`Remove every ${localeName} translation for this ${scope === 'site' ? 'site chrome' : 'page'} — fields fall back to ${defaultLocaleName}`}
+                        >
+                            Reset…
+                        </button>
+                    )}
                 </div>
                 <p className="text-[10px] text-[var(--text-secondary)] mt-0.5 leading-snug">
                     Text only — structure, layout, links and design are shared from {defaultLocaleName}.
@@ -144,23 +133,31 @@ export default function TranslationPanel({
             {/* coverage + AI */}
             <div className="px-4 py-2 border-b border-[var(--border-subtle)] shrink-0">
                 <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] mb-1">
-                    <span>Translated {done}/{total}</span>
+                    <span>{done} of {total} fields have a translation</span>
                     <span>{pct}%</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
                     <div className="h-full bg-[var(--accent-primary)]" style={{ width: `${pct}%` }} />
                 </div>
-                <button
-                    type="button"
-                    onClick={onAiTranslate}
-                    disabled={running || total === 0}
-                    className="mt-2 w-full px-2 py-1.5 rounded-md text-xs font-medium border border-[var(--accent-primary)]/50 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/10 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                >
-                    <AppIcon name={running ? 'Loader' : 'Sparkles'} className={`w-3.5 h-3.5 ${running ? 'animate-spin' : ''}`} />
-                    {running
-                        ? 'Translating…'
-                        : `AI translate ${scope === 'site' ? 'site chrome' : 'page'} to ${localeName}`}
-                </button>
+                {pct === 100 && total > 0 && (
+                    <p
+                        className="text-[10px] text-[var(--text-muted)] mt-1"
+                        title="Translations don't update automatically when you change the source text — use a block's Clear & retranslate after editing the source."
+                    >
+                        All fields filled — review after source edits.
+                    </p>
+                )}
+                <div className="mt-2">
+                    <AiTranslateControl
+                        tier={tier}
+                        onTierChange={onTierChange}
+                        onTranslate={onAiTranslate}
+                        translating={running}
+                        missing={total - done}
+                        gradient={false}
+                        className="flex items-center gap-1.5 w-full [&>button]:flex-1 [&>button]:justify-center"
+                    />
+                </div>
                 {aiStatus?.state === 'done' && (
                     <p className="text-[10px] text-emerald-500 mt-1 text-center">
                         AI filled {aiStatus.translated} field(s) — review &amp; refine below.
@@ -168,129 +165,97 @@ export default function TranslationPanel({
                 )}
             </div>
 
+            {/* search + filter */}
+            {total > 0 && (
+                <div className="px-4 py-2 border-b border-[var(--border-subtle)] shrink-0 flex items-center gap-2">
+                    <div className="flex-1 relative">
+                        <AppIcon name="Search" className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            placeholder="Search fields…"
+                            className="w-full pl-6 pr-2 py-1 rounded-md text-xs border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)] focus:border-[var(--accent-primary)] outline-none"
+                        />
+                    </div>
+                    <label className="flex items-center gap-1 text-[10px] text-[var(--text-secondary)] cursor-pointer whitespace-nowrap">
+                        <input
+                            type="checkbox"
+                            checked={onlyUntranslated}
+                            onChange={e => setOnlyUntranslated(e.target.checked)}
+                            className="accent-[var(--accent-primary)]"
+                        />
+                        Only untranslated
+                    </label>
+                </div>
+            )}
+
             {/* rows */}
             <div className="flex-1 overflow-y-auto">
                 {total === 0 ? (
                     <p className="text-xs text-[var(--text-muted)] text-center py-8 px-4">
                         Nothing to translate here yet.
                     </p>
-                ) : groups.map(g => (
-                    <div key={g.key}>
-                        <button
-                            type="button"
-                            onClick={() => g.blockId && onSelectBlock?.(g.blockId)}
-                            className="w-full flex items-center gap-2 px-4 py-2 bg-[var(--bg-tertiary)]/60 border-b border-[var(--border-subtle)] text-left"
-                        >
-                            <AppIcon name={g.icon || 'Type'} className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
-                            <span className="text-xs font-semibold text-[var(--text-primary)]">{g.title}</span>
-                            <span className="ml-auto text-[10px] text-[var(--text-muted)]">
-                                {g.rows.filter(r => (r.value || '').trim()).length}/{g.rows.length}
-                            </span>
-                        </button>
-                        {g.rows.map((r) => (
-                            <TranslationRow
-                                key={r.key}
-                                label={r.label}
-                                source={r.source}
-                                value={r.value}
-                                onFocus={() => g.blockId && onSelectBlock?.(g.blockId)}
-                                onChange={(v) => dispatch(r.target, v)}
-                            />
-                        ))}
-                    </div>
-                ))}
+                ) : visibleGroups.length === 0 ? (
+                    <p className="text-xs text-[var(--text-muted)] text-center py-8 px-4">
+                        No fields match.
+                    </p>
+                ) : visibleGroups.map(g => {
+                    const groupDone = g.rows.filter(r => (r.value || '').trim()).length;
+                    const closed = isCollapsed(g);
+                    return (
+                        <div key={g.key}>
+                            <div className="w-full flex items-center gap-2 px-4 py-2 bg-[var(--bg-tertiary)]/60 border-b border-[var(--border-subtle)]">
+                                <button
+                                    type="button"
+                                    onClick={() => setCollapsed(c => ({ ...c, [g.key]: !closed }))}
+                                    className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                                    title={closed ? 'Expand' : 'Collapse'}
+                                >
+                                    <AppIcon name={closed ? 'ChevronRight' : 'ChevronDown'} className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                                    <AppIcon name={g.icon || 'Type'} className="w-3.5 h-3.5 text-[var(--accent-primary)] shrink-0" />
+                                    <span className="text-xs font-semibold text-[var(--text-primary)] truncate">{g.title}</span>
+                                </button>
+                                {g.blockId && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onSelectBlock?.(g.blockId)}
+                                        className="shrink-0 text-[var(--text-muted)] hover:text-[var(--accent-primary)]"
+                                        title="Show this block in the preview"
+                                    >
+                                        <AppIcon name="Crosshair" className="w-3 h-3" />
+                                    </button>
+                                )}
+                                {g.blockId && onClearAndRetranslateBlock && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onClearAndRetranslateBlock(g.blockId)}
+                                        disabled={running}
+                                        className="shrink-0 text-[var(--text-muted)] hover:text-[var(--accent-primary)] disabled:opacity-40"
+                                        title="Clear this block's translations and let AI retranslate them (use after changing the source text)"
+                                    >
+                                        <AppIcon name="RefreshCw" className="w-3 h-3" />
+                                    </button>
+                                )}
+                                <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
+                                    {groupDone}/{g.rows.length}
+                                </span>
+                            </div>
+                            {!closed && g.visibleRows.map((r) => (
+                                <TranslationRow
+                                    key={r.key}
+                                    label={r.label}
+                                    source={r.source}
+                                    value={r.value}
+                                    onFocus={() => g.blockId && onSelectBlock?.(g.blockId)}
+                                    onChange={(v) => dispatch(r.target, v)}
+                                    disabled={running}
+                                />
+                            ))}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
-}
-
-// ── group builders (pure — rows carry a `target` descriptor, no closures) ──
-
-function buildPageGroups(page, pageOverride, siteOverride) {
-    if (!page) return [];
-    const groups = [];
-
-    // Page & SEO group. Title lives in the SITE override (pageTitles); SEO in
-    // the PAGE override — both routed via their target descriptors.
-    const metaRows = [];
-    if (typeof page.title === 'string' && page.title.trim()) {
-        metaRows.push({
-            key: 'page:title',
-            label: 'Page title',
-            source: page.title,
-            value: getLocalePath(siteOverride, ['pageTitles', page.id]),
-            target: { type: 'chrome', path: ['pageTitles', page.id] },
-        });
-    }
-    for (const f of ['metaTitle', 'metaDescription']) {
-        const src = page.seo?.[f];
-        if (typeof src === 'string' && src.trim()) {
-            metaRows.push({
-                key: `seo:${f}`,
-                label: f === 'metaTitle' ? 'Meta title' : 'Meta description',
-                source: src,
-                value: getLocalePath(pageOverride, ['seo', f]),
-                target: { type: 'seo', field: f },
-            });
-        }
-    }
-    if (metaRows.length) groups.push({ key: 'meta', title: 'Page & SEO', icon: 'FileText', rows: metaRows });
-
-    for (const block of page.blocks || []) {
-        const found = [];
-        collectStrings(block.content, [], found);
-        if (!found.length) continue;
-        const def = BLOCK_EDITORS[block.type] || {};
-        groups.push({
-            key: block.id,
-            blockId: block.id,
-            title: def.label || humanize(block.type),
-            icon: def.icon || 'Square',
-            rows: found.map((f, i) => ({
-                key: `${block.id}:${f.fieldPath.join('.')}:${i}`,
-                label: labelForPath(f.fieldPath),
-                source: f.source,
-                value: getLocalePath(pageOverride, ['blocks', block.id, 'content', ...f.fieldPath]),
-                target: { type: 'block', blockId: block.id, fieldPath: f.fieldPath },
-            })),
-        });
-    }
-    return groups;
-}
-
-function buildSiteGroups(site, siteOverride) {
-    const groups = [];
-    for (const region of ['header', 'footer']) {
-        const node = site?.[region];
-        if (!node) continue;
-        const found = [];
-        collectStrings(node, [], found);
-        if (!found.length) continue;
-        groups.push({
-            key: region,
-            title: region === 'header' ? 'Header' : 'Footer',
-            icon: region === 'header' ? 'PanelTop' : 'PanelBottom',
-            rows: found.map((f, i) => ({
-                key: `${region}:${f.fieldPath.join('.')}:${i}`,
-                label: labelForPath(f.fieldPath),
-                source: f.source,
-                value: getLocalePath(siteOverride, [region, ...f.fieldPath]),
-                target: { type: 'chrome', path: [region, ...f.fieldPath] },
-            })),
-        });
-    }
-    const titleRows = [];
-    for (const p of site?.pages || []) {
-        if (typeof p.title === 'string' && p.title.trim()) {
-            titleRows.push({
-                key: `title:${p.id}`,
-                label: p.title,
-                source: p.title,
-                value: getLocalePath(siteOverride, ['pageTitles', p.id]),
-                target: { type: 'chrome', path: ['pageTitles', p.id] },
-            });
-        }
-    }
-    if (titleRows.length) groups.push({ key: 'pageTitles', title: 'Page titles', icon: 'Files', rows: titleRows });
-    return groups;
 }

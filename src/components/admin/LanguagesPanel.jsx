@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Globe, Plus, Trash2, Download, Upload, Search, ChevronRight, Check, X, Copy, FileText, Languages, AlertCircle, Star, Mail, Send, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import AiTranslateControl, { AiTranslateResult } from './AiTranslateControl';
+import useAiTranslate, { translateRequest } from '../../hooks/useAiTranslate';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 const API = `${API_BASE}/api/languages`;
@@ -294,9 +296,6 @@ const GUIStringEditor = ({ locale }) => {
     const [showOnly, setShowOnly] = useState('all'); // 'all' | 'missing' | 'translated'
     const [saving, setSaving] = useState(false);
     const [savedKey, setSavedKey] = useState(null);
-    const [aiTranslating, setAiTranslating] = useState(false);
-    const [aiTier, setAiTier] = useState('fast');
-    const [aiResult, setAiResult] = useState(null);
 
     useEffect(() => {
         authFetch(`${API}/${locale}/gui`)
@@ -316,42 +315,23 @@ const GUIStringEditor = ({ locale }) => {
             });
     }, [locale]);
 
-    const handleAiTranslate = useCallback(async () => {
-        setAiTranslating(true);
-        setAiResult(null);
-        try {
-            // Translate GUI strings + system prompts in parallel
-            const [guiRes, promptsRes] = await Promise.all([
-                authFetch(`${API}/${locale}/ai-translate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ modelTier: aiTier }),
-                }),
-                authFetch(`${API}/${locale}/ai-translate-prompts`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ modelTier: aiTier }),
-                }).catch(() => null), // Don't fail GUI translation if prompts fail
+    // GUI translate hits two endpoints in parallel (GUI strings + system
+    // prompts) and folds the prompt count into the success message; the other
+    // sub-panels translate a single endpoint (see useAiTranslate).
+    const ai = useAiTranslate({
+        request: async (tier) => {
+            const [result, promptResult] = await Promise.all([
+                translateRequest(`${API}/${locale}/ai-translate`, tier),
+                // Don't fail GUI translation if prompts fail.
+                translateRequest(`${API}/${locale}/ai-translate-prompts`, tier).catch(() => null),
             ]);
-            const result = await guiRes.json();
-            const promptResult = promptsRes ? await promptsRes.json().catch(() => null) : null;
-            if (result.success) {
-                // Build combined message
-                let message = result.message;
-                if (promptResult?.success && promptResult.translated > 0) {
-                    message += ` + ${promptResult.translated} system prompts`;
-                }
-                setAiResult({ ...result, message });
-                reloadData();
-                setTimeout(() => setAiResult(null), 8000);
-            } else {
-                setAiResult({ error: result.error || 'Translation failed' });
+            if (result.success && promptResult?.success && promptResult.translated > 0) {
+                return { ...result, message: `${result.message} + ${promptResult.translated} system prompts` };
             }
-        } catch (err) {
-            setAiResult({ error: err.message });
-        }
-        setAiTranslating(false);
-    }, [locale, aiTier, reloadData]);
+            return result;
+        },
+        onReload: reloadData,
+    });
 
     const saveTranslation = useCallback(async (key, value) => {
         setSaving(true);
@@ -398,46 +378,16 @@ const GUIStringEditor = ({ locale }) => {
                     {stats.translated || 0} / {stats.total || 0} ({stats.progress || 0}%)
                 </span>
                 {locale !== 'en' && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        <select
-                            value={aiTier}
-                            onChange={e => setAiTier(e.target.value)}
-                            disabled={aiTranslating}
-                            className="px-2 py-1 rounded-lg text-xs border bg-[var(--bg-secondary)]"
-                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', outline: 'none' }}
-                        >
-                            <option value="fast">⚡ Fast</option>
-                            <option value="thinking">🧠 Thinking</option>
-                            <option value="writer">✍️ Writer</option>
-                            <option value="pro">🔬 Pro</option>
-                        </select>
-                        <button
-                            onClick={handleAiTranslate}
-                            disabled={aiTranslating || stats.missing === 0}
-                            className="px-3 py-1 rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-40 transition-opacity"
-                            style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}
-                        >
-                            {aiTranslating ? (
-                                <><span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Translating...</>
-                            ) : (
-                                <>🤖 AI Translate ({stats.missing || 0})</>
-                            )}
-                        </button>
-                    </div>
+                    <AiTranslateControl
+                        tier={ai.tier}
+                        onTierChange={ai.setTier}
+                        onTranslate={ai.run}
+                        translating={ai.translating}
+                        missing={stats.missing}
+                    />
                 )}
             </div>
-            {aiResult && (
-                <div className="mb-3 px-3 py-2 rounded-lg text-xs flex items-center gap-2" style={{
-                    background: aiResult.error ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
-                    color: aiResult.error ? '#ef4444' : '#22c55e',
-                }}>
-                    {aiResult.error ? (
-                        <><AlertCircle className="w-3.5 h-3.5 shrink-0" /> {aiResult.error}</>
-                    ) : (
-                        <><Check className="w-3.5 h-3.5 shrink-0" /> {aiResult.message}</>
-                    )}
-                </div>
-            )}
+            <AiTranslateResult result={ai.result} />
 
             {/* Filters */}
             <div className="flex items-center gap-2 mb-3 shrink-0 flex-wrap">
@@ -545,9 +495,6 @@ const PromptEditor = ({ locale }) => {
     const [editText, setEditText] = useState('');
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
-    const [aiTranslating, setAiTranslating] = useState(false);
-    const [aiTier, setAiTier] = useState('fast');
-    const [aiResult, setAiResult] = useState(null);
 
     const fetchData = useCallback(() => {
         authFetch(`${API}/${locale}/prompts`)
@@ -586,28 +533,10 @@ const PromptEditor = ({ locale }) => {
         setSaving(false);
     };
 
-    const handleAiTranslate = useCallback(async () => {
-        setAiTranslating(true);
-        setAiResult(null);
-        try {
-            const res = await authFetch(`${API}/${locale}/ai-translate-prompts`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modelTier: aiTier }),
-            });
-            const result = await res.json();
-            if (result.success) {
-                setAiResult(result);
-                fetchData();
-                setTimeout(() => setAiResult(null), 8000);
-            } else {
-                setAiResult({ error: result.error || 'Translation failed' });
-            }
-        } catch (err) {
-            setAiResult({ error: err.message });
-        }
-        setAiTranslating(false);
-    }, [locale, aiTier, fetchData]);
+    const ai = useAiTranslate({
+        request: (tier) => translateRequest(`${API}/${locale}/ai-translate-prompts`, tier),
+        onReload: fetchData,
+    });
 
     if (!data) return <div className="flex items-center justify-center h-full" style={{ color: 'var(--text-muted)' }}>Loading...</div>;
 
@@ -627,46 +556,16 @@ const PromptEditor = ({ locale }) => {
                     <span className="text-xs font-medium shrink-0" style={{ color: 'var(--text-secondary)' }}>
                         {stats.translated || 0} / {stats.total || 0} ({stats.total > 0 ? Math.round(((stats.translated || 0) / stats.total) * 100) : 0}%)
                     </span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        <select
-                            value={aiTier}
-                            onChange={e => setAiTier(e.target.value)}
-                            disabled={aiTranslating}
-                            className="px-2 py-1 rounded-lg text-xs border bg-[var(--bg-secondary)]"
-                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', outline: 'none' }}
-                        >
-                            <option value="fast">⚡ Fast</option>
-                            <option value="thinking">🧠 Thinking</option>
-                            <option value="writer">✍️ Writer</option>
-                            <option value="pro">🔬 Pro</option>
-                        </select>
-                        <button
-                            onClick={handleAiTranslate}
-                            disabled={aiTranslating || stats.missing === 0}
-                            className="px-3 py-1 rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-40 transition-opacity"
-                            style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}
-                        >
-                            {aiTranslating ? (
-                                <><span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Translating...</>
-                            ) : (
-                                <>🤖 AI Translate ({stats.missing || 0})</>
-                            )}
-                        </button>
-                    </div>
+                    <AiTranslateControl
+                        tier={ai.tier}
+                        onTierChange={ai.setTier}
+                        onTranslate={ai.run}
+                        translating={ai.translating}
+                        missing={stats.missing}
+                    />
                 </div>
             )}
-            {aiResult && (
-                <div className="mb-3 px-3 py-2 rounded-lg text-xs flex items-center gap-2" style={{
-                    background: aiResult.error ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
-                    color: aiResult.error ? '#ef4444' : '#22c55e',
-                }}>
-                    {aiResult.error ? (
-                        <><AlertCircle className="w-3.5 h-3.5 shrink-0" /> {aiResult.error}</>
-                    ) : (
-                        <><Check className="w-3.5 h-3.5 shrink-0" /> {aiResult.message}</>
-                    )}
-                </div>
-            )}
+            <AiTranslateResult result={ai.result} />
 
             {/* Main content */}
             <div className="flex-1 flex overflow-hidden gap-3 min-h-0">
@@ -785,9 +684,6 @@ const EmailTemplateEditor = ({ locale }) => {
     const [testRecipient, setTestRecipient] = useState('');
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState(null);
-    const [aiTranslating, setAiTranslating] = useState(false);
-    const [aiTier, setAiTier] = useState('fast');
-    const [aiResult, setAiResult] = useState(null);
 
     const fetchData = useCallback(() => {
         authFetch(`${API}/${locale}/email-templates`)
@@ -843,28 +739,10 @@ const EmailTemplateEditor = ({ locale }) => {
         setSaving(false);
     };
 
-    const handleAiTranslate = useCallback(async () => {
-        setAiTranslating(true);
-        setAiResult(null);
-        try {
-            const res = await authFetch(`${API}/${locale}/ai-translate-emails`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modelTier: aiTier }),
-            });
-            const result = await res.json();
-            if (result.success) {
-                setAiResult(result);
-                fetchData();
-                setTimeout(() => setAiResult(null), 8000);
-            } else {
-                setAiResult({ error: result.error || 'Translation failed' });
-            }
-        } catch (err) {
-            setAiResult({ error: err.message });
-        }
-        setAiTranslating(false);
-    }, [locale, aiTier, fetchData]);
+    const ai = useAiTranslate({
+        request: (tier) => translateRequest(`${API}/${locale}/ai-translate-emails`, tier),
+        onReload: fetchData,
+    });
 
     const handleTest = async () => {
         if (!testRecipient.trim()) return;
@@ -906,42 +784,20 @@ const EmailTemplateEditor = ({ locale }) => {
                     </button>
                 ))}
                 {locale !== 'en' && (
-                    <div className="ml-auto flex items-center gap-1.5">
-                        <select
-                            value={aiTier}
-                            onChange={e => setAiTier(e.target.value)}
-                            disabled={aiTranslating}
-                            className="px-2 py-1 rounded-lg text-xs border bg-[var(--bg-secondary)]"
-                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', outline: 'none' }}
-                        >
-                            <option value="fast">⚡ Fast</option>
-                            <option value="thinking">🧠 Thinking</option>
-                            <option value="writer">✍️ Writer</option>
-                            <option value="pro">🔬 Pro</option>
-                        </select>
-                        <button
-                            onClick={handleAiTranslate}
-                            disabled={aiTranslating}
-                            className="px-3 py-1 rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-40 transition-opacity"
-                            style={{ background: 'var(--accent-primary)' }}
-                        >
-                            {aiTranslating ? (
-                                <><span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Translating...</>
-                            ) : (
-                                <><Languages className="w-3.5 h-3.5" /> AI Translate</>
-                            )}
-                        </button>
-                    </div>
+                    <AiTranslateControl
+                        className="ml-auto flex items-center gap-1.5"
+                        tier={ai.tier}
+                        onTierChange={ai.setTier}
+                        onTranslate={ai.run}
+                        translating={ai.translating}
+                        missing={data.stats?.missing}
+                        icon={<Languages className="w-3.5 h-3.5" />}
+                        gradient={false}
+                        showCount={false}
+                    />
                 )}
             </div>
-            {aiResult && (
-                <div className="mb-3 px-3 py-2 rounded-lg text-xs flex items-center gap-2" style={{
-                    background: aiResult.error ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
-                    color: aiResult.error ? '#ef4444' : '#22c55e',
-                }}>
-                    {aiResult.error ? (<><AlertCircle className="w-3.5 h-3.5 shrink-0" /> {aiResult.error}</>) : (<><Check className="w-3.5 h-3.5 shrink-0" /> {aiResult.message}</>)}
-                </div>
-            )}
+            <AiTranslateResult result={ai.result} />
 
             <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
                 {/* Left: fields form */}

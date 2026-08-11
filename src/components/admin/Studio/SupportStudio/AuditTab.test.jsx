@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import AuditTab from './AuditTab';
 import { authFetch } from '../../../../utils/helpers';
+import { ok } from '@/test/http';
 
 vi.mock('../../../../utils/helpers', () => ({ API_BASE: '', authFetch: vi.fn() }));
-vi.mock('../../../../hooks/useTranslation', () => ({ default: () => ({ t: (_k, fallback) => fallback || _k }) }));
+vi.mock('../../../../hooks/useTranslation', () => import('@/test/useTranslationMock'));
 
-const ok = (body) => Promise.resolve({ ok: true, json: async () => body });
 const EVENTS = [
     { id: 'e1', actor_kind: 'ai', action: 'ai_reply', inbox_id: 'i1', thread_id: 't1', payload: { confidence: 0.9 }, created_at: '2026-06-29T10:00:00Z' },
     { id: 'e2', actor_kind: 'staff', action: 'inbox_access_changed', inbox_id: 'i1', payload: { sharedGroups: ['g1'] }, created_at: '2026-06-29T09:00:00Z' },

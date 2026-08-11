@@ -32,6 +32,29 @@ export const CHANNEL_OPTIONS = Object.freeze([
     Object.freeze({ key: 'push',  label: 'Push',  comingSoon: true }),
 ]);
 
+/** Short names for the canvas, where "notification" as a chip said nothing. */
+export const CHANNEL_LABELS = Object.freeze({
+    inapp: 'In-app',
+    notification: 'In-app',   // the notification STEP's own name for the bell
+    email: 'Email',
+    slack: 'Slack',
+    push: 'Push',
+});
+
+/**
+ * A notification STEP's `channels`, in the vocabulary this UI speaks.
+ *
+ * The runner calls the bell `notification` on a step and `inapp` on the
+ * run-level policy, and accepts either in both places
+ * (core/automationRunner/engine.js `execNotification`). The UI settles on
+ * `inapp` so one set of pills serves both, and maps the legacy name on the way
+ * in so an existing step still shows its bell as lit.
+ */
+export function stepChannelsToUi(channels) {
+    const raw = Array.isArray(channels) && channels.length ? channels : ['inapp'];
+    return normalizeChannels(raw.map(c => (c === 'notification' ? 'inapp' : c)));
+}
+
 /**
  * Keep only known channels, always include the bell, de-dupe. Mirrors the
  * server's normalizeChannels so the UI and the runner agree on the shape.

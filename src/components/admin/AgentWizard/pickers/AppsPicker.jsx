@@ -40,7 +40,7 @@ export default function AppsPicker({ items, enabled, onClose, onToggle, t }) {
                                 type="text"
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
-                                placeholder={t('agent_wizard.apps.search') || 'Search apps'}
+                                placeholder={t('agent_wizard.apps.search', 'Search apps')}
                                 className="w-full bg-[var(--bg-secondary)] rounded-full pl-9 pr-3 py-2 text-sm outline-none text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
                                 autoFocus
                             />
@@ -86,7 +86,7 @@ export default function AppsPicker({ items, enabled, onClose, onToggle, t }) {
                                 </div>
                                 <h3 className="text-2xl font-semibold text-[var(--text-primary)] mb-3">{focused.label}</h3>
                                 <p className="text-sm text-[var(--text-secondary)] leading-6">
-                                    {focused.description || t('agent_wizard.apps.no_description') || 'No description available.'}
+                                    {focused.description || t('agent_wizard.apps.no_description', 'No description available.')}
                                 </p>
                             </div>
                             <div className="px-8 pb-6 pt-3">
@@ -98,8 +98,8 @@ export default function AppsPicker({ items, enabled, onClose, onToggle, t }) {
                                         : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:opacity-90'}`}
                                 >
                                     {focusedSelected
-                                        ? (t('agent_wizard.apps.disable') || 'Disable')
-                                        : (t('agent_wizard.apps.enable') || 'Enable')}
+                                        ? (t('agent_wizard.apps.disable', 'Disable'))
+                                        : (t('agent_wizard.apps.enable', 'Enable'))}
                                 </button>
                             </div>
                         </>

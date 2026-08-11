@@ -1,11 +1,13 @@
 import {
     Clock, Zap, Webhook, MousePointer2, Mail, Calendar,
     Tag, BellRing, FileUp, FilePlus, FilePen, Share2, Activity, Bell,
-    Ticket, RefreshCw, Stethoscope, LogIn, Bot,
+    Ticket, RefreshCw, Stethoscope, LogIn, Bot, AppWindow, ClipboardList,
 } from 'lucide-react';
 import React from 'react';
 import IntegrationLogo from './IntegrationLogo';
 import StepNodeBase, { NodeChip } from './StepNodeBase';
+import { describeCron } from '../scheduleBuilderUtils';
+import { triggerTypeLabel } from '../triggerLabels';
 
 /**
  * Trigger provider id → integration id used by INTEGRATION_META.
@@ -21,48 +23,48 @@ const PROVIDER_TO_INTEGRATION = {
     'nextcloud':        'nextcloud',
 };
 
-const KIND_META = {
-    schedule:    { icon: Clock,         label: 'Schedule trigger' },
-    manual:      { icon: MousePointer2, label: 'Manual trigger' },
-    webhook:     { icon: Webhook,       label: 'Webhook trigger' },
-    app_event:   { icon: Zap,           label: 'App-event trigger' },
-    // Exposed to agents/direct chat as a function tool (trigger.kind === 'agent_call').
-    agent_call:  { icon: Bot,           label: 'Agent trigger' },
-    // Inline-flowlet entry point: the sub-flow's declared inputs (no real
-    // "trigger" — it runs when a call_layer step invokes it).
-    layer_input: { icon: LogIn,         label: 'Flowlet input' },
+// Icons only — the label strings live in ../triggerLabels so the palette,
+// the settings form and the node all name a trigger the same way (BFSF-339).
+const KIND_ICON = {
+    schedule:    Clock,
+    manual:      MousePointer2,
+    webhook:     Webhook,
+    app_event:   Zap,
+    agent_call:  Bot,
+    layer_input: LogIn,
+    app_trigger: AppWindow,
+    form:        ClipboardList,
 };
 
 /**
- * Sub-meta per (provider, event) so a Gmail-new-email trigger gets a
- * Mail icon and a friendly "New email (Gmail)" label instead of the
- * generic "App-event trigger" lightning bolt.
+ * Sub-icon per (provider, event) so a Gmail-new-email trigger gets a Mail
+ * glyph instead of the generic app-event lightning bolt.
  */
-const APP_EVENT_META = {
-    'gmail.mail.new':                  { icon: Mail,      label: 'New email (Gmail)' },
-    'gmail.label.added':               { icon: Tag,       label: 'Email labelled (Gmail)' },
-    'google-calendar.event.changed':   { icon: Calendar,  label: 'Calendar event changed' },
-    'google-calendar.event.upcoming':  { icon: BellRing,  label: 'Calendar event upcoming' },
-    'google-drive.file.new':           { icon: FileUp,    label: 'New file (Drive)' },
-    'nextcloud.file.new':              { icon: FilePlus,  label: 'New file (Nextcloud)' },
-    'nextcloud.file.changed':          { icon: FilePen,   label: 'File changed (Nextcloud)' },
-    'nextcloud.share.received':        { icon: Share2,    label: 'Share received (Nextcloud)' },
-    'nextcloud.activity.new':          { icon: Activity,  label: 'Nextcloud activity' },
-    'nextcloud.notification.new':      { icon: Bell,      label: 'Nextcloud notification' },
-    'ticket-assistant.ticket.new':     { icon: Ticket,    label: 'New ticket (Assistant)' },
-    'ticket-assistant.sync.completed': { icon: RefreshCw, label: 'Ticket sync finished' },
+const APP_EVENT_ICON = {
+    'gmail.mail.new':                  Mail,
+    'gmail.label.added':               Tag,
+    'google-calendar.event.changed':   Calendar,
+    'google-calendar.event.upcoming':  BellRing,
+    'google-drive.file.new':           FileUp,
+    'nextcloud.file.new':              FilePlus,
+    'nextcloud.file.changed':          FilePen,
+    'nextcloud.share.received':        Share2,
+    'nextcloud.activity.new':          Activity,
+    'nextcloud.notification.new':      Bell,
+    'ticket-assistant.ticket.new':     Ticket,
+    'ticket-assistant.sync.completed': RefreshCw,
 };
 
 export default function TriggerNode({ id, data }) {
     const { step, runStep, issues, onAddAfter, onDiagnose } = data;
     const kind = step.kind || 'manual';
 
-    let meta = KIND_META[kind] || KIND_META.manual;
+    const meta = { label: triggerTypeLabel(step) };
+    let Icon = KIND_ICON[kind] || KIND_ICON.manual;
     if (kind === 'app_event' && step.appEvent) {
         const key = `${step.appEvent.provider}.${step.appEvent.event}`;
-        if (APP_EVENT_META[key]) meta = APP_EVENT_META[key];
+        if (APP_EVENT_ICON[key]) Icon = APP_EVENT_ICON[key];
     }
-    const Icon = meta.icon;
     const providerIntegration = (kind === 'app_event' && step.appEvent?.provider)
         ? PROVIDER_TO_INTEGRATION[step.appEvent.provider] || null
         : null;
@@ -74,9 +76,11 @@ export default function TriggerNode({ id, data }) {
     const body = (
         <div>
             <div className="font-semibold truncate">{step.label || meta.label}</div>
+            {/* "Every day at 09:00", not `0 9 * * *`. A schedule the author
+                can't read at a glance is a schedule they can't check. */}
             {kind === 'schedule' && cron && (
                 <div className="mt-0.5 flex items-center gap-1 flex-wrap">
-                    <NodeChip><span className="font-mono">{cron}</span></NodeChip>
+                    <NodeChip title={cron}>{describeCron(cron)}</NodeChip>
                     {tz && <NodeChip>{tz}</NodeChip>}
                 </div>
             )}
@@ -115,11 +119,11 @@ export default function TriggerNode({ id, data }) {
                     </div>
                 );
             })()}
-            {kind === 'layer_input' && (
+            {(kind === 'layer_input' || kind === 'app_trigger') && (
                 Array.isArray(step.params) && step.params.length > 0 ? (
                     <div className="mt-1 flex items-center gap-1 flex-wrap">
                         {step.params.slice(0, 6).map((p) => (
-                            <NodeChip key={p.name} title={p.required ? `${p.name} (required)` : p.name}>
+                            <NodeChip key={p.name} title={`${p.name}${p.required ? ' (required)' : ''}${p.type === 'file' ? ' (file)' : ''}`}>
                                 {p.name}{p.required ? '*' : ''}
                             </NodeChip>
                         ))}
@@ -149,9 +153,13 @@ export default function TriggerNode({ id, data }) {
     const hoverDetail = (
         <div>
             <div className="font-semibold mb-1">{meta.label}</div>
-            <div className="text-[var(--text-secondary)]">id: <span className="font-mono">{step.id}</span></div>
-            {kind === 'schedule' && cron && <div>cron: <span className="font-mono">{cron}</span> ({tz || 'UTC'})</div>}
-            {kind === 'webhook' && <div>HTTP webhook entry point.</div>}
+            {kind === 'schedule' && cron && <div>{describeCron(cron)} ({tz || 'UTC'})</div>}
+            {kind === 'webhook' && (
+                <div>
+                    <div>HTTP webhook entry point.</div>
+                    <div className="mt-1 text-[var(--text-tertiary)]">Open this node to copy its signed POST URL.</div>
+                </div>
+            )}
             {kind === 'manual' && <div>Runs only on user action.</div>}
             {kind === 'agent_call' && (
                 <div className="mt-1">
@@ -165,6 +173,18 @@ export default function TriggerNode({ id, data }) {
                     {Array.isArray(step.params) && step.params.length > 0 ? (
                         <div className="mt-1 text-[var(--text-tertiary)]">
                             Inputs: <span className="font-mono">{step.params.map((p) => p.name).join(', ')}</span>
+                        </div>
+                    ) : (
+                        <div className="mt-1 text-[var(--text-tertiary)]">No declared inputs.</div>
+                    )}
+                </div>
+            )}
+            {kind === 'app_trigger' && (
+                <div className="mt-1">
+                    <div>Runs when a Studio App action calls it.</div>
+                    {Array.isArray(step.params) && step.params.length > 0 ? (
+                        <div className="mt-1 text-[var(--text-tertiary)]">
+                            Inputs: <span className="font-mono">{step.params.map((p) => p.name + (p.type === 'file' ? ' (file)' : '')).join(', ')}</span>
                         </div>
                     ) : (
                         <div className="mt-1 text-[var(--text-tertiary)]">No declared inputs.</div>

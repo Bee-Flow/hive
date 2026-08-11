@@ -1,7 +1,9 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Search, ChevronDown, ChevronRight, Plus, Layers } from 'lucide-react';
 import IntegrationLogo from './nodes/IntegrationLogo';
-import { buildStepGroups, buildSearchResults } from './stepPalette';
+import { buildStepGroups, buildSearchResults, gated } from './stepPalette';
+import { stepDragProps } from './stepDrag';
+import { denseInputClass } from './settings/formStyles';
 
 /**
  * Shared "add step" list content — rows, the apps category→app→action tree,
@@ -34,15 +36,36 @@ export default function AddStepMenu({ scope = {}, group = null, showSearch, onAd
     );
     // Smart sections (full menu only): context "Suggested next" + personal
     // "Frequently used", supplied by the caller via scope.
+    //
+    // Two things happen here that the caller (BuildTab) can't do, because it
+    // builds the two lists independently and neither knows about the other:
+    //
+    //  · DEDUP (BFSF-361). The same step turning up in both blocks read as two
+    //    different offers stacked on top of each other. "Suggested next" wins
+    //    the tie and keeps its place: it is derived from what THIS graph needs
+    //    next, so it is the more specific of the two, and it renders first —
+    //    dropping the later copy leaves the rows the eye already scanned
+    //    exactly where they were.
+    //  · GATING (BFSF-348). These rows bypassed `gated()` entirely, so the
+    //    "add a form step without a form trigger → guaranteed validation
+    //    error" path was still fully reachable through them.
     const recoGroups = useMemo(() => {
         if (group) return [];
         const out = [];
-        if (Array.isArray(scope.suggested) && scope.suggested.length) {
-            out.push({ key: '__suggested', title: 'Suggested next', accent: true, items: scope.suggested });
-        }
-        if (Array.isArray(scope.frequent) && scope.frequent.length) {
-            out.push({ key: '__frequent', title: 'Frequently used', accent: false, items: scope.frequent });
-        }
+        const seen = new Set();
+        const take = (items) => (Array.isArray(items) ? items : [])
+            .filter((r) => {
+                const id = recoIdentity(r);
+                if (seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            })
+            .map(r => gated(r, scope.hasFormTrigger));
+
+        const suggested = take(scope.suggested);
+        if (suggested.length) out.push({ key: '__suggested', title: 'Suggested next', accent: true, items: suggested });
+        const frequent = take(scope.frequent);
+        if (frequent.length) out.push({ key: '__frequent', title: 'Frequently used', accent: false, items: frequent });
         return out;
     }, [group, scope]);
 
@@ -59,7 +82,7 @@ export default function AddStepMenu({ scope = {}, group = null, showSearch, onAd
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder="Search steps…"
-                            className="w-full pl-7 pr-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                            className={denseInputClass('w-full pl-7 pr-2')}
                         />
                     </div>
                 </div>
@@ -80,6 +103,19 @@ export default function AddStepMenu({ scope = {}, group = null, showSearch, onAd
             </div>
         </div>
     );
+}
+
+/**
+ * What makes two reco rows THE SAME offer. Compared on the payload rather than
+ * the row's `key`, because the two lists are built by different resolvers and
+ * a step id ('set') and a flowlet key can collide there — the payload is what
+ * actually gets added, so payloads that would add the same thing are the same
+ * thing.
+ */
+function recoIdentity(r) {
+    const p = r?.payload || {};
+    const what = p.tool || p.layerKey || p.blockId || p.triggerKind || p.mode || '';
+    return `${p.kind || ''}:${what}:${what ? '' : (r?.key || '')}`;
 }
 
 /** Smart "Suggested next" / "Frequently used" section (search-result rows). */
@@ -153,27 +189,46 @@ function ItemIcon({ item, size = 18 }) {
     return <Icon size={size} />;
 }
 
+/**
+ * A step the current graph can't accept (stepPalette stamps `disabled` +
+ * `disabledReason` — today only the form pages, which need a form trigger).
+ * It stays on the list: filtering it out answered "you can't have this" with
+ * silence, so neither the step nor the rule behind it was discoverable
+ * (BFSF-348). Inert to click, Enter, Space and drag; the reason shows in place
+ * of the description.
+ */
 function SimpleRow({ item, onAdd }) {
-    const onDragStart = (e) => {
-        e.dataTransfer.setData('application/x-automation-step', JSON.stringify(item.payload));
-        e.dataTransfer.effectAllowed = 'move';
-    };
+    const disabled = !!item.disabled;
+    const add = () => { if (!disabled) onAdd(item.payload); };
     return (
         <div
-            draggable
-            onDragStart={onDragStart}
-            onClick={() => onAdd(item.payload)}
+            {...(disabled ? null : stepDragProps(item.payload))}
+            onClick={add}
             role="button"
+            aria-disabled={disabled || undefined}
             tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAdd(item.payload); } }}
-            className="group flex items-center gap-3 px-3 py-2 cursor-pointer select-none hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-secondary)] focus:outline-none"
+            title={disabled ? item.disabledReason : undefined}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); add(); } }}
+            className={`group flex items-center gap-3 px-3 py-2 select-none focus:outline-none ${
+                disabled
+                    ? 'cursor-not-allowed opacity-55'
+                    : 'cursor-pointer hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-secondary)]'
+            }`}
         >
-            <div className="shrink-0 h-8 w-8 rounded-lg bg-[var(--bg-secondary)] flex items-center justify-center text-[var(--text-secondary)] group-hover:text-[var(--accent)]">
+            <div className={`shrink-0 h-8 w-8 rounded-lg bg-[var(--bg-secondary)] flex items-center justify-center text-[var(--text-secondary)] ${disabled ? '' : 'group-hover:text-[var(--accent)]'}`}>
                 <ItemIcon item={item} size={16} />
             </div>
+            {/* Both descriptions get two lines. The enabled one used to get
+                `truncate` while the DISABLED one got `line-clamp-2`, so the
+                step you can actually add was the one cut mid-sentence — and
+                the longest descriptions belong to the steps that most need
+                explaining ("Swap personal data for placeholders; the real
+                values come back on their own"). */}
             <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-[var(--text-primary)] truncate">{item.label}</div>
-                {item.desc && <div className="text-xs text-[var(--text-tertiary)] truncate">{item.desc}</div>}
+                {disabled
+                    ? <div className="text-xs text-[var(--text-tertiary)] italic line-clamp-2">{item.disabledReason}</div>
+                    : item.desc && <div className="text-xs text-[var(--text-tertiary)] line-clamp-2">{item.desc}</div>}
             </div>
         </div>
     );
@@ -217,33 +272,34 @@ function AppRow({ app, isOpen, onToggle, onAdd }) {
     const appPayload = primary
         ? { kind: 'integration_action', tool: primary.tool, label: app.label, appId: app.integrationId, sideEffect: primary.sideEffect }
         : null;
-    const onAppDragStart = (e) => {
-        if (!appPayload) return;
-        e.dataTransfer.setData('application/x-automation-step', JSON.stringify(appPayload));
-        e.dataTransfer.effectAllowed = 'move';
-    };
     return (
         <div>
             <div className="w-full flex items-center gap-2.5 pl-7 pr-2 py-1.5 text-sm hover:bg-[var(--bg-secondary)]">
+                {/* The disclosure chevron leads the row, exactly like the
+                    category row above it (BFSF-337). It used to sit on the far
+                    RIGHT here, so drilling from a category into an app made the
+                    eye and the pointer jump across the panel and back for every
+                    level of nesting. Left at every depth = one scan column. */}
                 <button
                     type="button"
                     onClick={onToggle}
                     className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
                     title={notConnected ? `${app.label} — connect your account to use these actions at runtime.` : `${app.label} — choose an operation, or + to add it.`}
                 >
+                    {isOpen
+                        ? <ChevronDown size={13} className="shrink-0 text-[var(--text-tertiary)]" />
+                        : <ChevronRight size={13} className="shrink-0 text-[var(--text-tertiary)]" />}
                     <IntegrationLogo integrationId={app.integrationId} size={18} />
                     <span className={`truncate font-medium ${notConnected ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'}`}>{app.label}</span>
                     {notConnected && (
                         <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] uppercase tracking-wide bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">Connect</span>
                     )}
-                    <span className="ml-auto text-xs text-[var(--text-tertiary)] tabular-nums">{app.actions.length}</span>
-                    {isOpen ? <ChevronDown size={13} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={13} className="text-[var(--text-tertiary)]" />}
+                    <span className="ml-auto shrink-0 text-xs text-[var(--text-tertiary)] tabular-nums">{app.actions.length}</span>
                 </button>
                 {appPayload && (
                     <button
                         type="button"
-                        draggable
-                        onDragStart={onAppDragStart}
+                        {...stepDragProps(appPayload)}
                         onClick={(e) => { e.stopPropagation(); onAdd(appPayload); }}
                         title={`Add ${app.label}`}
                         className="shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-[var(--text-tertiary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--accent)]"
@@ -252,8 +308,11 @@ function AppRow({ app, isOpen, onToggle, onAdd }) {
                     </button>
                 )}
             </div>
+            {/* Indented to line up under the app's LOGO, one step further in
+                than the app row's own chevron — so the three levels read as a
+                single left-anchored ladder. */}
             {isOpen && app.actions.length > 0 && (
-                <div className="pl-9 pr-2 pb-1">
+                <div className="pl-11 pr-2 pb-1">
                     {app.actions.map(action => <ActionRow key={action.tool} action={action} onAdd={onAdd} />)}
                 </div>
             )}
@@ -263,16 +322,11 @@ function AppRow({ app, isOpen, onToggle, onAdd }) {
 
 function ActionRow({ action, onAdd }) {
     const payload = { kind: 'integration_action', tool: action.tool, label: action.label, appId: action.integrationId, sideEffect: action.sideEffect };
-    const onDragStart = (e) => {
-        e.dataTransfer.setData('application/x-automation-step', JSON.stringify(payload));
-        e.dataTransfer.effectAllowed = 'move';
-    };
     const hasDistinctDesc = action.description
         && action.description.trim().toLowerCase() !== (action.label || '').trim().toLowerCase();
     return (
         <div
-            draggable
-            onDragStart={onDragStart}
+            {...stepDragProps(payload)}
             onClick={() => onAdd(payload)}
             role="button"
             tabIndex={0}
@@ -303,27 +357,34 @@ function SearchResults({ results, q, onAdd }) {
 }
 
 function SearchResultRow({ result, q, onAdd }) {
-    const onDragStart = (e) => {
-        e.dataTransfer.setData('application/x-automation-step', JSON.stringify(result.payload));
-        e.dataTransfer.effectAllowed = 'move';
-    };
     const Icon = result.Icon;
+    // Same rule as SimpleRow: a result the graph can't accept is findable and
+    // explains itself rather than not being a result at all.
+    const disabled = !!result.disabled;
+    const add = () => { if (!disabled) onAdd(result.payload); };
     return (
         <div
-            draggable
-            onDragStart={onDragStart}
-            onClick={() => onAdd(result.payload)}
+            {...(disabled ? null : stepDragProps(result.payload))}
+            onClick={add}
             role="button"
+            aria-disabled={disabled || undefined}
             tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAdd(result.payload); } }}
-            className="group flex items-center gap-3 px-3 py-2 cursor-pointer select-none hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-secondary)] focus:outline-none"
+            title={disabled ? result.disabledReason : undefined}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); add(); } }}
+            className={`group flex items-center gap-3 px-3 py-2 select-none focus:outline-none ${
+                disabled
+                    ? 'cursor-not-allowed opacity-55'
+                    : 'cursor-pointer hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-secondary)]'
+            }`}
         >
             <div className="shrink-0 h-8 w-8 rounded-lg bg-[var(--bg-secondary)] flex items-center justify-center text-[var(--text-secondary)]">
                 {Icon ? <Icon size={16} /> : <IntegrationLogo integrationId={result.integrationId} tool={result.tool} size={16} />}
             </div>
             <div className="min-w-0 flex-1">
                 <div className="text-sm text-[var(--text-primary)] truncate">{highlightMatch(result.label, q)}</div>
-                {result.secondary && <div className="text-xs text-[var(--text-tertiary)] truncate">{result.secondary}</div>}
+                {disabled
+                    ? <div className="text-xs text-[var(--text-tertiary)] italic line-clamp-2">{result.disabledReason}</div>
+                    : result.secondary && <div className="text-xs text-[var(--text-tertiary)] truncate">{result.secondary}</div>}
             </div>
             {result.context && <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">{result.context}</span>}
         </div>

@@ -1,5 +1,8 @@
 export function formatDuration(seconds) {
-    if (!seconds || seconds < 1) return '0:00';
+    // `Infinity` reaches here from `<audio>.duration` on containers with no
+    // duration in the header (MediaRecorder WebM), and rendered literally as
+    // "Infinity:NaN:NaN" in the player's time row.
+    if (!Number.isFinite(seconds) || !seconds || seconds < 1) return '0:00';
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
@@ -49,11 +52,6 @@ export function generateAutoTitle() {
     return `Meeting ${date} ${time}`;
 }
 
-export function getSpeakerColor(id, palette) {
-    if (!palette || palette.length === 0) return '#9ca3af';
-    if (!id) return palette[0];
-    let hash = 0;
-    const s = String(id);
-    for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
-    return palette[Math.abs(hash) % palette.length];
-}
+// Speaker colors moved to buildSpeakerColorMap in lib/playerData.js: the old
+// string-hash assignment here collided from 11 speakers on and repainted a
+// speaker on rename.

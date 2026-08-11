@@ -14,9 +14,10 @@ import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, Code, Highlighter,
   Link as LinkIcon, Undo, Redo, Plus, ChevronDown, FileUp, AlignLeft, Palette,
   Wand2, RefreshCw, Scissors, Expand, Table2, Pilcrow, Loader2,
-  Rows3, Columns3, Trash2, Heading, Sigma,
+  Rows3, Columns3, Trash2, Heading, Sigma, Eye, EyeOff,
 } from 'lucide-react';
 import { useViewport } from '../../hooks/useViewport';
+import { fullColumnSelection } from '../engine/tables.js';
 import {
   Btn, Dropdown, Item, MenuDivider, MenuLabel, mkTt,
   TurnIntoItems, AlignItems, ColorFontPanel,
@@ -93,6 +94,7 @@ function TurnIntoTrigger({ editor, t }) {
 
 export default function EditorToolbar({
   editor, t, insertItems, onInsert, onImportClick, onAIFill, aiFilling,
+  onToggleColumnNames, columnNamesHidden,
   askAiEnabled, saving, wordCount, onAIAction, onAsk, hasSelection,
   // Table extras filled in by later phases (formula / chart / collapse).
   tableMenuExtras,
@@ -105,6 +107,17 @@ export default function EditorToolbar({
   const currentColor = editor.getAttributes('textStyle').color || null;
   const currentFont = editor.getAttributes('textStyle').fontFamily || null;
   const inTable = editor.isActive('table');
+
+  // Insert formula routing: a selection covering exactly one full visual
+  // column means "append a total row for that column" — setCellFormula would
+  // refuse a multi-cell selection anyway (S4). Everything else targets the
+  // current cell.
+  const insertFormula = () => {
+    const state = editor.state;
+    const fc = state ? fullColumnSelection(state.doc, state.selection) : null;
+    if (fc) chain().addColumnTotal(fc.tablePath, fc.col).run();
+    else chain().setCellFormula('=').run();
+  };
 
   return (
     <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b overflow-x-auto custom-scrollbar"
@@ -211,9 +224,17 @@ export default function EditorToolbar({
             <Item icon={Trash2} label={tt('notebooks.delete_col', 'Delete column')} danger disabled={!inTable} onClick={() => { chain().deleteColumn().run(); setOpen(false); }} />
             <MenuDivider />
             <Item icon={Heading} label={tt('notebooks.toggle_header_row', 'Toggle header row')} disabled={!inTable} onClick={() => { chain().toggleHeaderRow().run(); setOpen(false); }} />
-            <Item icon={Sigma} label={tt('notebooks.insert_formula', 'Insert formula')} disabled={!inTable} onClick={() => { chain().setCellFormula('=').run(); setOpen(false); }} />
+            {onToggleColumnNames && (
+              <Item
+                icon={columnNamesHidden ? Eye : EyeOff}
+                label={columnNamesHidden ? tt('notebooks.show_column_names', 'Show column names') : tt('notebooks.hide_column_names', 'Hide column names')}
+                disabled={!inTable}
+                onClick={() => { onToggleColumnNames(); setOpen(false); }}
+              />
+            )}
+            <Item icon={Sigma} label={tt('notebooks.insert_formula', 'Insert formula')} disabled={!inTable} onClick={() => { insertFormula(); setOpen(false); }} />
             <MenuLabel>{tt('notebooks.cell_align', 'Cell alignment')}</MenuLabel>
-            <AlignItems editor={editor} t={t} onDone={() => setOpen(false)} />
+            <AlignItems editor={editor} t={t} cell disabled={!inTable} onDone={() => setOpen(false)} />
             {tableMenuExtras && tableMenuExtras({ inTable, setOpen })}
             <MenuDivider />
             <Item icon={Trash2} label={tt('notebooks.delete_table', 'Delete table')} danger disabled={!inTable} onClick={() => { chain().deleteTable().run(); setOpen(false); }} />

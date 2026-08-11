@@ -3,6 +3,9 @@ import { ShieldCheck, ShieldOff, Loader2, RefreshCw, KeyRound, AlertCircle, Chec
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import RecoveryCodes from '../../components/mfa/RecoveryCodes';
+import MfaHelpAssistant from '../../components/mfa/MfaHelpAssistant';
+import PolicyAcknowledgements from './PolicyAcknowledgements';
+import TokenVaultSection from './TokenVaultSection';
 
 /**
  * Personal security settings — TOTP MFA enrollment & management.
@@ -78,9 +81,10 @@ export default function SecuritySection() {
     const [error, setError] = useState('');
 
     // Enrollment flow
-    const [setupData, setSetupData] = useState(null); // { otpauthUrl, qr, secret }
+    const [setupData, setSetupData] = useState(null); // { otpauthUrl, qr, secret, serverTime }
     const [code, setCode] = useState('');
     const [newCodes, setNewCodes] = useState(null); // recovery codes shown once
+    const [clockDriftSec, setClockDriftSec] = useState(0); // device vs server clock (BFSF-274)
     // Disable / regenerate flows
     const [disarmCode, setDisarmCode] = useState('');
     const [mode, setMode] = useState(null); // null | 'disable' | 'regenerate'
@@ -94,20 +98,46 @@ export default function SecuritySection() {
     };
     useEffect(() => { loadStatus(); }, []);
 
+    // Translate server error codes instead of echoing raw English messages
+    // (BFSF-274) — and make 429s human.
+    const msgFor = (e) => {
+        switch (e?.code) {
+            case 'invalid_code':
+                return t('mfa.invalid_code', 'Invalid code. Check your authenticator app and try again.');
+            case 'mfa_secret_unreadable':
+                return t('mfa.secret_unreadable', 'Your authenticator can no longer be verified on this server. Use a recovery code, or ask your administrator to reset two-factor authentication.');
+            case 'rate_limited':
+                return t('mfa.too_many_attempts', 'Too many attempts — wait a few minutes and try again.');
+            default:
+                return e?.message || t('mfa.request_failed', 'Request failed. Please try again.');
+        }
+    };
+
     const post = async (path, body) => {
         const res = await authFetch(`${API_BASE}/auth/mfa/${path}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body || {}),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Request failed');
+        if (!res.ok) {
+            const err = new Error(data.error || 'Request failed');
+            err.code = res.status === 429 ? 'rate_limited' : data.code;
+            throw err;
+        }
         return data;
     };
 
     const beginSetup = async () => {
         setError(''); setBusy(true);
-        try { setSetupData(await post('setup')); }
-        catch (e) { setError(e.message); }
+        try {
+            const data = await post('setup');
+            setSetupData(data);
+            // TOTP only tolerates ±30s of drift: warn when the device clock is
+            // further off than that, since every code would be rejected with a
+            // generic "Invalid code" otherwise.
+            setClockDriftSec(data.serverTime ? Math.round((Date.now() - data.serverTime) / 1000) : 0);
+        }
+        catch (e) { setError(msgFor(e)); }
         finally { setBusy(false); }
     };
 
@@ -118,7 +148,7 @@ export default function SecuritySection() {
             setNewCodes(data.recoveryCodes || []);
             setSetupData(null); setCode('');
             await loadStatus();
-        } catch (e) { setError(e.message); }
+        } catch (e) { setError(msgFor(e)); }
         finally { setBusy(false); }
     };
 
@@ -135,7 +165,7 @@ export default function SecuritySection() {
                 setMode(null); setDisarmCode('');
                 await loadStatus();
             }
-        } catch (e) { setError(e.message); }
+        } catch (e) { setError(msgFor(e)); }
         finally { setBusy(false); }
     };
 
@@ -166,9 +196,12 @@ export default function SecuritySection() {
             ) : setupData ? (
                 /* Enrollment: QR + confirm code */
                 <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-5 space-y-4">
-                    <p className="text-sm text-[var(--text-secondary)]">
-                        {t('mfa.scan_qr', 'Scan this QR code with your authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…), then enter the 6-digit code to confirm.')}
-                    </p>
+                    {/* Clear, step-by-step instructions incl. WHICH apps work */}
+                    <ol className="text-sm text-[var(--text-secondary)] space-y-1.5 list-decimal pl-5">
+                        <li>{t('mfa.setup_step1', 'Install an authenticator app on your phone — for example Google Authenticator, Microsoft Authenticator, 1Password or Bitwarden (any TOTP app works).')}</li>
+                        <li>{t('mfa.setup_step2', 'In the app, choose “Scan QR code” and scan the code below.')}</li>
+                        <li>{t('mfa.setup_step3', 'Enter the 6-digit code the app shows to confirm.')}</li>
+                    </ol>
                     <div className="flex justify-center">
                         <img src={setupData.qr} alt="MFA QR code" width={200} height={200} className="rounded-lg border border-[var(--border-subtle)] bg-white p-2" />
                     </div>
@@ -176,6 +209,12 @@ export default function SecuritySection() {
                         <summary className="cursor-pointer">{t('mfa.cant_scan', 'Can’t scan? Enter this key manually')}</summary>
                         <code className="block mt-2 p-2 rounded bg-[var(--bg-primary)] break-all select-all">{setupData.secret}</code>
                     </details>
+                    {Math.abs(clockDriftSec) > 30 && (
+                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            {t('mfa.time_drift_warning', 'Your device clock differs from the server by about {n} seconds — authenticator codes may be rejected. Enable automatic time on your device.', { n: Math.abs(clockDriftSec) })}
+                        </div>
+                    )}
                     <input className={inputClass} value={code} onChange={e => setCode(e.target.value)} placeholder="000000" inputMode="numeric" maxLength={6} autoFocus />
                     <div className="flex gap-2">
                         <button onClick={() => { setSetupData(null); setCode(''); setError(''); }} className="flex-1 py-2.5 rounded-lg border border-[var(--border-default)] text-sm font-medium text-[var(--text-secondary)]">
@@ -185,6 +224,9 @@ export default function SecuritySection() {
                             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} {t('mfa.enable', 'Enable')}
                         </button>
                     </div>
+                    {/* AI setup helper — takes no props by design: it must never
+                        receive the QR/secret/code shown above (BFSF-274). */}
+                    <MfaHelpAssistant />
                 </div>
             ) : status.enabled ? (
                 /* Enabled state */
@@ -196,13 +238,19 @@ export default function SecuritySection() {
                     <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5">
                         <KeyRound className="w-3.5 h-3.5" /> {t('mfa.codes_remaining', '{n} recovery codes remaining', { n: status.recoveryCodesRemaining })}
                     </p>
+                    {status.recoveryCodesRemaining <= 3 && (
+                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span className="flex-1">{t('mfa.codes_low_warning', 'You are running low on recovery codes. Regenerate a fresh set while you still have one to confirm with.')}</span>
+                        </div>
+                    )}
 
                     {mode ? (
                         <div className="space-y-2">
                             <label className="text-xs font-medium text-[var(--text-secondary)]">
-                                {t('mfa.confirm_with_code', 'Enter a current code to confirm')}
+                                {t('mfa.confirm_with_code_or_recovery', 'Enter a 6-digit code or a recovery code to confirm')}
                             </label>
-                            <input className={inputClass} value={disarmCode} onChange={e => setDisarmCode(e.target.value)} placeholder="000000" autoFocus />
+                            <input className={inputClass} value={disarmCode} onChange={e => setDisarmCode(e.target.value)} placeholder={t('mfa.code_placeholder', '000000 or a1b2-c3d4')} autoFocus />
                             <div className="flex gap-2">
                                 <button onClick={() => { setMode(null); setDisarmCode(''); setError(''); }} className="flex-1 py-2 rounded-lg border border-[var(--border-default)] text-sm font-medium text-[var(--text-secondary)]">
                                     {t('common.cancel', 'Cancel')}
@@ -242,6 +290,14 @@ export default function SecuritySection() {
 
             {/* Change password — only for accounts that have a password */}
             {status.hasPassword && <ChangePassword />}
+
+            {/* The user's own Privacy Shield placeholder dictionary. Lives here
+                rather than under Privacy Shield because that section is
+                consumer-only, and every account type has a vault. */}
+            <TokenVaultSection />
+
+            {/* ISMS policies to read & confirm (renders nothing when none published) */}
+            <PolicyAcknowledgements />
         </div>
     );
 }

@@ -14,44 +14,27 @@
  * type's first section so an error is never silently hidden.
  */
 
-const FLAT = null;
+import { NODE_DEFS, FLAT, SYNTHETIC_TYPES } from './nodeDefs';
 
-// Per-step-type: section order is implied by the values; `fallback` is the
-// section an unrecognised field tail opens. Keep these field→section maps in
-// sync with the <AccordionSection> boundaries in SettingsForm.jsx.
-const TAXONOMY = {
-    ai_step: {
-        fallback: 'advanced',
-        map: {
-            label: FLAT, prompt: FLAT,
-            systemPrompt: 'advanced', model: 'advanced', modelTier: 'advanced', allowTools: 'advanced',
-            inputs: 'inputs',
-            outputFields: 'output',
-            forEach: 'advanced',
-        },
-    },
-    integration_action: {
-        fallback: 'basics',
-        map: { label: FLAT, tool: 'basics', operation: 'basics', inputs: 'inputs', forEach: 'advanced' },
-    },
-    condition: { fallback: 'condition', map: { label: FLAT, expr: 'condition' } },
-    loop: { fallback: 'loop', map: { label: FLAT, overRef: 'loop', itemVar: 'loop', maxIterations: 'loop' } },
-    notification: { fallback: 'message', map: { label: FLAT, title: 'message', body: 'message', inputs: 'message' } },
-    set: { fallback: 'fields', map: { label: FLAT, fields: 'fields', inputs: 'fields' } },
-    layer_output: { fallback: 'fields', map: { label: FLAT, fields: 'fields' } },
-    call_layer: { fallback: 'inputs', map: { label: FLAT, layerKey: 'flowlet', layerId: 'flowlet', inputs: 'inputs' } },
-    switch: { fallback: 'basics', map: { label: FLAT, expr: 'basics', cases: 'cases' } },
-    datetime: { fallback: 'config', map: { label: FLAT, op: 'config', input: 'config', input2: 'config', amount: 'config', format: 'config', part: 'config', unit: 'config' } },
-    wait: { fallback: 'config', map: { label: FLAT, seconds: 'config' } },
-    stop_error: { fallback: 'config', map: { label: FLAT, message: 'config' } },
-    filter: { fallback: 'config', map: { label: FLAT, arrayRef: 'config', expr: 'config' } },
-    limit: { fallback: 'config', map: { label: FLAT, arrayRef: 'config', count: 'config', maxItems: 'config' } },
-    dedupe: { fallback: 'config', map: { label: FLAT, arrayRef: 'config', field: 'config' } },
-    aggregate: { fallback: 'config', map: { label: FLAT, arrayRef: 'config', field: 'config' } },
-    summarize: { fallback: 'config', map: { label: FLAT, arrayRef: 'config' } },
-    code: { fallback: 'code', map: { label: FLAT, code: 'code', language: 'code' } },
-    trigger: { fallback: 'config', map: { label: FLAT, kind: FLAT, params: 'config', appEvent: 'event', scheduleCron: 'schedule', scheduleTz: 'schedule' } },
-};
+// Per-step-type: `fallback` is the section an unrecognised field tail opens,
+// `map` routes a known one. These now live in flow/nodeDefs.js next to the
+// type's other presentation facts, because keeping a SEPARATE list here is
+// exactly how `guard`, `tokenize`, `untokenize` and `call_block` came to be
+// missing from it: an error on one of those returned an empty section set, so
+// nothing force-opened, and at quick density the Advanced section holding the
+// offending control is not rendered at all. flow/nodeDefs.test.js now asserts
+// every type has an entry and that every section it names is one the type's
+// editor actually renders.
+//
+// Still exported under this name — several tests and callers know it.
+// Canvas-only node types are excluded: they have no editor and no validation
+// path can name them, so an entry here would be a section map for a form that
+// does not exist.
+const TAXONOMY = Object.fromEntries(
+    Object.entries(NODE_DEFS)
+        .filter(([type]) => !SYNTHETIC_TYPES[type])
+        .map(([type, def]) => [type, def.issueSections]),
+);
 
 /** Strip the path down to the field tail after the step id (or `trigger`). */
 function fieldTail(path, stepId) {

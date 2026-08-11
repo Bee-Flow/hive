@@ -1,6 +1,7 @@
 import { CheckCircle2, Clock, XCircle, Loader2, Pin } from 'lucide-react';
 import React, { useCallback } from 'react';
 import StepOutputTab from './StepOutputTab';
+import { summariseData } from '../flow/dataSummary';
 
 /**
  * Run-view container for the StepInspector. Shows the most recent run's
@@ -13,8 +14,12 @@ import StepOutputTab from './StepOutputTab';
  *   step    — the active step (uses .id for path generation)
  *   runStep — the most recent run record for this step (or null)
  *             expected shape: { status, output, error, durationMs }
+ *   compact — the caller already shows the status and the row count in its own
+ *             header (the quick dialog does), so the strip here would be the
+ *             same sentence twice, one band apart. Drops it, and the standing
+ *             hint footer with it.
  */
-export default function RunTabContainer({ step, runStep }) {
+export default function RunTabContainer({ step, runStep, compact = false }) {
     const copyPath = useCallback((path) => {
         if (!path) return;
         try {
@@ -37,14 +42,14 @@ export default function RunTabContainer({ step, runStep }) {
         return (
             <div className="flex flex-col h-full min-h-0 items-center justify-center px-6 py-12 text-[11px] text-[var(--text-tertiary)] text-center gap-2">
                 <Clock size={18} className="opacity-60" />
-                <div>No run output for this step yet — run or dry-run it.</div>
+                <div>No data yet — press ▶ Execute to run this step and capture it.</div>
             </div>
         );
     }
 
     return (
         <div className="flex flex-col h-full min-h-0">
-            <StatusStrip runStep={effectiveRun} />
+            {!compact && <StatusStrip runStep={effectiveRun} />}
             <div className="flex-1 min-h-0">
                 <StepOutputTab
                     stepId={step?.id}
@@ -52,6 +57,7 @@ export default function RunTabContainer({ step, runStep }) {
                     error={effectiveRun.error}
                     remediation={effectiveRun.errorRemediation}
                     onCopyPath={copyPath}
+                    compact={compact}
                 />
             </div>
         </div>
@@ -61,10 +67,15 @@ export default function RunTabContainer({ step, runStep }) {
 function StatusStrip({ runStep }) {
     const { Icon, color, label } = statusFor(runStep.status);
     const duration = runStep.durationMs != null ? `${formatDuration(runStep.durationMs)}` : null;
+    // How much came out, in the same words the connection chip uses.
+    const summary = summariseData(runStep.output);
     return (
         <div className="px-3 py-1.5 border-b border-[var(--border-default)] flex items-center gap-2 text-[11px]">
             <Icon size={12} className={color} />
             <span className={color}>{label}</span>
+            {summary && (
+                <span className="text-[var(--text-primary)] font-medium">· {summary.label}</span>
+            )}
             {duration && (
                 <span className="text-[var(--text-tertiary)]">· {duration}</span>
             )}

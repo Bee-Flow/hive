@@ -1,10 +1,13 @@
 import React from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Shield, KeyRound, Users } from 'lucide-react';
-import GuardrailsPanel from './GuardrailsPanel';
+import { Shield, KeyRound, Users, AtSign, Activity } from 'lucide-react';
+import GuardrailsHub from './guardrails/GuardrailsHub';
 import SSOConfigPanel from './SSOConfigPanel';
+import FreeEmailDomainsPanel from './FreeEmailDomainsPanel';
+import ConnectorHealthPanel from './connectorHealth/ConnectorHealthPanel';
 import UserManagement from './UserManagement';
 import { useLicenseContext } from '../LicenseContext';
+import HubScaffold from './shared/HubScaffold';
 
 /**
  * SecurityHub — Unified security configuration page
@@ -21,99 +24,61 @@ const SECTIONS = [
     { id: 'users', labelKey: 'admin.sec_users', icon: Users, color: '#3b82f6' },
     { id: 'guardrails', labelKey: 'admin.sec_guardrails', icon: Shield, color: '#ef4444', enterpriseOnly: true },
     { id: 'sso', labelKey: 'admin.sec_sso', icon: KeyRound, color: '#f59e0b' },
+    { id: 'email-domains', labelKey: 'admin.sec_email_domains', icon: AtSign, color: '#8b5cf6', superAdminOnly: true },
+    { id: 'connector-health', labelKey: 'admin.sec_connector_health', icon: Activity, color: '#14b8a6', superAdminOnly: true },
 ];
 
 const SecurityHub = ({ activeSection: activeProp = 'users', userSection = '', onNavigate, user }) => {
     const { t } = useTranslation();
     const { hasTier } = useLicenseContext();
     const isEnterprise = hasTier('enterprise');
-    const isFullAdmin = user?.permissions?.includes('all') || user?.isAdmin;
+    // Platform operator only. The 'all' permission is deliberately NOT enough —
+    // it is obtainable inside a tenant, and the server-side gates on these
+    // sections (SSO config, email domains, connector health) require
+    // users.role === 'admin'. See AdminDashboard's isSuperAdmin.
+    const isFullAdmin = user?.isAdmin || user?.role === 'admin';
     const visibleSections = (isFullAdmin ? SECTIONS : SECTIONS.filter(s => !s.superAdminOnly && s.id !== 'sso'))
         .filter(s => !s.enterpriseOnly || isEnterprise);
     const VALID_IDS = visibleSections.map(s => s.id);
     const active = VALID_IDS.includes(activeProp) ? activeProp : 'users';
 
-    const handleSectionClick = (sectionId) => {
-        if (onNavigate) {
-            onNavigate(`admin/security/${sectionId}`);
-        }
-    };
-
     return (
-        <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-            {/* ── Left Sidebar ── */}
-            <div style={{
-                width: '56px',
-                flexShrink: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '2px',
-                padding: '8px 0',
-                background: 'var(--bg-secondary, #111)',
-                borderRight: '1px solid var(--border-default, rgba(255,255,255,0.08))',
-            }}>
-                {visibleSections.map(sec => {
-                    const Icon = sec.icon;
-                    const isActive = active === sec.id;
-                    return (
-                        <button
-                            key={sec.id}
-                            onClick={() => handleSectionClick(sec.id)}
-                            title={t(sec.labelKey)}
-                            style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '3px',
-                                padding: '10px 4px',
-                                margin: '0 4px',
-                                borderRadius: '8px',
-                                border: 'none',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                                background: isActive ? `${sec.color}20` : 'transparent',
-                                borderLeft: isActive ? `3px solid ${sec.color}` : '3px solid transparent',
-                            }}
-                        >
-                            <Icon style={{
-                                width: 20, height: 20,
-                                color: isActive ? sec.color : 'var(--text-muted, #888)',
-                                transition: 'color 0.15s ease',
-                            }} />
-                            <span style={{
-                                fontSize: '9px',
-                                fontWeight: isActive ? '700' : '500',
-                                color: isActive ? sec.color : 'var(--text-muted, #888)',
-                                textAlign: 'center',
-                                lineHeight: 1.1,
-                                transition: 'color 0.15s ease',
-                            }}>
-                                {t(sec.labelKey)}
-                            </span>
-                        </button>
-                    );
-                })}
-            </div>
-
-            {/* ── Main Panel ── */}
-            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-                {active === 'users' && (
-                    <div style={{ position: 'absolute', inset: 0 }}>
-                        <UserManagement activeSection={userSection} onNavigate={onNavigate} user={user} />
-                    </div>
-                )}
-                {active === 'guardrails' && (
-                    <div style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '1.5rem' }}>
-                        <GuardrailsPanel />
-                    </div>
-                )}
-                {active === 'sso' && (
-                    <div style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '1.5rem' }}>
-                        <SSOConfigPanel />
-                    </div>
-                )}
-            </div>
-        </div>
+        <HubScaffold
+            sections={visibleSections}
+            activeId={active}
+            onSelect={(id) => { if (onNavigate) onNavigate(`admin/security/${id}`); }}
+            labelFor={(sec) => t(sec.labelKey)}
+        >
+            {active === 'users' && (
+                <div style={{ position: 'absolute', inset: 0 }}>
+                    <UserManagement activeSection={userSection} onNavigate={onNavigate} user={user} />
+                </div>
+            )}
+            {active === 'guardrails' && (
+                <div style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '1.5rem' }}>
+                    {/* `userSection` is the third admin path segment — the same one
+                        ConnectorHealthPanel receives. Threading it here is what makes
+                        /app/admin/security/guardrails/<section> a real, bookmarkable
+                        URL without touching App.jsx's router. */}
+                    <GuardrailsHub section={userSection} onNavigate={onNavigate} />
+                </div>
+            )}
+            {active === 'sso' && (
+                <div style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '1.5rem' }}>
+                    <SSOConfigPanel />
+                </div>
+            )}
+            {active === 'email-domains' && (
+                <div style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '1.5rem' }}>
+                    <FreeEmailDomainsPanel />
+                </div>
+            )}
+            {active === 'connector-health' && (
+                <div style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '1.5rem' }}>
+                    <ConnectorHealthPanel initialOrgId={userSection} onNavigate={onNavigate} />
+                </div>
+            )}
+        </HubScaffold>
     );
 };
 

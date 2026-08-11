@@ -3,7 +3,16 @@ import { ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import RecoveryCodes from '../../components/mfa/RecoveryCodes';
+import MfaHelpAssistant from '../../components/mfa/MfaHelpAssistant';
 import beeFlowLogo from '../../assets/bee-flow-logo.svg';
+
+// Module-level in-flight dedupe for the mount-effect POST /auth/mfa/setup.
+// A remount (or React StrictMode's dev double-invoke) would otherwise fire
+// two concurrent /setup calls racing on session.save — the QR on screen could
+// then belong to a DIFFERENT secret than the session holds, making every
+// entered code "Invalid" (BFSF-274). The server-side /setup is now idempotent
+// too; this is belt-and-braces so only one request exists at a time.
+let _setupInFlight = null;
 
 /**
  * Full-screen forced MFA-enrollment gate. Shown (by App.jsx) when the server
@@ -39,7 +48,10 @@ export default function MfaSetupGate({ onDone, onLogout }) {
         (async () => {
             setBusy(true);
             try {
-                const data = await post('setup');
+                if (!_setupInFlight) {
+                    _setupInFlight = post('setup').finally(() => { _setupInFlight = null; });
+                }
+                const data = await _setupInFlight;
                 if (alive) setSetupData(data);
             } catch (e) {
                 if (alive) setError(e.message);
@@ -93,9 +105,12 @@ export default function MfaSetupGate({ onDone, onLogout }) {
                         <RecoveryCodes codes={newCodes} onDone={onDone} />
                     ) : setupData ? (
                         <div className="space-y-4">
-                            <p className="text-sm text-[var(--text-secondary)]">
-                                {t('mfa.scan_qr', 'Scan this QR code with your authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…), then enter the 6-digit code to confirm.')}
-                            </p>
+                            {/* Clear, step-by-step instructions incl. WHICH apps work */}
+                            <ol className="text-sm text-left text-[var(--text-secondary)] space-y-1.5 list-decimal pl-5">
+                                <li>{t('mfa.setup_step1', 'Install an authenticator app on your phone — for example Google Authenticator, Microsoft Authenticator, 1Password or Bitwarden (any TOTP app works).')}</li>
+                                <li>{t('mfa.setup_step2', 'In the app, choose “Scan QR code” and scan the code below.')}</li>
+                                <li>{t('mfa.setup_step3', 'Enter the 6-digit code the app shows to confirm.')}</li>
+                            </ol>
                             <div className="flex justify-center">
                                 <img src={setupData.qr} alt="MFA QR code" width={200} height={200} className="rounded-lg border border-[var(--border-subtle)] bg-white p-2" />
                             </div>
@@ -107,6 +122,9 @@ export default function MfaSetupGate({ onDone, onLogout }) {
                             <button onClick={confirmEnable} disabled={busy || code.trim().length < 6} className="w-full py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: 'var(--accent-primary)' }}>
                                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} {t('mfa.enable', 'Enable')}
                             </button>
+                            {/* AI setup helper — takes no props by design: it must never
+                                receive the QR/secret/code shown above (BFSF-274). */}
+                            <MfaHelpAssistant />
                         </div>
                     ) : (
                         <div className="flex justify-center py-6">

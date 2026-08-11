@@ -3,8 +3,10 @@ import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, Aler
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { cloudFetch } from '../../utils/cloudFetch';
 import InvoicesPanel from '../billing/InvoicesPanel';
+import { hasPaidBillingRelationship } from '../../utils/billing';
 import { useTranslation } from '../../hooks/useTranslation';
-import GuardrailsPanel from './GuardrailsPanel';
+import OrgShieldEditor from './guardrails/orgShield/OrgShieldEditor';
+import OrgEncryptionEditor from './encryption/OrgEncryptionEditor';
 import LicenseKeyActivation from './LicenseKeyActivation';
 import { useLicenseContext } from '../LicenseContext';
 import { useDeploymentMode } from '../../hooks/useDeploymentMode';
@@ -89,6 +91,7 @@ const SECTIONS = [
     { id: 'license', labelKey: 'settings.license_usage', icon: CreditCard, color: '#3b82f6' },
     { id: 'auth', labelKey: 'settings.signin_method', icon: KeyRound, color: '#10b981' },
     { id: 'privacy', labelKey: 'settings.privacy_shield', icon: Shield, color: '#ef4444' },
+    { id: 'encryption', labelKey: 'settings.encryption', icon: Lock, color: '#8b5cf6' },
     { id: 'info', labelKey: 'settings.org_info', icon: Info, color: '#14b8a6' },
 ];
 
@@ -138,11 +141,11 @@ const AllowedDomainsEditor = ({ domains = [], onChange, t }) => {
             <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-[var(--accent-primary)]" />
                 <span className="text-sm font-semibold text-[var(--text-primary)]">
-                    {t('org.allowed_domains') || 'Allowed Domains'}
+                    {t('org.allowed_domains', 'Allowed Domains')}
                 </span>
             </div>
             <p className="text-xs text-[var(--text-muted)] ml-6">
-                {t('org.allowed_domains_desc') || 'Email domains that are allowed to join this organisation via SSO. Users with matching email domains will be automatically linked to this organisation.'}
+                {t('org.allowed_domains_desc', 'Email domains that are allowed to join this organisation via SSO. Users with matching email domains will be automatically linked to this organisation.')}
             </p>
 
             {/* Domain tags */}
@@ -1053,9 +1056,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                             paying relationship. Free/trial/no-invoice customers got an
                                             empty "no invoice history" portal showing global payment
                                             methods (Pix/Kakao/Amazon) that don't match our checkout.
-                                            Includes previously-paid states (paused/disputed) so paying
-                                            customers keep portal access; excludes trialing/free. */}
-                                        {sub.stripe_customer_id && ['paid', 'past_due', 'paused', 'disputed'].includes(sub.payment_status) && (
+                                            Shared predicate (utils/billing.js) mirrors the server gate. */}
+                                        {hasPaidBillingRelationship(sub) && (
                                             <button
                                                 onClick={handleManageBilling}
                                                 disabled={portalLoading}
@@ -1217,7 +1219,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
                                             <CreditCard className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
                                             <p className="text-[11px] leading-snug text-[var(--text-secondary)]">
-                                                {t('billing.recurring_notice', 'This is a recurring monthly subscription. Your selected payment method is charged automatically each billing period (automatische incasso) until you cancel.')}
+                                                {t('billing.recurring_notice', 'This is a recurring subscription. Your selected payment method is charged automatically at the start of each billing period (automatische incasso) until you cancel.')}
                                             </p>
                                         </div>
                                         <div className="grid gap-3">
@@ -1240,15 +1242,21 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                                     <div className="text-lg font-bold text-[var(--text-primary)]">{sym}{Number(plan.price).toFixed(2)}</div>
                                                                     <div className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">/ {plan.billing_interval || 'month'}{plan.per_seat ? ` ${t('org.per_seat', '/ seat')}` : ''}</div>
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => handleCheckout(plan.id)}
-                                                                    disabled={checkoutLoading === plan.id}
-                                                                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
-                                                                    style={{ background: '#3b82f6' }}
-                                                                >
-                                                                    {checkoutLoading === plan.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
-                                                                    {t('org.subscribe', 'Subscribe')}
-                                                                </button>
+                                                                <div className="flex flex-col items-end gap-1">
+                                                                    <button
+                                                                        onClick={() => handleCheckout(plan.id)}
+                                                                        disabled={checkoutLoading === plan.id}
+                                                                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                                                                        style={{ background: '#3b82f6' }}
+                                                                    >
+                                                                        {checkoutLoading === plan.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+                                                                        {t('org.subscribe', 'Subscribe')}
+                                                                    </button>
+                                                                    {/* BFSF-243: recurring-billing disclosure right at the CTA */}
+                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-amber-500/15 text-amber-500 whitespace-nowrap">
+                                                                        {t('billing.recurring_badge', 'Recurring · automatische incasso')}
+                                                                    </span>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1301,13 +1309,33 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                             </span>
                                         </div>
                                         {sub.billing.per_seat && (
-                                            <div className="mt-2 pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[12px]">
-                                                <span className="text-[var(--text-muted)]">
-                                                    {sub.billing.seat_quantity} × {currencySym(sub.billing.plan_currency)}{Number(sub.billing.plan_price).toFixed(2)} {t('org.per_seat', '/ seat')}
-                                                </span>
-                                                <span className="text-[var(--text-secondary)] font-medium">
-                                                    {sub.billing.seat_quantity} {sub.billing.seat_quantity === 1 ? t('org.seat', 'seat') : t('org.seats', 'seats')}
-                                                </span>
+                                            <div className="mt-2 pt-2 border-t border-[var(--border-subtle)]">
+                                                <div className="flex items-center justify-between text-[12px]">
+                                                    <span className="text-[var(--text-muted)]">
+                                                        {sub.billing.seat_quantity} × {currencySym(sub.billing.plan_currency)}{Number(sub.billing.plan_price).toFixed(2)} {t('org.per_seat', '/ seat')}
+                                                    </span>
+                                                    <span className="flex items-center gap-2">
+                                                        <span className="text-[var(--text-secondary)] font-medium">
+                                                            {sub.billing.seat_quantity} {sub.billing.seat_quantity === 1 ? t('org.seat', 'seat') : t('org.seats', 'seats')}
+                                                        </span>
+                                                        {/* BFSF-251: the Add-user CTA must exist on EVERY
+                                                            per-seat sub — the plan-limits card below filters
+                                                            out unlimited (-1/null) tiles, so per-seat plans
+                                                            without a finite max_users lost the CTA entirely. */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={goToUsersPanel}
+                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all hover:opacity-80"
+                                                            style={{ borderColor: 'rgba(59,130,246,0.3)', color: '#3b82f6', background: 'rgba(59,130,246,0.05)' }}
+                                                        >
+                                                            <Plus className="w-3 h-3" /> {t('org.add_user', 'Add user')}
+                                                        </button>
+                                                    </span>
+                                                </div>
+                                                <div className="mt-2 flex items-start gap-2 text-[11px] text-[var(--text-muted)]">
+                                                    <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                                                    <span>{t('org.add_user_hint', 'Inviting a user adds a seat to your plan. Extra seats are billed per user per month and prorated for the current period.')} {t('org.seats_proration_note', 'Stripe prorates the difference on your next invoice.')}</span>
+                                                </div>
                                             </div>
                                         )}
                                         {/* Cancel-at-period-end action. Muted — destructive but reversible
@@ -1386,7 +1414,12 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                                 </div>
                                                                 <div>
                                                                     <div className="text-sm font-bold text-[var(--text-primary)]">
-                                                                        {Number(item.val).toLocaleString()}
+                                                                        {/* BFSF-251: on the Users tile show LIVE seats vs the
+                                                                            plan limit, not the bare cap — "1 Gebruiker" told
+                                                                            the reporter nothing about usage or headroom. */}
+                                                                        {item.key === 'users' && sub.billing?.seat_quantity != null
+                                                                            ? `${sub.billing.seat_quantity} / ${Number(item.val).toLocaleString()}`
+                                                                            : Number(item.val).toLocaleString()}
                                                                     </div>
                                                                     <div className="text-[10px] text-[var(--text-muted)]">{item.label}</div>
                                                                 </div>
@@ -1769,8 +1802,32 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                 )}
                 {/* ── Privacy Shield ── */}
                 {activeSection === 'privacy' && (
-                    <div className="max-w-3xl mx-auto animate-fadeIn">
-                        <GuardrailsPanel orgShieldOnly={true} />
+                    /* Full width on purpose — the shield (and especially its
+                       Activity tab's tables) needs the whole content column;
+                       the centred 3xl left a dead gap next to the menu. */
+                    <div className="animate-fadeIn">
+                        {/* orgId is required, and there is deliberately no
+                            allowOrgPicker here: without an id the editor renders
+                            nothing rather than falling back to orgs[0], which is
+                            how this page once read and SAVED a different
+                            organisation's Privacy Shield with no visible cue.
+                            showActivityTab is safe HERE and only here: this
+                            mount is always the session's own organisation, which
+                            is the org the monitoring endpoints scope to. */}
+                        <OrgShieldEditor orgId={orgData?.id} showActivityTab />
+                    </div>
+                )}
+                {/* ── Encryption ── */}
+                {activeSection === 'encryption' && (
+                    /* Same orgId discipline as the Privacy Shield above: no org
+                       picker, no orgs[0] fallback. Writing the wrong org's
+                       encryption tier would be considerably worse than reading
+                       the wrong shield. */
+                    <div className="animate-fadeIn max-w-3xl">
+                        {/* Own save bar, deliberately: OrgInfoPanel already
+                            drives the shared one via onStateChange for the org
+                            form, and two writers would clobber each other. */}
+                        <OrgEncryptionEditor orgId={orgData?.id} />
                     </div>
                 )}
         </div>

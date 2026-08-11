@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import './vscode-theme.css';
-import { FileImage, AlertCircle, Code2, Upload, Download, History } from 'lucide-react';
+import { FileImage, AlertCircle, Code2, Upload, Download, History, MessageSquare } from 'lucide-react';
 import ActivityBar from './ActivityBar';
 import FileExplorer from './FileExplorer';
 import EditorTabs from './EditorTabs';
@@ -8,9 +8,15 @@ import WebpageEditor from './WebpageEditor';
 import WebpagePreview from './WebpagePreview';
 import WebpageChat from './WebpageChat';
 import WebpageSources from './WebpageSources';
+import WebpageAppsPanel from './WebpageAppsPanel';
 import WebpageDbViewer from './WebpageDbViewer';
 import StatusBar from './StatusBar';
+import SaveStatus from './SaveStatus';
 import scopedStorage from '../../utils/scopedStorage';
+
+// Below this container width the 3-pane layout is too cramped, so the chat
+// collapses to a top-bar toggle and the preview takes the full width.
+const NARROW_BREAKPOINT = 720;
 
 const SIDEBAR_MIN = 160;
 const SIDEBAR_MAX = 400;
@@ -37,6 +43,8 @@ function pickLanguage(path) {
     }
 }
 
+const KEY_RESIZE_STEP = 16;
+
 function useDragResize(initialSize, min, max) {
     const [size, setSize] = useState(initialSize);
     const dragging = useRef(false);
@@ -50,6 +58,17 @@ function useDragResize(initialSize, min, max) {
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
     }, [size]);
+
+    // Keyboard resize for the accessible separator (Arrow keys ± step, Home/End
+    // jump to the bounds). `dir` flips the sign for handles whose panel grows
+    // when dragged left (e.g. the right-hand chat panel).
+    const onKeyDown = useCallback((e, dir = 1) => {
+        const step = KEY_RESIZE_STEP * dir;
+        if (e.key === 'ArrowRight') { setSize(s => Math.max(min, Math.min(max, s + step))); e.preventDefault(); }
+        else if (e.key === 'ArrowLeft') { setSize(s => Math.max(min, Math.min(max, s - step))); e.preventDefault(); }
+        else if (e.key === 'Home') { setSize(min); e.preventDefault(); }
+        else if (e.key === 'End') { setSize(max); e.preventDefault(); }
+    }, [min, max]);
 
     useEffect(() => {
         const onMove = (e) => {
@@ -69,7 +88,7 @@ function useDragResize(initialSize, min, max) {
         return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
     }, [min, max]);
 
-    return [size, onMouseDown];
+    return [size, onMouseDown, onKeyDown];
 }
 
 function useRowDragResize(initialPct, min, containerRef) {
@@ -85,6 +104,12 @@ function useRowDragResize(initialPct, min, containerRef) {
         document.body.style.cursor = 'row-resize';
         document.body.style.userSelect = 'none';
     }, [pct]);
+
+    const onKeyDown = useCallback((e) => {
+        const stepPct = 5;
+        if (e.key === 'ArrowDown') { setPct(p => Math.min(90, p + stepPct)); e.preventDefault(); }
+        else if (e.key === 'ArrowUp') { setPct(p => Math.max(10, p - stepPct)); e.preventDefault(); }
+    }, []);
 
     useEffect(() => {
         const onMove = (e) => {
@@ -107,7 +132,32 @@ function useRowDragResize(initialPct, min, containerRef) {
         return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
     }, [min, containerRef]);
 
-    return [pct, onMouseDown];
+    return [pct, onMouseDown, onKeyDown];
+}
+
+/**
+ * Accessible resize separator. A focusable divider with the correct ARIA role
+ * and a visible hover/focus affordance (the bare 1px strips were invisible and
+ * keyboard-inaccessible). `orientation` = 'vertical' for column resizers.
+ */
+function ResizeHandle({ orientation, onMouseDown, onKeyDown, label }) {
+    const vertical = orientation === 'vertical';
+    return (
+        <div
+            role="separator"
+            aria-orientation={orientation}
+            aria-label={label}
+            tabIndex={0}
+            onMouseDown={onMouseDown}
+            onKeyDown={onKeyDown}
+            className={`shrink-0 group/handle ${vertical ? 'w-1 cursor-col-resize' : 'h-1 cursor-row-resize'} focus:outline-none`}
+            style={{ background: 'var(--vsc-border)', transition: 'background 0.12s' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent-primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--vsc-border)')}
+            onFocus={(e) => (e.currentTarget.style.boxShadow = '0 0 0 2px var(--accent-primary)')}
+            onBlur={(e) => (e.currentTarget.style.boxShadow = 'none')}
+        />
+    );
 }
 
 /**
@@ -162,7 +212,7 @@ export default function WebpageIDE({
     attachedSelection, onSelectionClear,
     modelTiers, selectedTier, onTierChange,
     // Save
-    saveState, lastSavedAt,
+    saveState, lastSavedAt, onRetrySave,
     // Versions
     onVersionsClick,
     // Download
@@ -178,6 +228,8 @@ export default function WebpageIDE({
     // default; the "</> Code" toggle reveals the full IDE (explorer, editor,
     // tabs, status bar). Persisted per user.
     const [devMode, setDevMode] = useState(() => {
+        // scopedStorage returns null when no user is active yet or storage is
+        // unavailable (private browsing) — default to the simplified surface.
         try { return scopedStorage.getItem('webpages_dev_mode') === 'true'; } catch { return false; }
     });
     const toggleDevMode = () => {
@@ -232,12 +284,34 @@ export default function WebpageIDE({
     const [cursor, setCursor] = useState({ line: 1, col: 1 });
 
     // Panel sizes — sidebar width, chat width
-    const [sidebarWidth, onSidebarDrag] = useDragResize(220, SIDEBAR_MIN, SIDEBAR_MAX);
-    const [chatWidth, onChatDrag] = useDragResize(340, CHAT_MIN, CHAT_MAX);
+    const [sidebarWidth, onSidebarDrag, onSidebarKey] = useDragResize(220, SIDEBAR_MIN, SIDEBAR_MAX);
+    const [chatWidth, onChatDrag, onChatKey] = useDragResize(340, CHAT_MIN, CHAT_MAX);
 
     // Editor/preview split (percentage of center column)
     const centerRef = useRef(null);
-    const [editorPct, onEditorPreviewDrag] = useRowDragResize(60, PREVIEW_MIN, centerRef);
+    const [editorPct, onEditorPreviewDrag, onEditorPreviewKey] = useRowDragResize(60, PREVIEW_MIN, centerRef);
+
+    // Responsive chat: auto-collapse the chat panel on a narrow container so the
+    // preview stays usable; a top-bar toggle lets the user reopen it. We only
+    // auto-collapse/expand on crossing the breakpoint so a manual choice sticks
+    // until the next crossing.
+    const rootRef = useRef(null);
+    const [chatOpen, setChatOpen] = useState(true);
+    const wasNarrowRef = useRef(false);
+    useEffect(() => {
+        const el = rootRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver((entries) => {
+            const w = entries[0]?.contentRect?.width || 0;
+            const narrow = w > 0 && w < NARROW_BREAKPOINT;
+            if (narrow !== wasNarrowRef.current) {
+                wasNarrowRef.current = narrow;
+                setChatOpen(!narrow);
+            }
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
 
     // Per-tab dirty dots — supplied by the parent (WebpagesPage tracks per-key
     // dirty state alongside its save queue). Object keyed by tab id
@@ -319,6 +393,7 @@ export default function WebpageIDE({
 
     return (
         <div
+            ref={rootRef}
             data-vscode-theme={theme}
             className="flex flex-col"
             style={{ height: '100%', width: '100%', overflow: 'hidden' }}
@@ -328,11 +403,16 @@ export default function WebpageIDE({
             {/* Slim top bar — always present. Holds the code/dev toggle, and (in
                 the simplified surface where the status bar is hidden) the
                 upload / download / history / theme controls. */}
-            <div className="flex items-center justify-between px-3 py-1.5 shrink-0"
+            <div className="flex items-center justify-between px-3 py-1.5 shrink-0 gap-2"
                  style={{ borderBottom: '1px solid var(--vsc-border)', background: 'var(--vsc-sidebar-bg)' }}>
-                <span className="text-[11px]" style={{ color: 'var(--vsc-fg-muted)' }}>
-                    {devMode ? 'Developer view' : 'Preview'}
-                </span>
+                <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-[11px] shrink-0" style={{ color: 'var(--vsc-fg-muted)' }}>
+                        {devMode ? 'Developer view' : 'Preview'}
+                    </span>
+                    {/* Always-present save status — the core "is my work saved?"
+                        signal, previously only visible in the dev status bar. */}
+                    <SaveStatus saveState={saveState} lastSavedAt={lastSavedAt} onRetry={onRetrySave} size={11} />
+                </div>
                 <div className="flex items-center gap-1">
                     {!devMode && (
                         <>
@@ -342,6 +422,14 @@ export default function WebpageIDE({
                             <IdeBarButton Icon={Download} label="ZIP" onClick={onDownload} />
                             <IdeBarButton Icon={History} label="History" onClick={onVersionsClick} />
                         </>
+                    )}
+                    {!chatOpen && (
+                        <IdeBarButton
+                            Icon={MessageSquare}
+                            label="Chat"
+                            onClick={() => setChatOpen(true)}
+                            title="Show the AI chat"
+                        />
                     )}
                     <IdeBarButton
                         Icon={Code2}
@@ -391,6 +479,9 @@ export default function WebpageIDE({
                                     onSourcesChange={onSourcesChange}
                                 />
                             )}
+                            {sidebarPane === 'apps' && (
+                                <WebpageAppsPanel webpageId={selected?.id} readOnly={!isOwner} />
+                            )}
                             {sidebarPane === 'history' && (
                                 <div
                                     className="flex items-center justify-center h-full text-[12px]"
@@ -408,10 +499,11 @@ export default function WebpageIDE({
                         </div>
 
                         {/* Sidebar resize handle (only when sidebar is open) */}
-                        <div
+                        <ResizeHandle
+                            orientation="vertical"
                             onMouseDown={onSidebarDrag}
-                            className="shrink-0 w-1 cursor-col-resize"
-                            style={{ background: 'transparent' }}
+                            onKeyDown={(e) => onSidebarKey(e, 1)}
+                            label="Resize sidebar"
                         />
                     </>
                 )}
@@ -457,10 +549,11 @@ export default function WebpageIDE({
                             </div>
 
                             {/* Editor/Preview resize handle */}
-                            <div
+                            <ResizeHandle
+                                orientation="horizontal"
                                 onMouseDown={onEditorPreviewDrag}
-                                className="shrink-0 h-1 cursor-row-resize"
-                                style={{ background: 'var(--vsc-border)' }}
+                                onKeyDown={onEditorPreviewKey}
+                                label="Resize editor and preview"
                             />
                         </>
                     )}
@@ -480,37 +573,40 @@ export default function WebpageIDE({
                     </div>
                 </div>
 
-                {/* Chat resize handle */}
-                <div
-                    onMouseDown={onChatDrag}
-                    className="shrink-0 w-1 cursor-col-resize"
-                    style={{ background: 'var(--vsc-border)' }}
-                />
-
-                {/* Chat panel */}
-                <div
-                    className="flex flex-col shrink-0"
-                    style={{ width: chatWidth, borderLeft: '1px solid var(--vsc-border)', background: 'var(--vsc-editor-bg)' }}
-                >
-                    <WebpageChat
-                        messages={chatMessages}
-                        isLoading={chatLoading}
-                        onSend={onChatSend}
-                        onStop={onChatStop}
-                        onRetry={onChatRetry}
-                        onEdit={onChatEdit}
-                        modelTiers={modelTiers}
-                        selectedTier={selectedTier}
-                        onTierChange={onTierChange}
-                        onPlanApprove={onPlanApprove}
-                        onPlanReject={onPlanReject}
-                        onNewChat={onNewChat}
-                        chatMode={chatMode}
-                        onChatModeChange={onChatModeChange}
-                        attachedSelection={attachedSelection}
-                        onSelectionClear={onSelectionClear}
-                    />
-                </div>
+                {/* Chat resize handle + panel — collapsible on narrow layouts. */}
+                {chatOpen && (
+                    <>
+                        <ResizeHandle
+                            orientation="vertical"
+                            onMouseDown={onChatDrag}
+                            onKeyDown={(e) => onChatKey(e, -1)}
+                            label="Resize chat panel"
+                        />
+                        <div
+                            className="flex flex-col shrink-0"
+                            style={{ width: chatWidth, borderLeft: '1px solid var(--vsc-border)', background: 'var(--vsc-editor-bg)' }}
+                        >
+                            <WebpageChat
+                                messages={chatMessages}
+                                isLoading={chatLoading}
+                                onSend={onChatSend}
+                                onStop={onChatStop}
+                                onRetry={onChatRetry}
+                                onEdit={onChatEdit}
+                                modelTiers={modelTiers}
+                                selectedTier={selectedTier}
+                                onTierChange={onTierChange}
+                                onPlanApprove={onPlanApprove}
+                                onPlanReject={onPlanReject}
+                                onNewChat={onNewChat}
+                                chatMode={chatMode}
+                                onChatModeChange={onChatModeChange}
+                                attachedSelection={attachedSelection}
+                                onSelectionClear={onSelectionClear}
+                            />
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Status bar — developer view only (its controls live in the top
@@ -522,6 +618,7 @@ export default function WebpageIDE({
                     fileSize={fileSize}
                     saveState={saveState}
                     lastSavedAt={lastSavedAt}
+                    onRetrySave={onRetrySave}
                     onDownload={onDownload}
                     onVersions={onVersionsClick}
                 />
@@ -532,11 +629,16 @@ export default function WebpageIDE({
 
 /** Slim button used in the IDE top bar. */
 function IdeBarButton({ Icon, label, onClick, active, title }) {
+    // Only genuine toggles (active is a boolean) get aria-pressed — plain
+    // action buttons (ZIP, History, Upload) leave it unset.
+    const isToggle = typeof active === 'boolean';
     return (
         <button
             type="button"
             onClick={onClick}
             title={title || label}
+            aria-label={title || label}
+            aria-pressed={isToggle ? active : undefined}
             className="px-2 py-1 rounded text-[11px] flex items-center gap-1 transition-colors"
             style={{ color: active ? 'var(--vsc-fg)' : 'var(--vsc-fg-muted)', background: active ? 'var(--vsc-hover-bg)' : 'transparent' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--vsc-hover-bg)')}

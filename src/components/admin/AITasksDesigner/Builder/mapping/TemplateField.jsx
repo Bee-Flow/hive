@@ -1,11 +1,12 @@
 import { Braces } from 'lucide-react';
+import { onBindingDragOver, getBindingDropPath } from './bindingDnd';
 import React, { useEffect, useRef, useState } from 'react';
-import RefChips from './RefChips';
-import { hasRefTokens } from './refTokens';
+import RefTokenInput from './RefTokenInput';
 import useVariablePicker from './useVariablePicker';
 import VariablePicker from './VariablePicker';
 import { useVariablePickerContext } from './VariablePickerContext';
-import { insertAtCursor, walkPath, previewValue } from '../../../../../utils/bindingHelpers';
+import { walkPath, previewValue, getAutocompleteTokenFromPrefix } from '../../../../../utils/bindingHelpers';
+import { denseInputClass } from '../flow/settings/formStyles';
 
 /**
  * Multi-line string field with `{{path}}` interpolation. Unlike
@@ -15,7 +16,9 @@ import { insertAtCursor, walkPath, previewValue } from '../../../../../utils/bin
  * runtime resolver interpolates `{{path}}` directly via the
  * `template`-kind code path inside `resolveValue`.
  *
- * Variable tree clicks/drops insert `{{path}}` at the caret.
+ * Variable tree clicks/drops insert `{{path}}` at the caret — as a PILL. The
+ * editing surface is RefTokenInput, so a reference reads "gmail read ▸ Output"
+ * while you type, not `{{steps.act_f9aaff0e.output.results[*].output}}`.
  *
  * Props:
  *   value           — current string
@@ -27,6 +30,12 @@ import { insertAtCursor, walkPath, previewValue } from '../../../../../utils/bin
  *                     the VariableTree can splice into this field
  *   previewSample   — merged sample tree for resolving `{{path}}`
  *                     occurrences in the preview line below
+ *   multiline       — false renders a one-line <input> instead of a
+ *                     textarea, for slots that sit in a tight row
+ *   inline          — put the {} button beside the field instead of in a
+ *                     header row above it (same reason)
+ *   ariaLabel       — accessible name for the control itself, for slots
+ *                     whose visible label lives outside this component
  */
 export default function TemplateField({
     value = '',
@@ -37,9 +46,11 @@ export default function TemplateField({
     rows = 4,
     onFocusField,
     previewSample = null,
+    multiline = true,
+    inline = false,
+    ariaLabel = null,
 }) {
     const [text, setText] = useState(value || '');
-    const [focused, setFocused] = useState(false);
     const inputRef = useRef(null);
     const picker = useVariablePicker();
     const pickerCtx = useVariablePickerContext();
@@ -57,95 +68,103 @@ export default function TemplateField({
         onChange?.(next);
     };
 
-    const onTextChange = (e) => emit(e.target.value);
+    // Inline autocomplete: typing an unclosed `{{partial` opens the picker
+    // pre-filtered to the partial; picking swallows those characters and drops a
+    // pill in their place. The LENGTH is recorded here rather than a range —
+    // focus moves to the picker's search box, so the caret can't be trusted at
+    // pick time.
+    const autocompleteLength = useRef(0);
+    const onInput = () => {
+        const token = getAutocompleteTokenFromPrefix(inputRef.current?.textBeforeCaret() || '', 'fixed');
+        if (token) {
+            autocompleteLength.current = token.length;
+            if (!picker.open) picker.openPicker(inputRef.current?.element, { initialQuery: token.query });
+        }
+    };
+
+    const insertPath = (path) => inputRef.current?.insertSnippet(`{{${path}}}`);
 
     const onFocus = () => {
-        setFocused(true);
         if (!onFocusField) return;
         onFocusField({
             id: label || placeholder || 'template',
             label: label || placeholder || 'template',
-            insert: (path) => {
-                const snippet = `{{${path}}}`;
-                const result = insertAtCursor(inputRef.current, snippet);
-                if (result != null) emit(result);
-            },
+            insert: insertPath,
         });
     };
-    // Defer the focused flip so a VariableTree click (which blurs the
-    // textarea first) still lands its insert before the chip overlay returns.
-    const onBlurDelayed = () => { setTimeout(() => setFocused(false), 150); };
 
-    const onDragOver = (e) => {
-        if (e.dataTransfer?.types?.includes('application/x-binding-path')) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'copy';
-        }
-    };
+    const onDragOver = onBindingDragOver;
     const onDrop = (e) => {
-        const path = e.dataTransfer.getData('application/x-binding-path') || e.dataTransfer.getData('text/plain');
-        if (!path) return;
-        e.preventDefault();
-        const snippet = `{{${path}}}`;
-        const result = insertAtCursor(inputRef.current, snippet);
-        if (result != null) emit(result);
+        const path = getBindingDropPath(e);
+        if (path) insertPath(path);
     };
 
     const preview = renderPreview(text, effectivePreviewSample);
 
-    // While blurred, show `{{path}}` interpolations as name chips over an
-    // invisible (but mounted/focusable) textarea; focus reveals the raw text.
-    const showChips = !focused && hasRefTokens(text, 'fixed');
-
     const insertFromPicker = (path) => {
-        const snippet = `{{${path}}}`;
-        inputRef.current?.focus();
-        const result = insertAtCursor(inputRef.current, snippet);
-        if (result != null) emit(result);
+        const swallow = autocompleteLength.current;
+        autocompleteLength.current = 0;
+        if (swallow) inputRef.current?.replacePartial(swallow, `{{${path}}}`);
+        else insertPath(path);
         picker.closePicker();
     };
 
+    const control = (
+        <div className={inline ? 'flex-1 min-w-0' : ''}>
+            <RefTokenInput
+                ref={inputRef}
+                value={text}
+                mode="fixed"
+                multiline={multiline}
+                rows={rows}
+                onChange={emit}
+                onInput={onInput}
+                onFocus={onFocus}
+                onDragOver={onDragOver}
+                onDrop={onDrop}
+                placeholder={placeholder}
+                ariaLabel={ariaLabel}
+                stepLabelById={stepLabelById}
+                className={denseInputClass('w-full')}
+            />
+        </div>
+    );
+
+    const insertButton = (
+        <button
+            type="button"
+            onClick={(e) => { autocompleteLength.current = 0; picker.openPicker(e.currentTarget); }}
+            title="Insert variable from upstream"
+            aria-label="Insert variable"
+            aria-haspopup="dialog"
+            aria-expanded={picker.open}
+            className={`shrink-0 inline-flex items-center gap-1 rounded border border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] ${
+                inline ? 'px-1.5 self-stretch' : 'px-1.5 py-0.5'
+            }`}
+        >
+            <Braces size={11} />
+            {!inline && <span>Insert</span>}
+        </button>
+    );
+
     return (
         <div className="space-y-1">
-            <div className="flex items-center justify-between gap-2">
-                {label
-                    ? <div className="text-[11px] font-medium text-[var(--text-secondary)]">{label}</div>
-                    : <span />}
-                <button
-                    type="button"
-                    onClick={(e) => picker.openPicker(e.currentTarget)}
-                    title="Insert variable from upstream"
-                    aria-label="Insert variable"
-                    aria-haspopup="dialog"
-                    aria-expanded={picker.open}
-                    className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
-                >
-                    <Braces size={11} />
-                    <span>Insert</span>
-                </button>
-            </div>
-            <div className="relative">
-                <textarea
-                    ref={inputRef}
-                    rows={rows}
-                    value={text}
-                    onChange={onTextChange}
-                    onFocus={onFocus}
-                    onBlur={onBlurDelayed}
-                    onDragOver={onDragOver}
-                    onDrop={onDrop}
-                    placeholder={placeholder}
-                    className={`w-full px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] ${showChips ? 'opacity-0' : ''}`}
-                />
-                {showChips && (
-                    <RefChips
-                        text={text}
-                        mode="fixed"
-                        stepLabelById={stepLabelById}
-                        className="absolute inset-0 px-2 py-1.5 text-xs overflow-hidden pointer-events-none"
-                    />
-                )}
-            </div>
+            {inline ? (
+                <div className="flex items-stretch gap-1">
+                    {control}
+                    {insertButton}
+                </div>
+            ) : (
+                <>
+                    <div className="flex items-center justify-between gap-2">
+                        {label
+                            ? <div className="text-[11px] font-medium text-[var(--text-secondary)]">{label}</div>
+                            : <span />}
+                        {insertButton}
+                    </div>
+                    {control}
+                </>
+            )}
             {hint && <div className="text-[10px] text-[var(--text-tertiary)]">{hint}</div>}
             <VariablePicker
                 {...picker.pickerProps}

@@ -81,3 +81,28 @@ describe('input rules', () => {
     expect(textNode.marks.find((m) => m.type === 'textStyle')?.attrs.color).toBe('#ef4444');
   });
 });
+
+describe('table formula input rule', () => {
+  // Row 1 (data): cell A holds "1", cell B is empty.
+  const tableMd = '| a | b |\n| - | - |\n| 1 |  |';
+  const inCell = (r, c) => ({
+    ...createState(markdownToAst(tableMd)),
+    selection: textSelection(pos([0, r, c, 0], 0)),
+  });
+
+  it("'=' at the start of a non-empty cell does nothing destructive", () => {
+    let s = inCell(1, 0);
+    s = type(s, '=');                          // caret before the "1"
+    const cell = s.doc.content[0].content[1].content[0];
+    expect(cell.content[0].content.some((n) => n.type === 'formula')).toBe(false);
+    expect(cell.content[0].content.map((n) => n.text || '').join('')).toBe('=1');
+  });
+
+  it("'=' in an empty cell still creates the formula", () => {
+    let s = inCell(1, 1);
+    s = type(s, '=');
+    const cell = s.doc.content[0].content[1].content[1];
+    expect(cell.content[0].content[0].type).toBe('formula');
+    expect(cell.content[0].content[0].attrs.src).toBe('=');
+  });
+});

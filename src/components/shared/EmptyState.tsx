@@ -1,4 +1,5 @@
 import React from 'react';
+import Illustration, { type IllustrationName } from './illustrations';
 
 /**
  * EmptyState — generic "no content yet" placard. Replaces the duplicated
@@ -24,6 +25,11 @@ export interface EmptyStateAction {
 export interface EmptyStateProps {
     /** Large glyph or illustration shown above the title. */
     icon?: React.ReactNode;
+    /**
+     * One of the shared scenes (illustrations.tsx) instead of a glyph. Ignored
+     * when `icon` is given — a caller that already chose its own art wins.
+     */
+    illustration?: IllustrationName;
     title: React.ReactNode;
     description?: React.ReactNode;
     action?: EmptyStateAction;
@@ -32,16 +38,18 @@ export interface EmptyStateProps {
 
 export default function EmptyState({
     icon,
+    illustration,
     title,
     description,
     action,
     className = '',
 }: EmptyStateProps) {
+    const art = icon || (illustration ? <Illustration name={illustration} /> : null);
     return (
         <div className={`h-full flex flex-col items-center justify-center px-6 py-12 ${className}`}>
-            {icon && (
+            {art && (
                 <div className="mb-4 text-[var(--text-tertiary)]" aria-hidden="true">
-                    {icon}
+                    {art}
                 </div>
             )}
             <div className="text-lg font-semibold text-[var(--text-primary)] mb-2 text-center">

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { ArrowRight, ArrowLeft, CheckCircle2, X, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowRight, ArrowLeft, CheckCircle2, X, ShieldCheck, Sparkles } from 'lucide-react';
 import { useTranslation } from '../../../hooks/useTranslation';
+import UserPicker from './shared/UserPicker';
 
 const LEGAL_BASES = [
     { id: 'consent', labelKey: 'compliance.lb_consent' },
@@ -11,7 +12,7 @@ const LEGAL_BASES = [
     { id: 'legitimate_interests', labelKey: 'compliance.lb_legitimate_interests' },
 ];
 
-export default function OnboardingWizard({ initialSettings, onFinish, onSkip }) {
+export default function OnboardingWizard({ initialSettings, onFinish, onSkip, onAutoDetect, orgUsers = null }) {
     const { t } = useTranslation();
     const [step, setStep] = useState(0);
     const [saving, setSaving] = useState(false);
@@ -26,6 +27,44 @@ export default function OnboardingWizard({ initialSettings, onFinish, onSkip }) 
         breach_recipients: initialSettings?.breach_recipients || [],
         newRecipient: '',
     }));
+    // Field names that were filled by auto-detection, so the affected steps can
+    // say "prefilled from your configuration — review, don't type".
+    const [prefilled, setPrefilled] = useState([]);
+
+    // Best-effort prefill from the org's live configuration. Only fields the
+    // org has never saved are touched — a stored setting always wins.
+    useEffect(() => {
+        if (!onAutoDetect) return;
+        let cancelled = false;
+        (async () => {
+            let detected;
+            try { detected = await onAutoDetect(); } catch { return; }
+            if (cancelled || !detected) return;
+            const patch = {};
+            const hit = [];
+            if (!(initialSettings?.legal_bases?.length) && Array.isArray(detected.legal_bases) && detected.legal_bases.length) {
+                patch.legal_bases = detected.legal_bases; hit.push('legal_bases');
+            }
+            if (!initialSettings?.data_residency && detected.data_residency) {
+                patch.data_residency = detected.data_residency; hit.push('data_residency');
+            }
+            if (initialSettings?.default_retention_days == null && detected.default_retention_days != null) {
+                patch.default_retention_days = detected.default_retention_days; hit.push('default_retention_days');
+            }
+            if (!initialSettings?.privacy_notice_url && detected.privacy_notice_url) {
+                patch.privacy_notice_url = detected.privacy_notice_url; hit.push('privacy_notice_url');
+            }
+            if (!(initialSettings?.breach_recipients?.length) && Array.isArray(detected.breach_recipients) && detected.breach_recipients.length) {
+                patch.breach_recipients = detected.breach_recipients; hit.push('breach_recipients');
+            }
+            if (hit.length) {
+                setPrefilled(hit);
+                setData(prev => ({ ...prev, ...patch }));
+            }
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onAutoDetect]);
 
     const steps = [
         { key: 'dpo', titleKey: 'compliance.wizard_step_dpo' },
@@ -33,6 +72,15 @@ export default function OnboardingWizard({ initialSettings, onFinish, onSkip }) 
         { key: 'residency', titleKey: 'compliance.wizard_step_residency' },
         { key: 'breach', titleKey: 'compliance.wizard_step_breach' },
     ];
+
+    // Which prefilled fields belong to which wizard step (step 0 = DPO is
+    // never auto-detected).
+    const STEP_FIELDS = {
+        1: ['legal_bases'],
+        2: ['data_residency', 'default_retention_days', 'privacy_notice_url'],
+        3: ['breach_recipients'],
+    };
+    const stepWasPrefilled = (STEP_FIELDS[step] || []).some(f => prefilled.includes(f));
 
     const update = (patch) => setData(d => ({ ...d, ...patch }));
     const canNext = () => {
@@ -108,10 +156,29 @@ export default function OnboardingWizard({ initialSettings, onFinish, onSkip }) 
                     {t(`${steps[step].titleKey}_desc`)}
                 </p>
 
+                {stepWasPrefilled && (
+                    <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        margin: '-8px 0 14px', padding: '5px 10px', borderRadius: 8,
+                        background: 'color-mix(in srgb, #10b981 10%, transparent)',
+                        border: '1px solid #10b98133',
+                        fontSize: 12, color: '#10b981', fontWeight: 600,
+                    }}>
+                        <Sparkles size={12} /> {t('compliance.wizard_prefilled')}
+                    </div>
+                )}
+
                 {/* Step content */}
                 <div style={{ minHeight: 200 }}>
                     {step === 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <UserPicker
+                                users={orgUsers}
+                                mode="single"
+                                label={t('compliance.pick_org_user')}
+                                placeholder={t('compliance.pick_org_user_placeholder')}
+                                onSelect={u => update({ dpo_name: u.displayName, dpo_email: u.email || '', dpo_phone: u.phone || '' })}
+                            />
                             <Field label={t('compliance.dpo_name')}>
                                 <input value={data.dpo_name} onChange={e => update({ dpo_name: e.target.value })} style={input} autoFocus />
                             </Field>
@@ -167,6 +234,14 @@ export default function OnboardingWizard({ initialSettings, onFinish, onSkip }) 
                     )}
                     {step === 3 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <UserPicker
+                                users={orgUsers}
+                                mode="multi"
+                                label={t('compliance.add_org_recipient')}
+                                placeholder={t('compliance.pick_org_user_placeholder')}
+                                excludeEmails={data.breach_recipients}
+                                onSelect={u => update({ breach_recipients: [...data.breach_recipients, u.email] })}
+                            />
                             {data.breach_recipients.map((r, i) => (
                                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                     <span style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: 'var(--bg-tertiary, rgba(255,255,255,0.04))', fontSize: 13 }}>{r}</span>

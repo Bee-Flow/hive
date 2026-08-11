@@ -1,4 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
+import { isPublicMarketingPath } from './cmsPublicRouting';
+
+/** Anonymous marketing surface — a 401 there is the expected answer, not a
+ *  session that needs recovering. Imported rather than re-derived so the
+ *  reload guard, the telemetry consent gate and the router share one rule. */
+function onPublicMarketingPage() {
+    if (typeof window === 'undefined') return false;
+    try { return isPublicMarketingPath(window.location.pathname); }
+    catch (_) { return false; }
+}
 
 // In production (built app), always use relative URLs so nginx handles proxying
 // In development, use the same hostname but port 3001 (allows network access from any IP)
@@ -15,6 +25,15 @@ function getApiBase() {
     return `http://${host}:3001`;
 }
 export const API_BASE = getApiBase();
+
+/**
+ * Is this build running inside Nextcloud, behind AppAPI's signed proxy?
+ *
+ * The embed build sets VITE_API_URL to NC's proxy path (see agent-hub's
+ * Dockerfile), so API_BASE is the reliable, build-time-accurate signal —
+ * more so than sniffing window.location, which is the NC host either way.
+ */
+export const isNextcloudEmbed = () => API_BASE.includes('/apps/app_api/proxy/');
 
 export const generateMessageId = () => uuidv4();
 
@@ -37,7 +56,73 @@ export const getSessionToken = () => {
     catch (_) { return null; }
 };
 
+// ── Demo transport ───────────────────────────────────────────────────
+//
+// The public feature demos (/__demo__/<feature>) mount the REAL Studio
+// components so the visuals are the product's, not a mock-up of it. Those
+// components call authFetch directly — dozens of call sites — so this is the
+// one choke point where "a demo can never reach the network" can actually be
+// guaranteed rather than audited.
+//
+// When a transport is installed, authFetch NEVER calls fetch(). An unhandled
+// route is an ERROR, not a passthrough: a passthrough default would mean one
+// missing route silently turns an anonymous visitor's click into a real,
+// unauthenticated API call. Fail closed instead — see helpers.demo.test.js.
+let demoTransport = null;
+
+/** Install (fn) or remove (null) the demo transport. Returns the previous one. */
+export const setDemoTransport = (fn) => {
+    const previous = demoTransport;
+    demoTransport = typeof fn === 'function' ? fn : null;
+    return previous;
+};
+
+export const isDemoMode = () => demoTransport !== null;
+
+/** Is this the path of a public feature demo? */
+export const isDemoPath = (pathname) => /^\/__demo__\/[a-z0-9-]+\/?$/.test(pathname || '');
+
+/**
+ * Close the gap between first paint and DemoHost.
+ *
+ * DemoHost installs the fixture transport in a useState initialiser — during
+ * its first render, before any child can fetch. That is airtight for the
+ * FEATURE. It is not airtight for the APP SHELL, because DemoHost is behind
+ * `lazy()`: while its chunk is still downloading, the providers above it have
+ * already mounted and run their effects. Measured on a demo page, four real
+ * requests left the browser before the transport landed —
+ * /api/branding/effective, /api/branding/public, /api/languages/user/locales
+ * and /api/modules/frontend — as an anonymous visitor, against the live API.
+ *
+ * None of them carries visitor input and all four already tolerate failure,
+ * so nothing was broken by it. What was broken is a sentence: nine marketing
+ * pages tell the reader "the demo has no network access". Either that is true
+ * or it is not worth saying, and it is cheaper to make it true.
+ *
+ * Called from main.jsx BEFORE React renders, so there is no window at all.
+ * Every route 404s; DemoHost swaps in the fixtured table moments later.
+ * Deliberately silent — these are the shell's own calls, not a missing
+ * fixture, and warning about them would train the eye to ignore the warning
+ * that does matter.
+ */
+export const sealDemoBeforeBoot = (pathname) => {
+    if (!isDemoPath(pathname)) return false;
+    setDemoTransport(async () => new Response(
+        JSON.stringify({ error: 'Not available in the demo', demo: true }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } },
+    ));
+    return true;
+};
+
 export const authFetch = async (url, options = {}) => {
+    if (demoTransport) {
+        const response = await demoTransport(url, options);
+        if (!(response instanceof Response)) {
+            throw new Error(`[demo] transport returned no Response for ${url}`);
+        }
+        return response;
+    }
+
     const defaultOptions = {
         credentials: 'include',
         // Never serve dynamic per-user API responses from the browser's HTTP
@@ -61,6 +146,21 @@ export const authFetch = async (url, options = {}) => {
         finalOptions.headers = { ...options.headers };
     }
 
+    // Nextcloud cannot proxy PATCH — at all.
+    //
+    // AppAPI's appinfo/routes.php registers ExAppGet/ExAppPost/ExAppPut/
+    // ExAppDelete and nothing else, and AppAPIService::requestToExAppInternal's
+    // match() has no 'PATCH' arm either. So a PATCH sent through the signed
+    // proxy never reaches the connector: Nextcloud answers it itself, and every
+    // PATCH-based feature (conversation rename, chat labels, …) fails inside the
+    // embed while working perfectly on the web app. Tunnel it as POST with the
+    // standard override header; the connector restores the real method before
+    // the request reaches the Bee Flow server (nextcloud-connector/src/proxy.js).
+    if (isNextcloudEmbed() && String(finalOptions.method || 'GET').toUpperCase() === 'PATCH') {
+        finalOptions.method = 'POST';
+        finalOptions.headers = { ...(finalOptions.headers || {}), 'X-HTTP-Method-Override': 'PATCH' };
+    }
+
     // Embedded-iframe fallback: attach session token if we have one. Browser
     // cookies may be blocked here by storage partitioning, but the server's
     // X-Session-Token middleware will rebuild req.session from this.
@@ -78,11 +178,23 @@ export const authFetch = async (url, options = {}) => {
     //   /auth/          — login/setup flow
     //   /api/health     — public health check
     //   /api/languages/ — i18n fetches; safe to fail before login, falls back to EN defaults
+    //
+    // …and never on a PUBLIC MARKETING page. There is no session to expire
+    // there, so a 401 is the normal answer rather than a signal to recover
+    // from — but this branch reloaded anyway, and the whole site was then
+    // downloaded a second time: JS, CSS, fonts and every icon chunk. It was
+    // invisible in production because the 30s cooldown below stopped the
+    // second pass from becoming a loop, so the page merely rendered twice.
+    // On throttled mobile that doubling was most of the Lighthouse score
+    // (FCP 4.6s / LCP 6.7s against a first paint measured at ~1.3s).
+    // ThemeContext even documents the 401 as expected and falls back to
+    // /api/branding/public — it just never got the chance to.
     if (
         response.status === 401 &&
         !url.includes('/auth/') &&
         !url.includes('/api/health') &&
-        !url.includes('/api/languages/')
+        !url.includes('/api/languages/') &&
+        !onPublicMarketingPage()
     ) {
         // Loop breaker: if a 401 caused a reload within the last 30s, the
         // reload didn't fix the underlying problem (bad JWT, wrong audience,

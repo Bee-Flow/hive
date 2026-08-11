@@ -1,6 +1,10 @@
 import React from 'react';
-import AppIcon from '../../AppIcon';
-import { FieldRow } from './fields';
+import BackgroundControl from './controls/BackgroundControl';
+import ColorControl from './controls/ColorControl';
+import SpacingStepper from './controls/SpacingStepper';
+import { getCapabilities } from './controls/styleCapabilities';
+import { FieldRow, Toggle } from './fields';
+import { SectionDivider, SegmentedControl } from './primitives';
 
 /**
  * Per-block style overrides — Style sub-tab in pane B.
@@ -10,12 +14,17 @@ import { FieldRow } from './fields';
  *     colorOverrides: {
  *       primary, secondary, accent, background, surface, text, textSecondary
  *     },                              // missing/empty = inherit site.design
- *     spacing: { paddingTop, paddingBottom },   // CSS values, e.g. '4rem'
+ *     spacing: { paddingTop, paddingBottom },   // CSS values, e.g. '3rem'
  *     backgroundImage: 'url-or-asset-key',
  *     backgroundOverlay: 'rgba(0,0,0,0.5)',     // single CSS color string
  *     maxWidth: 'narrow' | 'medium' | 'wide' | 'full',
  *     align:    'left' | 'center' | 'right',
  *     cssClass: '',
+ *     // v2 knobs — capability-gated per block type (controls/styleCapabilities;
+ *     // ALL capability flags ship OFF until WS1-P5 renderer support lands):
+ *     columns: 2 | 3 | 4,             // missing = block's default grid
+ *     reveal:  'on' | 'off',          // missing = site motion default
+ *     glow:    true,                  // missing = no glow
  *   }
  *
  * Default (everything missing) = no inline style + no extra classes →
@@ -24,6 +33,9 @@ import { FieldRow } from './fields';
  * Hidden state lives on `block.enabled` (single source of truth, also driven
  * by the BlockList toggle). The "Hide this block" checkbox here calls
  * onToggleEnabled to flip it.
+ *
+ * `blockType` (threaded from PageInspector's activeBlock.type) selects which
+ * v2 knobs render via getCapabilities().
  */
 
 const COLOR_TOKENS = [
@@ -35,8 +47,6 @@ const COLOR_TOKENS = [
     { key: 'text',          label: 'Text',           hint: 'Body copy',                     designKey: 'textPrimary' },
     { key: 'textSecondary', label: 'Text secondary', hint: 'Muted / supporting',            designKey: 'textSecondary' },
 ];
-
-const SPACING_PRESETS = ['2rem', '4rem', '6rem', '8rem'];
 
 const MAX_WIDTHS = [
     { value: 'narrow', label: 'Narrow' },
@@ -51,23 +61,26 @@ const ALIGNS = [
     { value: 'right',  icon: 'AlignRight',  label: 'Right'  },
 ];
 
-export default function BlockStyleEditor({ style, enabled = true, design, onChange, onToggleEnabled }) {
+// '' = Auto (removes the key → block's own default grid).
+const COLUMN_OPTIONS = [
+    { value: '', label: 'Auto', hint: 'Block default' },
+    { value: 2,  label: '2',    hint: '2 columns' },
+    { value: 3,  label: '3',    hint: '3 columns' },
+    { value: 4,  label: '4',    hint: '4 columns' },
+];
+
+export default function BlockStyleEditor({ style, enabled = true, design, blockType, onChange, onToggleEnabled }) {
     const s = style || {};
     const overrides = s.colorOverrides || {};
     const spacing   = s.spacing || {};
     const siteColors = design?.colors || {};
+    const caps = getCapabilities(blockType);
 
     const setOverride = (key, value) => {
         const next = { ...overrides };
         if (value === null || value === undefined || value === '') delete next[key];
         else next[key] = value;
         onChange({ ...s, colorOverrides: next });
-    };
-    const setSpacing = (key, value) => {
-        const next = { ...spacing };
-        if (!value) delete next[key];
-        else next[key] = value;
-        onChange({ ...s, spacing: next });
     };
     const setBgImage   = (url)  => onChange({ ...s, backgroundImage:   url || null });
     const setBgOverlay = (rgba) => onChange({ ...s, backgroundOverlay: rgba || null });
@@ -96,25 +109,27 @@ export default function BlockStyleEditor({ style, enabled = true, design, onChan
                 only this block — children inherit through CSS variables.
             </p>
             {COLOR_TOKENS.map(t => (
-                <ColorOverrideRow
+                <ColorControl
                     key={t.key}
                     label={t.label}
                     hint={t.hint}
-                    value={overrides[t.key] ?? null}
-                    inheritFrom={siteColors[t.designKey]}
+                    value={overrides[t.key] ?? ''}
+                    inheritFrom={siteColors[t.designKey] || ''}
                     onChange={(v) => setOverride(t.key, v)}
                 />
             ))}
 
             <SectionDivider label="Spacing" />
-            <SpacingRow label="Padding top"    value={spacing.paddingTop}    onChange={(v) => setSpacing('paddingTop',    v)} />
-            <SpacingRow label="Padding bottom" value={spacing.paddingBottom} onChange={(v) => setSpacing('paddingBottom', v)} />
+            <SpacingStepper
+                spacing={spacing}
+                onChange={(nextSpacing) => onChange({ ...s, spacing: nextSpacing })}
+            />
 
-            <SectionDivider label="Background image" />
-            <BackgroundImageField
-                url={s.backgroundImage || ''}
+            <SectionDivider label="Background" />
+            <BackgroundControl
+                image={s.backgroundImage || ''}
                 overlay={s.backgroundOverlay || ''}
-                onChangeUrl={setBgImage}
+                onChangeImage={setBgImage}
                 onChangeOverlay={setBgOverlay}
             />
 
@@ -125,6 +140,7 @@ export default function BlockStyleEditor({ style, enabled = true, design, onChan
             <FieldRow label="Text align">
                 <SegmentedControl options={ALIGNS} value={s.align || 'left'} onChange={setAlign} iconOnly />
             </FieldRow>
+            <CapabilityKnobs caps={caps} style={s} onChange={onChange} />
 
             <SectionDivider label="Advanced" />
             <FieldRow
@@ -161,6 +177,42 @@ export default function BlockStyleEditor({ style, enabled = true, design, onChan
 
 // ── helpers ────────────────────────────────────────────────────────
 
+// The v2 knobs (columns / reveal / glow) — rendered only for block types
+// whose capability flag is on (controls/styleCapabilities; all OFF until
+// WS1-P5 renderer support lands). Columns rides at the end of the Layout
+// section; Motion gets its own divider.
+function CapabilityKnobs({ caps, style: s, onChange }) {
+    const setColumns = (v) => {
+        const next = { ...s };
+        if (!v) delete next.columns;
+        else next.columns = v;
+        onChange(next);
+    };
+    const setReveal = (on) => onChange({ ...s, reveal: on ? 'on' : 'off' });
+    const setGlow = (on) => {
+        const next = { ...s };
+        if (on) next.glow = true;
+        else delete next.glow;
+        onChange(next);
+    };
+    return (
+        <>
+            {caps.columns ? (
+                <FieldRow label="Columns" hint="Grid columns for this block's cards.">
+                    <SegmentedControl options={COLUMN_OPTIONS} value={s.columns || ''} onChange={setColumns} />
+                </FieldRow>
+            ) : null}
+            {caps.motion ? (
+                <>
+                    <SectionDivider label="Motion" />
+                    <Toggle label="Reveal on scroll" value={s.reveal === 'on'} onChange={setReveal} />
+                    <Toggle label="Accent glow" value={!!s.glow} onChange={setGlow} />
+                </>
+            ) : null}
+        </>
+    );
+}
+
 function hasAnyOverride(s) {
     if (!s) return false;
     if (s.colorOverrides && Object.keys(s.colorOverrides).length) return true;
@@ -169,245 +221,16 @@ function hasAnyOverride(s) {
     if (s.maxWidth) return true;
     if (s.align) return true;
     if (s.cssClass) return true;
+    if (s.columns) return true;
+    if (s.reveal) return true;
+    if (s.glow) return true;
     return false;
 }
 
-function SectionDivider({ label }) {
-    return (
-        <div className="flex items-center gap-2 mt-4 mb-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
-            <div className="flex-1 h-px bg-[var(--border-subtle)]" />
-        </div>
-    );
-}
-
-function SegmentedControl({ options, value, onChange, iconOnly }) {
-    return (
-        <div className="inline-flex rounded-md border border-[var(--border-default)] bg-[var(--bg-tertiary)] overflow-hidden">
-            {options.map((opt) => {
-                const active = opt.value === value;
-                return (
-                    <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => onChange(opt.value)}
-                        title={opt.label}
-                        className={`px-3 py-1.5 text-xs font-medium transition-colors
-                            ${active
-                                ? 'bg-[var(--accent-primary)] text-white'
-                                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]'
-                            }`}
-                    >
-                        {opt.icon
-                            ? <span className="inline-flex items-center gap-1.5">
-                                  <AppIcon name={opt.icon} className="w-3.5 h-3.5" />
-                                  {!iconOnly && opt.label}
-                              </span>
-                            : opt.label}
-                    </button>
-                );
-            })}
-        </div>
-    );
-}
-
-// ── Color override row ─────────────────────────────────────────────
-
-function ColorOverrideRow({ label, hint, value, inheritFrom, onChange }) {
-    const isOverridden = typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
-    const swatchValue  = isOverridden ? value : (inheritFrom || '#000000');
-    return (
-        <FieldRow label={label} hint={hint}>
-            <div className="flex items-center gap-2">
-                <input
-                    type="color"
-                    value={swatchValue}
-                    onChange={(e) => onChange(e.target.value)}
-                    className={`h-8 w-10 rounded border cursor-pointer bg-[var(--bg-tertiary)]
-                        ${isOverridden ? 'border-[var(--accent-primary)]' : 'border-[var(--border-default)]'}`}
-                    title={isOverridden ? 'Block override' : 'Click to override (currently inherited)'}
-                />
-                <input
-                    type="text"
-                    value={isOverridden ? value : ''}
-                    onChange={(e) => onChange(e.target.value)}
-                    placeholder={inheritFrom ? `inherit ${inheritFrom}` : '#RRGGBB'}
-                    spellCheck={false}
-                    className="flex-1 px-2 py-1.5 rounded text-xs font-mono border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
-                />
-                {isOverridden && (
-                    <button
-                        type="button"
-                        onClick={() => onChange(null)}
-                        className="text-xs text-[var(--text-muted)] hover:text-red-400 px-1"
-                        title="Reset to inherited"
-                    >
-                        Reset
-                    </button>
-                )}
-            </div>
-        </FieldRow>
-    );
-}
-
-// ── Spacing row (text input + preset chips) ─────────────────────────
-
-function SpacingRow({ label, value, onChange }) {
-    const v = value || '';
-    return (
-        <FieldRow label={label}>
-            <div className="flex items-center gap-2 flex-wrap">
-                <input
-                    type="text"
-                    value={v}
-                    onChange={(e) => onChange(e.target.value)}
-                    placeholder="default"
-                    spellCheck={false}
-                    className="w-24 px-2 py-1.5 rounded text-xs font-mono border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
-                />
-                <div className="inline-flex rounded-md border border-[var(--border-default)] bg-[var(--bg-tertiary)] overflow-hidden">
-                    {SPACING_PRESETS.map(p => (
-                        <button
-                            key={p}
-                            type="button"
-                            onClick={() => onChange(p)}
-                            className={`px-2 py-1 text-[10px] font-mono transition-colors
-                                ${v === p
-                                    ? 'bg-[var(--accent-primary)] text-white'
-                                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]'
-                                }`}
-                        >
-                            {p}
-                        </button>
-                    ))}
-                </div>
-                {v && (
-                    <button
-                        type="button"
-                        onClick={() => onChange(null)}
-                        className="text-xs text-[var(--text-muted)] hover:text-red-400"
-                        title="Reset to default"
-                    >
-                        ×
-                    </button>
-                )}
-            </div>
-        </FieldRow>
-    );
-}
-
-// ── Background image with overlay ──────────────────────────────────
-
-function BackgroundImageField({ url, overlay, onChangeUrl, onChangeOverlay }) {
-    const { hex: overlayHex, opacity: overlayOpacity } = parseRgbaOverlay(overlay);
-    return (
-        <>
-            <FieldRow label="Image URL or asset key" hint="A CMS asset key (cms/...) or full https URL.">
-                <div className="flex items-start gap-2">
-                    {url ? (
-                        <div className="w-12 h-12 shrink-0 rounded border border-[var(--border-default)] overflow-hidden bg-[var(--bg-tertiary)] flex items-center justify-center">
-                            <img src={resolveAssetUrl(url)} alt="" className="w-full h-full object-cover" />
-                        </div>
-                    ) : null}
-                    <input
-                        type="text"
-                        value={url}
-                        onChange={(e) => onChangeUrl(e.target.value)}
-                        onPaste={(e) => {
-                            // Force-handle paste: read clipboard text directly
-                            // and fire the change. Some browsers don't reliably
-                            // synthesize React's onChange after paste when the
-                            // clipboard came from formatted-text sources (Google
-                            // Docs, etc.) — this guarantees the URL lands.
-                            const txt = e.clipboardData?.getData('text');
-                            if (txt) {
-                                e.preventDefault();
-                                onChangeUrl(txt.trim());
-                            }
-                        }}
-                        placeholder="https://… or cms/file.jpg"
-                        spellCheck={false}
-                        className="flex-1 px-2 py-1.5 rounded text-xs font-mono border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
-                    />
-                </div>
-            </FieldRow>
-            {url && (
-                <>
-                    <FieldRow label="Overlay color" hint="Tints the image so foreground text stays readable.">
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="color"
-                                value={overlayHex || '#000000'}
-                                onChange={(e) => onChangeOverlay(composeRgba(e.target.value, overlayOpacity))}
-                                className="h-8 w-10 rounded border border-[var(--border-default)] bg-[var(--bg-tertiary)] cursor-pointer"
-                            />
-                            <input
-                                type="text"
-                                value={overlay || ''}
-                                onChange={(e) => onChangeOverlay(e.target.value)}
-                                placeholder="rgba(0,0,0,0.5)"
-                                spellCheck={false}
-                                className="flex-1 px-2 py-1.5 rounded text-xs font-mono border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
-                            />
-                            {overlay && (
-                                <button
-                                    type="button"
-                                    onClick={() => onChangeOverlay(null)}
-                                    className="text-xs text-[var(--text-muted)] hover:text-red-400"
-                                    title="Remove overlay"
-                                >
-                                    ×
-                                </button>
-                            )}
-                        </div>
-                    </FieldRow>
-                    <FieldRow label={`Overlay opacity — ${Math.round(overlayOpacity * 100)}%`}>
-                        <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="1"
-                            value={Math.round(overlayOpacity * 100)}
-                            onChange={(e) => onChangeOverlay(composeRgba(overlayHex || '#000000', parseInt(e.target.value, 10) / 100))}
-                            className="w-full accent-[var(--accent-primary)]"
-                        />
-                    </FieldRow>
-                </>
-            )}
-        </>
-    );
-}
-
-// Convert "rgba(r,g,b,a)" → { hex, opacity }; defaults to black/0.5.
-function parseRgbaOverlay(rgba) {
-    if (!rgba || typeof rgba !== 'string') return { hex: '', opacity: 0.5 };
-    const m = rgba.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i);
-    if (!m) return { hex: '', opacity: 0.5 };
-    const r = parseInt(m[1], 10);
-    const g = parseInt(m[2], 10);
-    const b = parseInt(m[3], 10);
-    const a = m[4] != null ? parseFloat(m[4]) : 1;
-    const hex = '#' + [r, g, b].map(n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0')).join('');
-    return { hex, opacity: Math.max(0, Math.min(1, a)) };
-}
-
-function composeRgba(hex, opacity) {
-    const m = (hex || '').match(/^#([0-9a-fA-F]{6})$/);
-    if (!m) return null;
-    const h = m[1];
-    const r = parseInt(h.slice(0, 2), 16);
-    const g = parseInt(h.slice(2, 4), 16);
-    const b = parseInt(h.slice(4, 6), 16);
-    const a = Math.max(0, Math.min(1, typeof opacity === 'number' ? opacity : 0.5));
-    return `rgba(${r}, ${g}, ${b}, ${Math.round(a * 100) / 100})`;
-}
-
-// Mirror of the iframe-side helper — turn a "cms/<key>" into the asset URL.
-function resolveAssetUrl(urlOrKey) {
-    if (!urlOrKey) return '';
-    if (urlOrKey.startsWith('http://') || urlOrKey.startsWith('https://') || urlOrKey.startsWith('/')) return urlOrKey;
-    if (urlOrKey.startsWith('cms/')) {
-        return `/api/cms/asset/${urlOrKey.split('/').map(encodeURIComponent).join('/')}`;
-    }
-    return urlOrKey;
-}
+// SectionDivider + SegmentedControl come from ./primitives. Color override
+// rows are the unified ColorControl (./controls/ColorControl); spacing is
+// the SpacingStepper rhythm scale (./controls/SpacingStepper); background
+// is BackgroundControl (./controls/BackgroundControl — the shared
+// ImageField + one alpha ColorControl composing rgba via controls/colorUtils,
+// plus the reserved band-variant slot). All of them write the exact same
+// storage format the old free-text controls did.

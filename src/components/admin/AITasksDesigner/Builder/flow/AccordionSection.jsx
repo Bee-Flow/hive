@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import CollapsibleSection from './CollapsibleSection';
+import { isAdvancedSection, useFormDensity } from './settings/formDensity';
 import scopedStorage from '../../../../../utils/scopedStorage';
 
 /**
@@ -23,6 +24,10 @@ export default function AccordionSection({
     defaultOpen = false,
     forceOpen = false,
     badge = null,
+    // Rendered beside the title on the band, outside the toggle button (a
+    // FieldHint, a count chip). Never plain text: the button's textContent is
+    // how tests locate a section.
+    meta = null,
     children,
 }) {
     const storageKey = `collapse.inspector.${stepType}.${sectionKey}`;
@@ -42,13 +47,23 @@ export default function AccordionSection({
         prevForce.current = forceOpen;
     }, [forceOpen]);
 
+    // Quick view: advanced sections are left out entirely (the host offers a
+    // "More options" way in). A section holding a validation ERROR is the one
+    // exception — hiding it would make the problem unreachable.
+    const { density, onHiddenSection } = useFormDensity();
+    const hidden = density === 'quick' && isAdvancedSection(sectionKey) && !forceOpen;
+    useEffect(() => {
+        if (hidden) onHiddenSection?.(sectionKey);
+    }, [hidden, sectionKey, onHiddenSection]);
+    if (hidden) return null;
+
     const onToggle = (next) => {
         setOpen(next);
         scopedStorage.setItem(storageKey, next ? '1' : '0');
     };
 
     return (
-        <CollapsibleSection title={title} open={open} onToggle={onToggle} badge={badge}>
+        <CollapsibleSection variant="section" title={title} open={open} onToggle={onToggle} badge={badge} meta={meta}>
             {children}
         </CollapsibleSection>
     );

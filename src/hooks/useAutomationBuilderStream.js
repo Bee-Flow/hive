@@ -1,5 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
+import { isBlankDefinition } from '../components/admin/AITasksDesigner/Builder/flow/normalizeDefinition';
 import { API_BASE, authFetch } from '../utils/helpers';
+
+// Shown when the build stream drops mid-flight (gateway timeout / network cut).
+// The draft is persisted server-side after every step, so the build may have
+// completed — guide the user to reopen rather than surfacing a raw "HTTP 504".
+const GATEWAY_DROP_MESSAGE = 'The connection to the builder dropped while it was working. Your progress is saved — reopen this automation to see the latest, or send your message again to continue.';
 
 /**
  * SSE hook for the conversational automation builder.
@@ -34,6 +40,18 @@ export default function useAutomationBuilderStream(initial = {}) {
         todos: [],             // agent's self-managed plan: [{ text, done }] — read-only checklist
     });
     const abortRef = useRef(null);
+    // Run-progress polling bookkeeping (see pollRunProgress):
+    //   polledRunIdRef    — last run id a poll was issued for; a change marks
+    //                       the first poll of a new run (the only one allowed
+    //                       to clear the previous run's rows).
+    //   partialRunRef     — an "Execute step" run is in flight; its polls only
+    //                       ever carry that one step, so they must never reset.
+    //   pollSeqRef /      — monotonic issue counter + the highest sequence
+    //   appliedPollSeqRef   already applied, so a late response is dropped.
+    const polledRunIdRef = useRef(null);
+    const partialRunRef = useRef(false);
+    const pollSeqRef = useRef(0);
+    const appliedPollSeqRef = useRef(0);
 
     const reset = useCallback(() => {
         setState(s => ({ ...s, messages: [], draft: null, summary: '', dryRun: null, steps: [], finalizedId: null, error: null, validation: null, aborted: null, todos: [] }));
@@ -47,7 +65,11 @@ export default function useAutomationBuilderStream(initial = {}) {
     const hydrate = useCallback((snapshot) => {
         if (!snapshot) return;
         setState(s => {
-            const nextDraft = snapshot.draft || s.draft;
+            // A blank snapshot draft (notably the poisoned `{}` a null-definition
+            // PUT used to persist — BFSF-318) must not mask the existing draft:
+            // `{}` is truthy, so a plain `||` adopted it and the builder could
+            // no longer produce a well-formed graph.
+            const nextDraft = isBlankDefinition(snapshot.draft) ? s.draft : snapshot.draft;
             return {
                 ...s,
                 messages: Array.isArray(snapshot.conversation) ? snapshot.conversation : s.messages,
@@ -154,7 +176,13 @@ export default function useAutomationBuilderStream(initial = {}) {
             });
             if (!resp.ok || !resp.body) {
                 const text = await safeText(resp);
-                setState(s => ({ ...s, running: false, error: text || `HTTP ${resp.status}` }));
+                // A gateway timeout (504/502/408) means the connection dropped
+                // while the build was still running — the draft is persisted
+                // server-side, so guide the user to reopen rather than showing
+                // a raw "HTTP 504".
+                const isGateway = resp.status === 504 || resp.status === 502 || resp.status === 408;
+                const error = isGateway ? GATEWAY_DROP_MESSAGE : (text || `HTTP ${resp.status}`);
+                setState(s => ({ ...s, running: false, error, messages: finalizeStreaming(s.messages) }));
                 return;
             }
             const reader = resp.body.getReader();
@@ -178,7 +206,11 @@ export default function useAutomationBuilderStream(initial = {}) {
             }
         } catch (e) {
             if (e.name !== 'AbortError') {
-                setState(s => ({ ...s, running: false, error: e.message || 'Stream failed', messages: finalizeStreaming(s.messages) }));
+                // A mid-stream network drop (e.g. the connection was cut by a
+                // gateway after a long build) reads as a fetch/network error —
+                // show the same reassuring guidance as an explicit 504.
+                const looksLikeDrop = /network|fetch|terminated|timeout|aborted|closed/i.test(e.message || '');
+                setState(s => ({ ...s, running: false, error: looksLikeDrop ? GATEWAY_DROP_MESSAGE : (e.message || 'Stream failed'), messages: finalizeStreaming(s.messages) }));
                 return;
             }
         }
@@ -230,6 +262,12 @@ export default function useAutomationBuilderStream(initial = {}) {
     const executeStep = useCallback(async (stepId, { mode = 'only' } = {}) => {
         if (!state.automationId || !stepId) return null;
         setState(s => ({ ...s, executingStepId: stepId, error: null }));
+        // Tell pollRunProgress that the run it is about to see is a PARTIAL one
+        // — a ref rather than `state.executingStepId` because the poll response
+        // can land after the flag is cleared, and at that point the state would
+        // read "no partial run" and the poll would reset the whole step map
+        // (BFSF-360).
+        partialRunRef.current = true;
         // Light up live progress (the run may execute upstream steps first).
         const stopWatch = watchActiveRun(state.automationId);
         try {
@@ -240,7 +278,8 @@ export default function useAutomationBuilderStream(initial = {}) {
             });
             const j = await r.json().catch(() => ({}));
             if (!r.ok) {
-                setState(s => ({ ...s, executingStepId: null, error: j?.error || `HTTP ${r.status}`, dryRun: settleRunStub(s.dryRun) }));
+                const msg = j?.error || `HTTP ${r.status}`;
+                setState(s => ({ ...s, executingStepId: null, error: msg, dryRun: settleRunStub(s.dryRun), steps: markStepFailed(s.steps, stepId, msg) }));
                 return null;
             }
             // Merge the returned steps into existing state.steps. The
@@ -259,9 +298,11 @@ export default function useAutomationBuilderStream(initial = {}) {
             });
             return j;
         } catch (e) {
-            setState(s => ({ ...s, executingStepId: null, error: e.message || 'Execute step failed', dryRun: settleRunStub(s.dryRun) }));
+            const msg = e.message || 'Execute step failed';
+            setState(s => ({ ...s, executingStepId: null, error: msg, dryRun: settleRunStub(s.dryRun), steps: markStepFailed(s.steps, stepId, msg) }));
             return null;
         } finally {
+            partialRunRef.current = false;
             stopWatch();
         }
     }, [state.automationId, watchActiveRun]);
@@ -287,15 +328,42 @@ export default function useAutomationBuilderStream(initial = {}) {
      * Snapshot of an in-progress run's step rows. Drives the live progress
      * banner + animated edges while a dry-run is executing. Callers should
      * poll every ~750ms; cheap query, capped at one row per step.
+     *
+     * Merges per stepId, exactly like executeStep's own merge: a partial run
+     * ("Execute step") records ONLY the executed step, so replacing the whole
+     * array wiped every other node's output from the panel — the "output frozen
+     * / stale output" half of BFSF-360. Rows in the response win; rows absent
+     * from it are retained.
+     *
+     * A FULL run must still be able to clear the previous run's rows, so the
+     * reset is keyed on the run id CHANGING (claimed at request time, once per
+     * run) rather than on every poll — and is skipped while a partial run is in
+     * flight, since that run mints a fresh id too but only reports one step.
      */
     const pollRunProgress = useCallback(async (runId) => {
         if (!runId) return null;
+        const seq = ++pollSeqRef.current;
+        // Claim the run id here, not after the await: two polls can be in
+        // flight at once and only the first of a new run may reset.
+        const startsFreshRun = runId !== polledRunIdRef.current && !partialRunRef.current;
+        polledRunIdRef.current = runId;
         try {
             const r = await authFetch(`${API_BASE}/api/automation/runs/${encodeURIComponent(runId)}/steps`);
             const j = await r.json().catch(() => ({}));
             if (!r.ok) return null;
             const steps = Array.isArray(j.steps) ? j.steps : [];
-            setState(s => ({ ...s, steps }));
+            // Responses are applied in ARRIVAL order, which is not issue order:
+            // a slow poll landing after a newer one used to re-freeze the panels
+            // with rows that were already stale when they arrived. Ignore any
+            // response older than the last one applied.
+            if (seq <= appliedPollSeqRef.current) return steps;
+            appliedPollSeqRef.current = seq;
+            setState(s => {
+                const base = startsFreshRun ? [] : (s.steps || []);
+                const byId = new Map(base.map(st => [st.stepId, st]));
+                for (const ns of steps) byId.set(ns.stepId, ns);
+                return { ...s, steps: Array.from(byId.values()) };
+            });
             return steps;
         } catch {
             return null;
@@ -306,6 +374,52 @@ export default function useAutomationBuilderStream(initial = {}) {
     const clearDryRun = useCallback(() => {
         setState(s => ({ ...s, dryRun: null, steps: [] }));
     }, []);
+
+    /**
+     * Release a 'running'/'queued' progress stub that will never reach a
+     * terminal state — the run-start request itself threw, so no run record is
+     * coming. Without this `liveRunInFlight` stays true for the rest of the
+     * session and every node's ▶ Execute button (plus the ones in the node
+     * editor) stays disabled: one of the mechanisms behind the "Execute button
+     * does nothing" reports in BFSF-360. A run that already reported a real
+     * terminal status is left untouched, and the step rows are kept so the
+     * user doesn't lose the previous run's output to a failed start.
+     */
+    const settleRun = useCallback(() => {
+        setState(s => (s.dryRun && (s.dryRun.status === 'running' || s.dryRun.status === 'queued')
+            ? { ...s, dryRun: { ...s.dryRun, status: 'error' } }
+            : s));
+    }, []);
+
+    /**
+     * Restore the most recent run's step rows after a reload. Run output
+     * lives only in memory (deliberately NOT in the builder snapshot — step
+     * outputs can be 256 KB each and the server already persists them), so a
+     * refresh used to lose every chip, sample and the ability to re-pin. Pull
+     * the latest run back from the endpoints that already exist.
+     *
+     * Never clobbers live state: if rows exist or a run/step-execute is in
+     * flight by the time the fetches land, the result is dropped.
+     */
+    const hydrateLastRun = useCallback(async (automationId) => {
+        const aid = automationId || state.automationId;
+        if (!aid) return null;
+        try {
+            const r = await authFetch(`${API_BASE}/api/automation/${encodeURIComponent(aid)}/runs?limit=1`);
+            const j = await r.json().catch(() => ({}));
+            const run = Array.isArray(j.runs) ? j.runs[0] : null;
+            if (!r.ok || !run?.id || run.status === 'running' || run.status === 'queued') return null;
+            const rs = await authFetch(`${API_BASE}/api/automation/runs/${encodeURIComponent(run.id)}/steps`);
+            const js = await rs.json().catch(() => ({}));
+            if (!rs.ok || !Array.isArray(js.steps) || !js.steps.length) return null;
+            setState(s => (s.steps.length || s.running || s.executingStepId || s.dryRun
+                ? s
+                : { ...s, dryRun: run, steps: js.steps }));
+            return run;
+        } catch {
+            return null;
+        }
+    }, [state.automationId]);
 
     /**
      * Push a completed full-flow run (dry-run or live) into state so every
@@ -321,7 +435,7 @@ export default function useAutomationBuilderStream(initial = {}) {
         }));
     }, []);
 
-    return { state, send, reset, hydrate, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft, executeStep, retryFromStep, stopRun, pollRunProgress, clearDryRun, setRunResult, watchActiveRun };
+    return { state, send, reset, hydrate, hydrateLastRun, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft, executeStep, retryFromStep, stopRun, pollRunProgress, clearDryRun, settleRun, setRunResult, watchActiveRun };
 }
 
 // Mark any in-flight assistant message as no-longer-streaming and stamp the
@@ -507,6 +621,39 @@ async function safeText(r) {
  */
 function settleRunStub(d) {
     return d && d.status === 'running' ? { ...d, status: 'error' } : d;
+}
+
+/**
+ * Replace one step's run row with an error row after a failed "Execute step".
+ *
+ * A failed execute used to leave the PREVIOUS run's row in place, so the panel
+ * kept showing that run's output under a green "Success" badge — the user reads
+ * it as the result of the run that just failed (BFSF-360). We deliberately do
+ * not reuse the old row's fields: `output`, `durationMs`, `runId` and friends
+ * all belong to the attempt that succeeded, and only the error is true now.
+ * status 'error' is the same value the server records, so the red node border
+ * and NodeDetailView's "Retry from here" light up as they would for a run-time
+ * failure.
+ *
+ * Sub-rows recorded by this step's flowlet internals are namespaced
+ * `<stepId>/<subStepId>` by the runner (recursively, e.g. `cl1/cl2/out`), so
+ * they belong to the same superseded attempt and go with it.
+ */
+function markStepFailed(steps, stepId, error) {
+    const rows = Array.isArray(steps) ? steps : [];
+    if (!stepId) return rows;
+    const prefix = `${stepId}/`;
+    const failed = { stepId, parentStepId: null, status: 'error', error: error || 'Execute step failed', output: null };
+    const out = [];
+    let replaced = false;
+    for (const st of rows) {
+        if (!st) continue;
+        if (st.stepId === stepId && !st.parentStepId) { out.push(failed); replaced = true; continue; }
+        if (typeof st.stepId === 'string' && st.stepId.startsWith(prefix)) continue;
+        out.push(st);
+    }
+    if (!replaced) out.push(failed);
+    return out;
 }
 
 /**

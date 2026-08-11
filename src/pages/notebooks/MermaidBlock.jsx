@@ -12,12 +12,19 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import mermaid from 'mermaid';
 import { Code, Eye, Maximize2, Minimize2, X, Download, Copy, Check, Loader2 } from 'lucide-react';
+import useTranslation from '../../hooks/useTranslation';
 
 let blockCounter = 0;
 
 /* ── Premium Theme Configuration ──────────────────────── */
 const MERMAID_CONFIG = {
     startOnLoad: false,
+    // Pin this explicitly. Diagram source can arrive from an ingested document
+    // or an AI write, and 'loose' would let it emit click handlers and raw HTML
+    // labels — we render mermaid's output with innerHTML. It is mermaid's
+    // current default, but relying on a library default for a security boundary
+    // is not a decision worth leaving implicit.
+    securityLevel: 'strict',
     theme: 'base',
     themeVariables: {
         darkMode: false,
@@ -254,6 +261,7 @@ export function svgToPngDataUrl(svgString, width = 1200) {
 /* ── Main Component ───────────────────────────────────── */
 
 export default function MermaidBlock({ code, onCodeChange, editable = true }) {
+    const { t } = useTranslation();
     const [showCode, setShowCode] = useState(false);
     const [error, setError] = useState(null);
     const [ready, setReady] = useState(false);
@@ -276,14 +284,18 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
         const id = idRef.current;
 
         let cancelled = false;
+        let timer = null;
         const renderDiagram = async () => {
+            const renderId = `${id}-${Date.now()}`;
             try {
-                const renderId = `${id}-${Date.now()}`;
-                // Race mermaid.render against a 5 s timeout — pathological inputs
-                // can hang the editor's main thread otherwise.
+                // The timeout only covers mermaid's async work. Its layout pass
+                // is synchronous, so a timer can never interrupt a pathological
+                // diagram — the comment here used to claim protection the code
+                // could not provide. Keep it as a backstop for a hung promise
+                // and make sure it is actually cleared.
                 const result = await Promise.race([
                     mermaid.render(renderId, code.trim()),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Mermaid render timed out after 5 s')), 5000)),
+                    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Mermaid render timed out after 5 s')), 5000); }),
                 ]);
                 if (cancelled) return;
                 const { svg } = result;
@@ -298,9 +310,14 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
             } catch (err) {
                 if (cancelled) return;
                 console.error('[MermaidBlock] Render error:', err);
-                setError(err.message || 'Failed to render diagram');
-                const errorEl = document.getElementById('d' + id);
-                if (errorEl) errorEl.remove();
+                setError(err.message || t('notebooks.mermaid_render_failed', 'Failed to render diagram'));
+                // mermaid parks its measuring node under the id it was CALLED
+                // with; cleaning up `'d' + id` targeted an id that never exists,
+                // so every failed render leaked a node into <body>.
+                document.getElementById(`d${renderId}`)?.remove();
+                document.getElementById(renderId)?.remove();
+            } finally {
+                if (timer) { clearTimeout(timer); timer = null; }
             }
         };
 
@@ -308,6 +325,7 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
 
         return () => {
             cancelled = true;
+            if (timer) { clearTimeout(timer); timer = null; }
             if (containerRef.current) {
                 containerRef.current.innerHTML = '';
             }
@@ -417,20 +435,20 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
                     </span>
 
                     <div className="mermaid-toolbar">
-                        <ToolbarBtn onClick={() => setShowCode(!showCode)} title={showCode ? 'Show diagram' : 'Show code'} active={showCode}>
+                        <ToolbarBtn onClick={() => setShowCode(!showCode)} title={showCode ? t('notebooks.mermaid_show_diagram', 'Show diagram') : t('notebooks.mermaid_show_code', 'Show code')} active={showCode}>
                             {showCode ? <><Eye size={12} /> Preview</> : <><Code size={12} /> Code</>}
                         </ToolbarBtn>
 
-                        <ToolbarBtn onClick={handleCopy} title="Copy code" active={copied}>
+                        <ToolbarBtn onClick={handleCopy} title={t('notebooks.mermaid_copy_code', 'Copy code')} active={copied}>
                             {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /></>}
                         </ToolbarBtn>
 
                         {!showCode && (
                             <>
-                                <ToolbarBtn onClick={handleDownloadSVG} title="Download SVG">
+                                <ToolbarBtn onClick={handleDownloadSVG} title={t('notebooks.mermaid_download_svg', 'Download SVG')}>
                                     <Download size={12} />
                                 </ToolbarBtn>
-                                <ToolbarBtn onClick={() => setFullscreen(true)} title="Fullscreen">
+                                <ToolbarBtn onClick={() => setFullscreen(true)} title={t('notebooks.mermaid_fullscreen', 'Fullscreen')}>
                                     <Maximize2 size={12} />
                                 </ToolbarBtn>
                             </>
@@ -456,13 +474,13 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
                         {error ? (
                             <div className="mermaid-error">
                                 <div style={{ fontWeight: 600, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ fontSize: '14px' }}>⚠️</span> Diagram Error
+                                    <span style={{ fontSize: '14px' }}>⚠️</span> {t('notebooks.mermaid_error_title', 'Diagram Error')}
                                 </div>
                                 <div style={{ opacity: 0.8, fontFamily: "'Fira Code', monospace", fontSize: '11px', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
                                     {error}
                                 </div>
                                 <button onClick={() => setShowCode(true)} className="mermaid-error-btn">
-                                    Edit Code
+                                    {t('notebooks.mermaid_edit_code', 'Edit Code')}
                                 </button>
                             </div>
                         ) : (
@@ -471,7 +489,7 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
                                 {!ready && (
                                     <div className="mermaid-skeleton">
                                         <Loader2 size={20} className="mermaid-skeleton-spinner" style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-primary)' }} />
-                                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>Rendering diagram…</span>
+                                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>{t('notebooks.mermaid_rendering', 'Rendering diagram…')}</span>
                                     </div>
                                 )}
                                 <div

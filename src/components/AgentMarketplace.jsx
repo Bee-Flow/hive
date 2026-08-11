@@ -145,6 +145,16 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
         return map;
     }, [categories]);
 
+    // BFSF-272: categories are deletable/mergeable now — when the active chip's
+    // category vanishes, fall back to 'popular' instead of filtering to a
+    // silently empty list (KBsStudio pattern).
+    useEffect(() => {
+        if (!activeCategory.startsWith('cat_')) return;
+        if (!categories.some(c => `cat_${c.id}` === activeCategory)) {
+            setActiveCategory('popular');
+        }
+    }, [categories, activeCategory]);
+
     // Fetch popularity data from monitoring API
     useEffect(() => {
         fetch(`${API}/agents`)
@@ -223,7 +233,13 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     const isSearching = search.trim().length > 0;
 
     const cardData = useMemo(() => filtered.map(a => {
-        const isOwner = user && (a.owner_id === user.id || user.isAdmin || (user.permissions || []).includes('all'));
+        // BFSF-271: prefer the server's per-agent edit verdict (can_edit on
+        // /agents/published rows) over the local owner heuristic — the server
+        // is the single policy source. Fall back to the heuristic for rows
+        // from older servers that don't carry the field yet.
+        const isOwner = typeof a.can_edit === 'boolean'
+            ? a.can_edit
+            : !!(user && (a.owner_id === user.id || user.isAdmin || (user.permissions || []).includes('all')));
         const avatar = pickAgentAvatar(a);
         return {
             id: a.id, name: a.name, avatar, description: a.description,

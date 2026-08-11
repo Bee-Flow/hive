@@ -21,15 +21,31 @@ import * as Tbl from './tables.js';
 import { commands } from '../commands/index.js';
 import { isActive as qIsActive, getAttributes as qGetAttributes } from './queries.js';
 import { createHistory, record, undo as histUndo, redo as histRedo, canUndo, canRedo } from './history.js';
-import { textSelection, nodeSelection, cellSelection, pos, isText, isNode, isCell, isCollapsed, selRange, eqSelection } from './selection.js';
+import { textSelection, nodeSelection, cellSelection, pos, isText, isNode, isCell, isCollapsed, selRange, eqSelection, eqPath } from './selection.js';
 import { isCode, isTextblock } from '../model/schema.js';
-import { inlineToTokens, tokensToInline } from './inline.js';
+import { inlineToTokens } from './inline.js';
 import { runInputRules } from './inputRules.js';
 import { astToHtml } from '../serialization/astToHtml.js';
 import { astToMarkdown } from '../serialization/astToMd.js';
 import { selectionToFlat } from './flatpos.js';
 
 const now = () => (typeof Date !== 'undefined' ? Date.now() : 0);
+
+/** Plain text of a doc AST, one line per textblock (hard breaks become newlines). */
+function docToText(doc) {
+  const out = [];
+  const walk = (n) => {
+    if (isTextblock(n.type)) {
+      out.push(inlineToTokens(n.content)
+        .map((t) => (t.node ? (t.node.type === 'hardBreak' ? '\n' : '') : t.ch))
+        .join(''));
+      return;
+    }
+    (n.content || []).forEach(walk);
+  };
+  (doc.content || []).forEach(walk);
+  return out.join('\n');
+}
 
 export class EditorView {
   constructor(host, opts = {}) {
@@ -40,6 +56,7 @@ export class EditorView {
     this.editable = opts.editable !== false;
     this.onUpdate = opts.onUpdate || (() => {});
     this.onSelectionChange = opts.onSelectionChange || (() => {});
+    this.onError = opts.onError || null;
     this.history = createHistory();
     this.nodeToPath = new Map();
     this.domForNode = new WeakMap();
@@ -73,7 +90,7 @@ export class EditorView {
   bind() {
     this._onBeforeInput = (e) => this.onBeforeInput(e);
     this._onKeyDown = (e) => this.onKeyDown(e);
-    this._onCompStart = () => this.onCompositionStart();
+    this._onCompStart = (e) => this.onCompositionStart(e);
     this._onCompEnd = (e) => this.onCompositionEnd(e);
     this._onPaste = (e) => this.onPaste(e);
     this._onCopy = (e) => this.onCopyCut(e, false);
@@ -203,7 +220,24 @@ export class EditorView {
     return true;
   }
 
-  emitChange() { try { this.onUpdate(); } catch (e) { /* noop */ } }
+  /**
+   * Tell the host the document changed.
+   *
+   * A throw in here (onUpdate serializes the doc) used to be swallowed
+   * silently — and because the host clears its save timer BEFORE serializing,
+   * that meant no save was ever scheduled again for that edit and the user got
+   * no indication at all. Surface it instead: the host can show "save failed"
+   * and the user can still copy their work out.
+   */
+  emitChange() {
+    try {
+      this.onUpdate();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[BeeEditor] onUpdate failed — the document may not be saved', e);
+      try { this.onError && this.onError(e); } catch (e2) { /* noop */ }
+    }
+  }
 
   /* ── selection bridge ─────────────────────────────────── */
   writeSelection() {
@@ -211,24 +245,31 @@ export class EditorView {
     const win = this.doc.defaultView;
     const dsel = win.getSelection();
     if (!dsel) return;
-    // Suppress the selectionchange our own write triggers, releasing on the next
-    // microtask: long enough to ignore the self-write, short enough not to swallow
-    // a real user selection in the same frame (an rAF window would).
+    // Ignore the selectionchange our own write triggers.
+    //
+    // This used to release the flag on the next MICROTASK, but selectionchange
+    // is delivered as a TASK — so the guard was already down by the time the
+    // event arrived and every self-write was read straight back through
+    // posFromDOM. Any imprecision in the mapping was laundered into the model,
+    // which is what turned a caret drawn in the wrong place into a keystroke
+    // inserted in the wrong place. Recording the exact range we wrote makes the
+    // check deterministic instead of a race against the event loop.
     this.suppressSelectionSync = true;
     Promise.resolve().then(() => { this.suppressSelectionSync = false; });
+    this.selfWrittenRange = null;
     try {
       if (isNode(sel)) {
         const el = this.domForNode.get(getNode(this.state.doc, sel.path));
-        if (el) { const r = this.doc.createRange(); r.selectNode(el); dsel.removeAllRanges(); dsel.addRange(r); }
+        if (el) { const r = this.doc.createRange(); r.selectNode(el); dsel.removeAllRanges(); dsel.addRange(r); this.rememberWrite(dsel); }
       } else if (isCell(sel)) {
         // Collapse the caret into the anchor cell; the rectangle is shown via .selectedCell.
         const a = domFromPos(this.domForNode, this.state.doc, pos([...sel.anchorCell, 0], 0));
-        if (a) { const r = this.doc.createRange(); r.setStart(a.node, a.offset); r.collapse(true); dsel.removeAllRanges(); dsel.addRange(r); }
+        if (a) { const r = this.doc.createRange(); r.setStart(a.node, a.offset); r.collapse(true); dsel.removeAllRanges(); dsel.addRange(r); this.rememberWrite(dsel); }
       } else {
         const { from, to } = selRange(sel);
         const a = domFromPos(this.domForNode, this.state.doc, from);
         const b = domFromPos(this.domForNode, this.state.doc, to);
-        if (a && b) { const r = this.doc.createRange(); r.setStart(a.node, a.offset); r.setEnd(b.node, b.offset); dsel.removeAllRanges(); dsel.addRange(r); }
+        if (a && b) { const r = this.doc.createRange(); r.setStart(a.node, a.offset); r.setEnd(b.node, b.offset); dsel.removeAllRanges(); dsel.addRange(r); this.rememberWrite(dsel); }
       }
     } catch (e) { /* selection write can race the DOM; ignore */ }
     this.paintCellSelection();
@@ -267,6 +308,20 @@ export class EditorView {
     };
   }
 
+  /** Snapshot the DOM range we just wrote, so we can recognise its echo. */
+  rememberWrite(dsel) {
+    if (!dsel || dsel.rangeCount === 0) return;
+    this.selfWrittenRange = {
+      an: dsel.anchorNode, ao: dsel.anchorOffset, fn: dsel.focusNode, fo: dsel.focusOffset,
+    };
+  }
+
+  isSelfWrite(dsel) {
+    const w = this.selfWrittenRange;
+    return !!w && w.an === dsel.anchorNode && w.ao === dsel.anchorOffset
+      && w.fn === dsel.focusNode && w.fo === dsel.focusOffset;
+  }
+
   onSelectionChangeEvt() {
     // Never touch the model from a DOM selection mid-composition or mid cell-drag:
     // the DOM holds transient state (IME text, native drag highlight) not in the model.
@@ -274,13 +329,48 @@ export class EditorView {
     const win = this.doc.defaultView;
     const dsel = win.getSelection();
     if (!dsel || dsel.rangeCount === 0 || !this.contentEl.contains(dsel.anchorNode)) return;
+    // The echo of our own write carries no new information.
+    if (this.isSelfWrite(dsel)) { this.selfWrittenRange = null; return; }
     this.syncSelectionFromDOM();
     this.paintCellSelection(); // clears stale cell highlight when the caret moves out
     try { this.onSelectionChange(this.state); } catch (e) { /* noop */ }
   }
 
   /* ── input handling ───────────────────────────────────── */
+
+  /**
+   * The model selection an input event says it will affect.
+   *
+   * Browsers report the affected extent in `getTargetRanges()` for word/line
+   * deletes and for spellcheck replacements — the DOM selection at that moment
+   * is usually just the caret, so without this the extent is lost.
+   */
+  modelRangeFromEvent(e) {
+    try {
+      const ranges = e.getTargetRanges ? e.getTargetRanges() : null;
+      const r = ranges && ranges[0];
+      if (!r || !this.contentEl.contains(r.startContainer)) return null;
+      const from = posFromDOM(this.contentEl, r.startContainer, r.startOffset, this.nodeToPath);
+      const to = posFromDOM(this.contentEl, r.endContainer, r.endOffset, this.nodeToPath);
+      if (!from || !to || from.atom || to.atom) return null;
+      return textSelection(pos(from.path, from.offset), pos(to.path, to.offset));
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /** Delete the event's target range if it gave us one, else fall back. */
+  rangeDeleteFn(e, fallback) {
+    const target = this.modelRangeFromEvent(e);
+    if (!target || eqSelection(target, this.state.selection)) return fallback;
+    return (s) => T.deleteSelection({ ...s, selection: target });
+  }
+
   onBeforeInput(e) {
+    // Events originating inside an atom host (a formula <input>, a chart's
+    // controls, …) belong to the atom's own React UI — handling them here
+    // dispatched the keystroke into the document at a stale caret (S1).
+    if (this.inAtom(e.target)) return;
     if (this.composing) return;
     if (isCell(this.state.selection)) return this.onBeforeInputCell(e);
     const it = e.inputType;
@@ -288,12 +378,25 @@ export class EditorView {
     let kind = 'other';
     switch (it) {
       case 'insertText': { const data = e.data || ''; fn = (s) => { const ns = T.insertText(s, data); return runInputRules(ns, data) || ns; }; kind = 'type'; break; }
-      case 'insertReplacementText': fn = (s) => T.insertText(s, e.data || ''); kind = 'type'; break;
-      case 'deleteContentBackward': case 'deleteWordBackward': case 'deleteContentBackwardWord':
-        fn = T.deleteBackward; kind = 'delete'; break;
-      case 'deleteContentForward': case 'deleteWordForward':
-        fn = T.deleteForward; kind = 'delete'; break;
-      case 'deleteByCut': case 'deleteContent': fn = T.deleteSelection; kind = 'delete'; break;
+      // Spellcheck / autocorrect accept. The range to REPLACE is in
+      // getTargetRanges(); ignoring it inserted the correction and left the
+      // misspelling in place.
+      case 'insertReplacementText': {
+        const data = e.data || '';
+        const target = this.modelRangeFromEvent(e);
+        fn = (s) => T.insertText(target ? { ...s, selection: target } : s, data);
+        kind = 'type';
+        break;
+      }
+      case 'deleteContentBackward': fn = T.deleteBackward; kind = 'delete'; break;
+      case 'deleteContentForward': fn = T.deleteForward; kind = 'delete'; break;
+      // Word/line deletes carry their extent in getTargetRanges(); mapping them
+      // to a single-grapheme delete made Ctrl+Backspace remove one character.
+      case 'deleteWordBackward': case 'deleteContentBackwardWord': case 'deleteSoftLineBackward': case 'deleteHardLineBackward':
+        fn = this.rangeDeleteFn(e, T.deleteBackward); kind = 'delete'; break;
+      case 'deleteWordForward': case 'deleteSoftLineForward': case 'deleteHardLineForward':
+        fn = this.rangeDeleteFn(e, T.deleteForward); kind = 'delete'; break;
+      case 'deleteByCut': case 'deleteContent': case 'deleteByDrag': fn = T.deleteSelection; kind = 'delete'; break;
       case 'formatBold': fn = (s) => T.toggleMark(s, 'bold'); kind = 'format'; break;
       case 'formatItalic': fn = (s) => T.toggleMark(s, 'italic'); kind = 'format'; break;
       case 'formatUnderline': fn = (s) => T.toggleMark(s, 'underline'); kind = 'format'; break;
@@ -334,6 +437,7 @@ export class EditorView {
   }
 
   onKeyDown(e) {
+    if (this.inAtom(e.target)) return;
     if (isCell(this.state.selection)) {
       if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); return this.dispatch((s) => Tbl.clearCells(s), { kind: 'delete' }); }
       if (e.key === 'Escape') { e.preventDefault(); return this.collapseCellSelection(); }
@@ -395,9 +499,62 @@ export class EditorView {
     this.host.style.cursor = resize ? 'col-resize' : '';
   }
 
+  /* ── formula reference picking ────────────────────────── */
+
+  /**
+   * While a formula editor is open, clicking (or dragging across) cells inserts
+   * their A1 reference instead of moving the caret — the spreadsheet gesture.
+   *
+   * @param {object} h  { tablePath, onPick(ref) } — tablePath scopes picking to
+   *   the formula's own table, so a click in a different table still behaves
+   *   normally rather than producing a reference that cannot resolve.
+   */
+  beginRefPick(h) {
+    this.refPick = h || null;
+    try { this.host.classList.toggle('bf-picking-ref', !!this.refPick); } catch (e) { /* noop */ }
+  }
+  endRefPick() {
+    this.refPick = null;
+    try { this.host.classList.remove('bf-picking-ref'); } catch (e) { /* noop */ }
+  }
+
+  /** The table a formula atom lives in, so picking can be scoped to it. */
+  formulaTablePath(node) {
+    const at = this.resolveAtom(node);
+    if (!at) return null;
+    return Tbl.tableContext(this.state.doc, at.path)?.tablePath || null;
+  }
+
+  /** Insert a reference for a drag between two cell paths. */
+  pickRefBetween(anchorPath, headPath) {
+    const a = Tbl.cellCoordsVisual(this.state.doc, anchorPath);
+    const b = Tbl.cellCoordsVisual(this.state.doc, headPath);
+    if (!a || !b) return;
+    const ref = Tbl.rangeRef(a, b);
+    if (ref) this.refPick?.onPick?.(ref);
+  }
+
   onMouseDown(e) {
+    // A click inside an atom host (e.g. INSIDE the open formula input while
+    // ref-picking is armed) must place the input's own caret — not pick a
+    // self-reference or start a cell drag.
+    if (this.inAtom(e.target)) return;
     if (e.button !== 0) return;
     const cell = this.cellElFromPoint(e.target);
+
+    // Reference picking takes precedence over selection while it is armed.
+    if (this.refPick && cell) {
+      const cellPath = this.nodeToPath.get(cell.__bfNode);
+      const co = cellPath && Tbl.cellCoordsVisual(this.state.doc, cellPath);
+      if (co && (!this.refPick.tablePath || co.tablePath.join() === this.refPick.tablePath.join())) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.pickRefBetween(cellPath, cellPath);
+        this.beginRefDrag(cellPath);
+        return;
+      }
+    }
+
     if (!cell) {
       if (isCell(this.state.selection)) { this.state = { ...this.state, selection: textSelection(pos([...this.state.selection.anchorCell, 0], 0)) }; this.paintCellSelection(); }
       return;
@@ -411,6 +568,25 @@ export class EditorView {
       if (anchor && anchor.join() !== cellPath.join()) { e.preventDefault(); this.setCellSelection(anchor, cellPath); return; }
     }
     this.beginCellDrag(cellPath);
+  }
+
+  /** Drag across cells while picking → the reference grows into a range. */
+  beginRefDrag(anchorPath) {
+    const onMove = (ev) => {
+      const target = this.doc.elementFromPoint ? this.doc.elementFromPoint(ev.clientX, ev.clientY) : null;
+      const overEl = this.cellElFromPoint(target);
+      const headPath = overEl && this.nodeToPath.get(overEl.__bfNode);
+      if (!headPath) return;
+      ev.preventDefault();
+      this.pickRefBetween(anchorPath, headPath);
+    };
+    const onUp = () => {
+      this.doc.removeEventListener('mousemove', onMove);
+      this.doc.removeEventListener('mouseup', onUp);
+      this.refPick?.onCommitPick?.();
+    };
+    this.doc.addEventListener('mousemove', onMove);
+    this.doc.addEventListener('mouseup', onUp);
   }
 
   beginCellDrag(anchorPath) {
@@ -487,6 +663,7 @@ export class EditorView {
   // plain-text drop reaches here — handle it through the model so the browser
   // never performs an untracked DOM insertion.
   onDrop(e) {
+    if (this.inAtom(e.target)) return;
     const dt = e.dataTransfer;
     const text = dt && dt.getData && dt.getData('text/plain');
     if (!text) return;
@@ -511,7 +688,8 @@ export class EditorView {
     this.dispatch((s) => T.updateNodeAttrsAtPath(s, path, { checked }), { kind: 'structural' });
   }
 
-  onCompositionStart() {
+  onCompositionStart(e) {
+    if (e && this.inAtom(e.target)) return;
     this.syncSelectionFromDOM();
     this.composing = true;
     this.compStartSel = this.state.selection;
@@ -519,6 +697,7 @@ export class EditorView {
   }
 
   onCompositionEnd(e) {
+    if (this.inAtom(e.target)) return;
     this.composing = false;
     const data = e.data || '';
     // The browser mutated the DOM in place while composing. Restore the model
@@ -536,6 +715,7 @@ export class EditorView {
   }
 
   onPaste(e) {
+    if (this.inAtom(e.target)) return; // pasting into an atom's own input
     e.preventDefault();
     const cd = e.clipboardData;
     if (!cd) return;
@@ -544,14 +724,17 @@ export class EditorView {
     const html = cd.getData('text/html');
     // The React layer can intercept image paste before this fires; here we handle text.
     if (html && this.htmlToAst) {
+      // Route through insertContent, not insertBlocks: it inserts at the caret
+      // and replaces the selection. insertBlocks appends after the whole block.
       const ast = this.htmlToAst(html);
-      this.dispatch((s) => T.insertBlocks(s, ast.content || []), { kind: 'type' });
+      this.dispatch((s) => commands.insertContent(ast)(s), { kind: 'type' });
     } else if (md) {
       this.dispatch((s) => commands.insertContent(md)(s), { kind: 'type' });
     }
   }
 
   onCopyCut(e, isCut) {
+    if (this.inAtom(e.target)) return; // copy/cut inside an atom's own input
     const sel = this.state.selection;
     // Cell rectangle → clean pipe/tab plaintext (never raw HTML on text/plain — BFSF-167).
     if (isCell(sel)) {
@@ -564,16 +747,12 @@ export class EditorView {
     }
     if (!isText(sel) || isCollapsed(sel)) return;
     e.preventDefault();
-    const { from, to } = selRange(sel);
-    let text = '';
-    if (from.path.join() === to.path.join()) {
-      const slice = inlineToTokens(getNode(this.state.doc, from.path).content).slice(from.offset, to.offset);
-      text = slice.map((t) => (t.node ? (t.node.type === 'hardBreak' ? '\n' : '') : t.ch)).join('');
-      // Rich copy (TipTap parity): emit the marked-up slice as HTML too.
-      try { e.clipboardData.setData('text/html', astToHtml({ type: 'doc', content: [{ type: 'paragraph', content: tokensToInline(slice) }] })); } catch (err) { /* noop */ }
-    } else {
-      text = this.getText();
-    }
+    // Copy the SELECTION. This used to fall back to the whole document whenever
+    // the selection spanned more than one block, which leaked the entire
+    // notebook into whatever the user pasted into (and made cut duplicate it).
+    const slice = T.sliceSelection(this.state.doc, sel);
+    const text = slice ? docToText(slice) : '';
+    try { e.clipboardData.setData('text/html', astToHtml(slice)); } catch (err) { /* noop */ }
     e.clipboardData.setData('text/plain', text);
     if (isCut) this.dispatch(T.deleteSelection, { kind: 'delete' });
   }
@@ -593,36 +772,111 @@ export class EditorView {
   }
 
   /* ── atom node-view bridge ────────────────────────────── */
-  updateAtom(node, attrs) {
+
+  /**
+   * Resolve a node view's node to something addressable.
+   *
+   * nodeToPath only indexes BLOCKS — rebuildPaths stops descending at any
+   * textblock — so inline atoms (inline math, table-cell formulas, inline
+   * images) were never in it and every bridge call below silently returned.
+   * That is why editing a formula reverted and why the atom could not be
+   * selected or deleted. Inline atoms are resolved by identity instead and
+   * addressed as a one-token range in their block.
+   */
+  resolveAtom(node, fallbackAt = null) {
     const path = this.nodeToPath.get(node);
-    if (!path) return;
-    this.dispatch((s) => T.updateNodeAttrsAtPath(s, path, attrs), { kind: 'structural' });
+    if (path) return { inline: false, path };
+    const at = T.findInlineNode(this.state.doc, node);
+    if (at) return { inline: true, path: at.path, offset: at.offset };
+    // Identity miss — the node-view's `node` prop can go stale (a recompute
+    // replaced the atom object while its editor was open). When the caller
+    // captured a {path, offset} hint, accept it iff a same-type inline node
+    // still sits at that position.
+    if (fallbackAt && Array.isArray(fallbackAt.path) && typeof fallbackAt.offset === 'number') {
+      let block = this.state.doc;
+      for (const i of fallbackAt.path) { block = block && block.content ? block.content[i] : null; }
+      if (block && isTextblock(block.type)) {
+        const tok = inlineToTokens(block.content)[fallbackAt.offset];
+        if (tok?.node && tok.node.type === node?.type) return { inline: true, path: fallbackAt.path, offset: fallbackAt.offset };
+      }
+    }
+    return null;
+  }
+
+  /** Text selection covering exactly the inline atom at [path, offset]. */
+  static inlineAtomSelection(at) {
+    return textSelection(pos(at.path, at.offset), pos(at.path, at.offset + 1));
+  }
+
+  /**
+   * @param {object} opts.kind history grouping — pass 'type' for per-keystroke
+   *   edits (a diagram's source, a chart title) so they coalesce into one undo
+   *   step instead of one per character.
+   * @param {object} opts.fallbackAt {path, offset} position hint used when the
+   *   node identity lookup misses (see resolveAtom).
+   * @returns {boolean} false when the atom cannot be resolved, otherwise
+   *   whether the dispatch changed the document — so node views can keep
+   *   their editor open instead of silently dropping the edit (S5).
+   */
+  updateAtom(node, attrs, { kind = 'structural', fallbackAt = null } = {}) {
+    const at = this.resolveAtom(node, fallbackAt);
+    if (!at) return false;
+    return this.dispatch((s) => (at.inline
+      ? T.updateInlineNodeAttrs(s, at.path, at.offset, attrs)
+      : T.updateNodeAttrsAtPath(s, at.path, attrs)), { kind });
   }
   selectAtom(node) {
-    const path = this.nodeToPath.get(node);
-    if (!path) return;
-    this.state = { ...this.state, selection: nodeSelection(path), storedMarks: null };
+    const at = this.resolveAtom(node);
+    if (!at) return false;
+    const selection = at.inline ? EditorView.inlineAtomSelection(at) : nodeSelection(at.path);
+    this.state = { ...this.state, selection, storedMarks: null };
     this.writeSelection();
     try { this.onSelectionChange(this.state); } catch (e) { /* noop */ }
+    return true;
   }
-  deleteAtom(node) {
-    const path = this.nodeToPath.get(node);
-    if (!path) return;
-    this.dispatch((s) => T.deleteSelection({ ...s, selection: nodeSelection(path) }), { kind: 'delete' });
+  deleteAtom(node, { fallbackAt = null } = {}) {
+    const at = this.resolveAtom(node, fallbackAt);
+    if (!at) return false;
+    const selection = at.inline ? EditorView.inlineAtomSelection(at) : nodeSelection(at.path);
+    return this.dispatch((s) => T.deleteSelection({ ...s, selection }), { kind: 'delete' });
   }
 
   /* ── public API (facade backing) ──────────────────────── */
   focus() { try { this.host.focus(); } catch (e) { /* noop */ } this.writeSelection(); }
 
+  /**
+   * Replace the whole document (switching notebooks, restoring a version, an AI
+   * rewrite). The undo stack MUST be dropped: it holds snapshots of the OUTGOING
+   * document, so a single Ctrl+Z after a switch would restore the previous
+   * notebook's content into this one — and the autosave, which captures the
+   * notebook id after the switch, would then persist it. Same reason the
+   * coalescing marker is reset: without it the first keystroke here can merge
+   * into the last keystroke there and never be recorded at all.
+   */
   setDoc(doc, { emitUpdate = true } = {}) {
-    this.state = { doc: normalizeDeep(doc), selection: textSelection(pos(firstTextblockPath(normalizeDeep(doc)), 0)), storedMarks: null };
+    const normalized = normalizeDeep(doc);
+    this.state = { doc: normalized, selection: textSelection(pos(firstTextblockPath(normalized), 0)), storedMarks: null };
+    this.history = createHistory();
     this.fullRender();
     if (emitUpdate) this.emitChange();
   }
 
   isActive(name, attrs) { return qIsActive(this.state, name, attrs); }
   getAttributes(name) { return qGetAttributes(this.state, name); }
-  getSelectedNode() { const sel = this.state.selection; return isNode(sel) ? getNode(this.state.doc, sel.path) : null; }
+  getSelectedNode() {
+    const sel = this.state.selection;
+    if (isNode(sel)) return getNode(this.state.doc, sel.path);
+    // An inline atom is selected as the one-token range covering it.
+    if (isText(sel) && !isCollapsed(sel)) {
+      const { from, to } = selRange(sel);
+      if (eqPath(from.path, to.path) && to.offset === from.offset + 1) {
+        const block = getNode(this.state.doc, from.path);
+        const tok = block ? inlineToTokens(block.content)[from.offset] : null;
+        if (tok?.node) return tok.node;
+      }
+    }
+    return null;
+  }
   // The table containing the current selection (+ its DOM element), or null.
   // Powers the on-hover add-row/add-column controls.
   tableInfo() {
@@ -660,15 +914,7 @@ export class EditorView {
 
   getHTML() { return astToHtml(this.state.doc); }
   getMarkdown() { return astToMarkdown(this.state.doc); }
-  getText() {
-    const out = [];
-    const walk = (n) => {
-      if (isTextblock(n.type)) { out.push(inlineToTokens(n.content).filter((t) => !t.node).map((t) => t.ch).join('')); return; }
-      (n.content || []).forEach(walk);
-    };
-    (this.state.doc.content || []).forEach(walk);
-    return out.join('\n');
-  }
+  getText() { return docToText(this.state.doc); }
 
   chain() {
     const ops = [];

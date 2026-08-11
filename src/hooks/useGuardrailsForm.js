@@ -15,19 +15,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-const CARDS = ['regex', 'moderation', 'privacy', 'output', 'additional'];
+import { deepEqual } from '../utils/deepEqual';
 
-function deepEqual(a, b) {
-    if (a === b) return true;
-    if (a == null || b == null) return a === b;
-    if (typeof a !== typeof b) return false;
-    if (typeof a !== 'object') return false;
-    if (Array.isArray(a) !== Array.isArray(b)) return false;
-    const ka = Object.keys(a), kb = Object.keys(b);
-    if (ka.length !== kb.length) return false;
-    for (const k of ka) if (!deepEqual(a[k], b[k])) return false;
-    return true;
-}
+const CARDS = ['regex', 'moderation', 'privacy', 'output', 'additional'];
 
 /**
  * @param {object} initialShield  The shield object fetched from the server.

@@ -7,10 +7,9 @@
  */
 import { markdownToAst } from '../serialization/mdToAst.js';
 import { htmlToAst } from '../serialization/htmlToAst.js';
+import { looksLikeHtml } from '../serialization/util.js';
 import { linkifyLegalCitations } from '../../utils/legalCitations.js';
 import { API_BASE } from '../../utils/helpers';
-
-const looksLikeHtml = (s) => /<\/?[a-z][\s\S]*>/i.test(s || '');
 
 function safeLinkify(s) {
   try { return linkifyLegalCitations(s) ?? s; } catch { return s; }

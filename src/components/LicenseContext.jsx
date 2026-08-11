@@ -1,8 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Lock } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
-import { useTranslation } from '../hooks/useTranslation';
 import { useEntitlements } from './EntitlementsContext';
+import UpgradePrompt from './billing/UpgradePrompt';
 
 /**
  * LicenseContext — app-wide tier/feature awareness.
@@ -166,7 +165,13 @@ export function LicenseProvider({ children }) {
         const ac = new AbortController();
         (async () => {
             try {
-                const r = await fetch(`${API_BASE}/auth/setup-status`, { signal: ac.signal });
+                // authFetch, not bare fetch: it is the single choke point every
+                // other call in this file already goes through, and the public
+                // feature demos rely on that being true without exception —
+                // one raw fetch here is a real network call from an anonymous
+                // demo page. (authFetch skips its 401-reload for /auth/ paths,
+                // so the login-flow behaviour is unchanged.)
+                const r = await authFetch(`${API_BASE}/auth/setup-status`, { signal: ac.signal });
                 if (!r.ok) return;
                 const data = await r.json();
                 if (ac.signal.aborted) return;
@@ -249,9 +254,11 @@ export function useLicenseContext() {
  * Use sparingly — for hard route gating. Most UI elements should soft-gate
  * via lock icons (see <LockedIfBelow />).
  */
-export function RequireTier({ tier = 'enterprise', feature = null, children, fallback = null, onNavigateToLicense = null }) {
+export function RequireTier({
+    tier = 'enterprise', feature = null, children, fallback = null,
+    onNavigateToLicense = null, onNavigateToBilling = null,
+}) {
     const ctx = useLicenseContext();
-    const { t } = useTranslation();
     const upgradeUrl = ctx.upgradeUrl || 'https://beeflow.nl/pricing';
     // Wait for the licence status and, for a feature gate, the entitlements
     // snapshot before deciding — prevents a flash of the upgrade panel.
@@ -266,35 +273,14 @@ export function RequireTier({ tier = 'enterprise', feature = null, children, fal
     if (fallback) return fallback;
 
     return (
-        <div className="flex flex-col items-center justify-center p-12 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center mb-4">
-                <Lock className="w-6 h-6 text-blue-500" />
-            </div>
-            <h2 className="text-base font-bold text-[var(--text-primary)] mb-1">
-                {t('license.feature_locked', 'Requires {tier} license').replace('{tier}', tier)}
-            </h2>
-            <p className="text-sm text-[var(--text-muted)] max-w-md mb-4">
-                {t('license.community_explainer', 'You can activate Enterprise or a custom plan with a license key purchased at beeflow.nl. Activation unlocks compliance features such as SSO, audit log export, GDPR/AI Act hubs, and admin controls.')}
-            </p>
-            <div className="flex items-center gap-2">
-                {onNavigateToLicense && (
-                    <button
-                        onClick={onNavigateToLicense}
-                        className="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600"
-                    >
-                        {t('license.enter_key', 'Enter license key')}
-                    </button>
-                )}
-                <a
-                    href={upgradeUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-4 py-2 rounded-lg text-xs font-semibold border border-[var(--border-subtle)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
-                >
-                    {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.nl')}
-                </a>
-            </div>
-        </div>
+        <UpgradePrompt
+            requiredTier={tier}
+            feature={feature}
+            deploymentMode={ctx.deploymentMode}
+            upgradeUrl={upgradeUrl}
+            onNavigateToBilling={onNavigateToBilling}
+            onNavigateToLicense={onNavigateToLicense}
+        />
     );
 }
 

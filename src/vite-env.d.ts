@@ -12,6 +12,16 @@ interface ImportMetaEnv {
     readonly VITE_API_URL?: string;
     readonly VITE_BUILD_SHA?: string;
     readonly VITE_BUNDLE_ANALYZE?: string;
+    // OpenObserve RUM + browser-logs (see src/telemetry/openobserve.js).
+    readonly VITE_OPENOBSERVE_ENABLE?: string;
+    readonly VITE_OPENOBSERVE_CLIENT_TOKEN?: string;
+    readonly VITE_OPENOBSERVE_APPLICATION_ID?: string;
+    readonly VITE_OPENOBSERVE_SITE?: string;
+    readonly VITE_OPENOBSERVE_ORG?: string;
+    readonly VITE_OPENOBSERVE_SERVICE?: string;
+    readonly VITE_OPENOBSERVE_ENV?: string;
+    readonly VITE_OPENOBSERVE_SESSION_SAMPLE_RATE?: string;
+    readonly VITE_OPENOBSERVE_REPLAY_SAMPLE_RATE?: string;
 }
 
 interface ImportMeta {

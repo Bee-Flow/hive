@@ -14,6 +14,11 @@
  *     category,              // one of CATEGORIES[].id
  *     transport,             // 'stdio' | 'http'
  *     command, args,         // stdio install command
+ *     bundled,               // true = first-party server that ships inside the API
+ *                            //        image (server/mcpServers/**). `args` then holds
+ *                            //        a path relative to the server root, which
+ *                            //        core/mcpManager.js resolves before spawning —
+ *                            //        nothing is downloaded from npm at install time.
  *     url,                   // http remote URL
  *     configurable_url,      // true = `url` is only a template; the marketplace
  *                            //        prompts the installer for their own endpoint
@@ -49,6 +54,7 @@ export const MCP_REGISTRY = [
     { id: 'discord', name: 'Discord', description: '50+ tools for Discord server management, messages, and channels.', icon: '🎮', category: 'communication', transport: 'stdio', command: 'npx', args: ['-y', '@scarecr0w12/discord-mcp'], required_credentials: [{ key: 'DISCORD_BOT_TOKEN', label: 'Discord Bot Token' }] },
     { id: 'telegram', name: 'Telegram', description: 'Read/send messages, manage groups, and interact via Telegram.', icon: '✈️', category: 'communication', transport: 'stdio', command: 'npx', args: ['-y', '@chaindead/telegram-mcp'], required_credentials: [{ key: 'TELEGRAM_API_ID', label: 'Telegram API ID' }, { key: 'TELEGRAM_API_HASH', label: 'Telegram API Hash' }] },
     { id: 'email', name: 'Email (IMAP)', description: 'Read, search, send, and manage emails across multiple IMAP/SMTP accounts.', icon: '📧', category: 'communication', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-email'], required_credentials: [{ key: 'IMAP_HOST', label: 'IMAP Host' }, { key: 'EMAIL_USER', label: 'Email Address' }, { key: 'EMAIL_PASS', label: 'Email Password' }] },
+    { id: 'soverin', name: 'Soverin', description: 'Soverin mail (soverin.nl) — search, read, send, flag, and move messages in your mailbox.', icon: '📬', category: 'communication', transport: 'stdio', command: 'node', args: ['mcpServers/soverin/index.mjs'], required_credentials: [{ key: 'SOVERIN_EMAIL', label: 'Soverin e-mail address' }, { key: 'SOVERIN_PASSWORD', label: 'Soverin password' }], homepage: 'https://soverin.nl', bundled: true, verified: true },
     { id: 'twilio', name: 'Twilio', description: 'Send SMS, make calls, and manage communication workflows.', icon: '📱', category: 'communication', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-twilio'], required_credentials: [{ key: 'TWILIO_ACCOUNT_SID', label: 'Account SID' }, { key: 'TWILIO_AUTH_TOKEN', label: 'Auth Token' }], homepage: 'https://twilio.com' },
 
     // ── Productivity & Project Management ─────────────────────────────
@@ -126,6 +132,11 @@ export const MCP_REGISTRY = [
     { id: 'bluesky', name: 'Bluesky', description: 'Post, search, and interact on the Bluesky social network.', icon: '🦋', category: 'social', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-bluesky'], required_credentials: [{ key: 'BLUESKY_HANDLE', label: 'Bluesky Handle' }, { key: 'BLUESKY_APP_PASSWORD', label: 'App Password' }], homepage: 'https://bsky.app' },
     { id: 'youtube', name: 'YouTube', description: 'Search videos, fetch transcripts, and analyze channels.', icon: '▶️', category: 'social', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-youtube'], required_credentials: [{ key: 'YOUTUBE_API_KEY', label: 'YouTube API Key' }], homepage: 'https://youtube.com' },
     { id: 'reddit', name: 'Reddit', description: 'Browse posts, search content, and analyze subreddit activity.', icon: '🤖', category: 'social', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-reddit'], homepage: 'https://reddit.com' },
+
+    // ── Smart home / IoT ─────────────────────────────────────────────
+    // Bundled: Tuya publishes no MCP server for device control, and the
+    // third-party ones would be handed the user's Access Secret.
+    { id: 'tuya', name: 'Tuya', description: 'Tuya / Smart Life smart home — list devices, read status, switch lights and plugs, and run scenes.', icon: '🏠', category: 'iot', transport: 'stdio', command: 'node', args: ['mcpServers/tuya/index.mjs'], required_credentials: [{ key: 'TUYA_ACCESS_ID', label: 'Tuya Access ID' }, { key: 'TUYA_ACCESS_SECRET', label: 'Tuya Access Secret' }, { key: 'TUYA_UID', label: 'Smart Life app account UID' }, { key: 'TUYA_REGION', label: 'Data center (eu / weu / us / cn / in)' }], homepage: 'https://developer.tuya.com', bundled: true, verified: true },
 ];
 
 export const CATEGORIES = [
@@ -141,4 +152,5 @@ export const CATEGORIES = [
     { id: 'analytics', label: 'Analytics', icon: '📊' },
     { id: 'seo', label: 'SEO & Marketing', icon: '📈' },
     { id: 'social', label: 'Social', icon: '🌐' },
+    { id: 'iot', label: 'Smart home', icon: '🏠' },
 ];

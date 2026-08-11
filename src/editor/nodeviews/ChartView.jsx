@@ -18,11 +18,25 @@ export default function ChartView({ node, view, editable }) {
   const spec = useMemo(() => { try { return JSON.parse(node.attrs?.spec || '{}'); } catch (e) { return {}; } }, [node.attrs?.spec]);
   const type = spec.type || 'bar';
   const labels = Array.isArray(spec.labels) ? spec.labels : [];
-  const series = Array.isArray(spec.series) ? spec.series : [];
+  // The spec is unvalidated content: it can arrive from an ingested document or
+  // an AI write, so entries may be null/strings/anything. Drop what we can't
+  // plot rather than throwing mid-render. Names are de-duplicated because
+  // recharts keys series by dataKey — two columns sharing a header used to
+  // collapse into one series plus duplicate React keys.
+  const series = useMemo(() => {
+    const raw = Array.isArray(spec.series) ? spec.series : [];
+    const seen = new Set();
+    return raw.filter((s) => s && typeof s === 'object').map((s, i) => {
+      let name = String(s.name || `Series ${i + 1}`);
+      while (seen.has(name)) name = `${name} (${i + 1})`;
+      seen.add(name);
+      return { name, data: Array.isArray(s.data) ? s.data : [] };
+    });
+  }, [spec.series]);
 
   const data = useMemo(() => labels.map((lab, i) => {
     const row = { name: String(lab) };
-    series.forEach((s) => { row[s.name || 'value'] = Number((s.data || [])[i]) || 0; });
+    series.forEach((s) => { row[s.name] = Number(s.data[i]) || 0; });
     return row;
   }), [labels, series]);
 

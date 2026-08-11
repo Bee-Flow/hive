@@ -77,9 +77,15 @@ export default function useExecutions({ scope, automationId, stepId, pageSize = 
 
     const loadMore = useCallback(async () => {
         if (!cursorRef.current || loadingMore) return;
+        // Tie this page to the current request generation. A filter/scope
+        // change (refresh) bumps reqIdRef; if that happens while this page is
+        // in flight, its result belongs to the OLD filter — appending it would
+        // mix stale rows into the fresh list and restore a stale cursor.
+        const myReq = reqIdRef.current;
         setLoadingMore(true);
         try {
             const res = await fetchPage(queryFor(cursorRef.current));
+            if (myReq !== reqIdRef.current) return; // superseded by a refresh
             setRows(prev => {
                 const seen = new Set(prev.map(r => r.id));
                 const fresh = (res.runs || []).filter(r => !seen.has(r.id));
@@ -88,7 +94,7 @@ export default function useExecutions({ scope, automationId, stepId, pageSize = 
             cursorRef.current = res.nextCursor || null;
             setHasMore(!!res.nextCursor);
         } catch { /* keep current page on a paging error */ }
-        finally { setLoadingMore(false); }
+        finally { if (myReq === reqIdRef.current) setLoadingMore(false); }
     }, [fetchPage, queryFor, loadingMore]);
 
     // Reload when filters / scope change.

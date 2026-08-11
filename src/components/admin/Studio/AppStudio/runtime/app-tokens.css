@@ -1,0 +1,452 @@
+/*
+ * App Design v2 tokens — scoped to .app-shell / .app-runtime (class hooks that
+ * carried zero CSS rules before this file; claiming them changes nothing by
+ * itself).
+ *
+ * IDENTITY DISCIPLINE: every consumer in the runtime reads these as
+ * `var(--token, <today's literal>)`, and the variant classes below are only
+ * stamped for NON-default design values (runtime/appDesign.js) — so an app
+ * without a design, or with an all-default one, renders byte-identically to
+ * before this file existed.
+ *
+ * ELEVATION IS SEMANTIC, NOT A RAW SHADOW: components use --app-shadow-1/2/3.
+ * The high-contrast host theme re-declares them as RINGS below, which is what
+ * resolves the long-standing objection to a shadow knob (--shadow-sm is a ring
+ * in high contrast, so a raw shadow flips meaning per host theme).
+ */
+
+.app-shell,
+.app-runtime {
+    /* hairline + surface ladder (consumed by surface variants and A3 polish) */
+    --app-hairline: color-mix(in srgb, var(--border-default) 45%, transparent);
+
+    /* semantic elevation */
+    --app-shadow-1: 0 1px 2px rgba(15, 20, 30, 0.06), 0 1px 1px rgba(15, 20, 30, 0.04);
+    --app-shadow-2: 0 2px 6px rgba(15, 20, 30, 0.08), 0 8px 24px rgba(15, 20, 30, 0.06);
+    --app-shadow-3: 0 4px 12px rgba(15, 20, 30, 0.10), 0 16px 40px rgba(15, 20, 30, 0.10);
+
+    /* motion — 'subtle' baseline; .app-motion--none and reduced-motion zero these */
+    --app-motion-fast: 150ms;
+    --app-motion-med: 200ms;
+    --app-motion-slow: 300ms;
+    --app-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* navigation dimensions (A2 shells) */
+    --app-nav-w: 240px;
+    --app-nav-w-collapsed: 56px;
+    --app-nav-w-rail: 52px;
+}
+
+/*
+ * APPEARANCE FIX — `theme.appearance: 'dark' | 'light'` used to be inert (the
+ * attribute was stamped but no CSS selected on it). These blocks re-declare,
+ * INSIDE the app scope only, exactly the host tokens the runtime consumes —
+ * values copied from the host dark/light themes in src/index.css. Declarations
+ * on a closer ancestor win by inheritance: no !important, and the host chrome
+ * outside the app is untouched. `appearance: 'auto'` (the default) matches
+ * neither selector and keeps following the host theme — identity preserved.
+ *
+ * The high-contrast host is exempt: accessibility beats app branding.
+ */
+html:not([data-theme="high-contrast"]) .app-shell[data-app-appearance="dark"],
+html:not([data-theme="high-contrast"]) .app-runtime[data-app-appearance="dark"] {
+    --bg-primary: #0f0f13;
+    --bg-secondary: #16161d;
+    --bg-tertiary: #1e1e28;
+    --bg-card: #1a1a24;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-tertiary: #64748b;
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-default: rgba(255, 255, 255, 0.1);
+    --border-color: rgba(255, 255, 255, 0.1);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --user-bubble-bg: #2a2a36;
+    --user-bubble-fg: #f8fafc;
+}
+
+html:not([data-theme="high-contrast"]) .app-shell[data-app-appearance="light"],
+html:not([data-theme="high-contrast"]) .app-runtime[data-app-appearance="light"] {
+    --bg-primary: #fafafa;
+    --bg-secondary: #f3f3f3;
+    --bg-tertiary: #e5e5e5;
+    --bg-card: #ffffff;
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-tertiary: #64748b;
+    --border-subtle: rgba(0, 0, 0, 0.06);
+    --border-default: rgba(0, 0, 0, 0.12);
+    --border-color: rgba(0, 0, 0, 0.12);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --user-bubble-bg: #e8e8ee;
+    --user-bubble-fg: #0f172a;
+}
+
+/*
+ * SURFACE VARIANTS — stamped by appDesign.js only for non-default values.
+ * 'hairline' (default) has no class: .app-surface keeps its 1px hairline from
+ * runtime.css, untouched.
+ */
+.app-design--surface-soft .app-surface {
+    background: var(--bg-card);
+    border-color: var(--border-subtle);
+    box-shadow: var(--app-shadow-1);
+}
+
+.app-design--surface-elevated .app-surface {
+    background: var(--bg-card);
+    border-color: transparent;
+    box-shadow: var(--app-shadow-2);
+}
+
+.app-design--surface-flat .app-surface {
+    border: 0;
+    background: var(--bg-secondary);
+}
+
+/* High-contrast host: elevation degrades to rings — never invisible depth. */
+html[data-theme="high-contrast"] .app-shell,
+html[data-theme="high-contrast"] .app-runtime {
+    --app-shadow-1: 0 0 0 1px var(--border-default);
+    --app-shadow-2: 0 0 0 2px var(--border-default);
+    --app-shadow-3: 0 0 0 2px var(--border-default);
+}
+
+/* MOTION — kill switches. Reduced motion always wins, whatever the design says. */
+.app-motion--none,
+.app-motion--none .app-shell,
+.app-motion--none .app-runtime {
+    --app-motion-fast: 0ms;
+    --app-motion-med: 0ms;
+    --app-motion-slow: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-shell,
+    .app-runtime {
+        --app-motion-fast: 0ms;
+        --app-motion-med: 0ms;
+        --app-motion-slow: 0ms;
+    }
+}
+
+/*
+ * NAVIGATION SHELLS (A2) — sidebar, overflow menu, mobile drawer. Every
+ * literal stays themable: colors come from the host tokens and the theme's
+ * --app-primary family, dimensions from the nav tokens above, motion from the
+ * motion tokens (so 'none' and prefers-reduced-motion zero the drawer slide).
+ */
+
+.app-nav-sidebar {
+    width: var(--app-nav-w, 240px);
+    transition: width var(--app-motion-med, 0ms) var(--app-ease, ease-out);
+}
+
+.app-nav-sidebar[data-collapsed] {
+    width: var(--app-nav-w-collapsed, 56px);
+}
+
+/* Collapsed rail: icon-only items, labels and section headers disappear. */
+.app-nav-sidebar[data-collapsed] .app-nav-item-label,
+.app-nav-sidebar[data-collapsed] .app-nav-group-label {
+    display: none;
+}
+
+.app-nav-sidebar[data-collapsed] .app-nav-item {
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.app-nav-item {
+    color: var(--text-secondary);
+    border-radius: var(--app-radius, 8px);
+    transition:
+        background-color var(--app-motion-fast, 0ms) var(--app-ease, ease-out),
+        color var(--app-motion-fast, 0ms) var(--app-ease, ease-out);
+}
+
+.app-nav-item:hover {
+    background: color-mix(in srgb, var(--app-primary) 7%, transparent);
+    color: var(--text-primary);
+}
+
+.app-nav-item[data-active] {
+    background: var(--app-primary-soft);
+    color: var(--app-primary);
+    box-shadow: inset 2px 0 0 var(--app-primary);
+}
+
+/* Popups (tab-overflow menu, user menu) and the mobile drawer share the card
+   surface; hover rows reuse the item tint. */
+.app-nav-popup,
+.app-nav-drawer {
+    background: var(--bg-card);
+    border-color: var(--border-default);
+}
+
+.app-nav-hover:hover {
+    background: color-mix(in srgb, var(--app-primary) 7%, transparent);
+}
+
+@keyframes app-nav-drawer-up {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: none;
+    }
+}
+
+.app-nav-drawer {
+    animation: app-nav-drawer-up var(--app-motion-med, 0ms) var(--app-ease, ease-out) both;
+}
+
+/* ── Mega menu (nav.style 'mega') ──────────────────────────────────────────
+   The panel is a card that opens under its group trigger. Width follows the
+   column count rather than a fixed value: one column of screens should not
+   reserve the room three would need. */
+
+.app-nav-mega {
+    min-width: 15rem;
+    animation: app-nav-mega-in var(--app-motion-fast, 0ms) var(--app-ease, ease-out) both;
+}
+
+.app-nav-mega[data-columns='2'] {
+    min-width: 30rem;
+}
+
+.app-nav-mega[data-columns='3'] {
+    min-width: 44rem;
+}
+
+@keyframes app-nav-mega-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.app-nav-mega-grid {
+    display: grid;
+    gap: 0.25rem 0.5rem;
+}
+
+.app-nav-mega-item {
+    transition:
+        background-color var(--app-motion-fast, 0ms) var(--app-ease, ease-out),
+        color var(--app-motion-fast, 0ms) var(--app-ease, ease-out);
+}
+
+.app-nav-mega-item:hover,
+.app-nav-mega-item:focus-visible {
+    background: color-mix(in srgb, var(--app-primary) 7%, transparent);
+}
+
+.app-nav-mega-item[data-active] {
+    background: var(--app-primary-soft);
+}
+
+/* The icon sits in a tile so a panel of items reads as a list of things, not
+   as a paragraph with pictures in the margin. */
+.app-nav-mega-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin-top: 0.05rem;
+    border-radius: calc(var(--app-radius, 8px) * 0.75);
+    background: color-mix(in srgb, var(--app-primary) 10%, transparent);
+    color: var(--app-primary);
+}
+
+.app-nav-mega-chevron {
+    transition: transform var(--app-motion-fast, 0ms) var(--app-ease, ease-out);
+}
+
+.app-nav-mega-chevron[data-open] {
+    transform: rotate(180deg);
+}
+
+/* A railed sidebar is narrower than a hand-collapsed one: it is the app's
+   permanent shape, so it may be tighter without a toggle to escape it. */
+.app-nav-sidebar[data-railed] {
+    width: var(--app-nav-w-rail, 52px);
+}
+
+/* ── Stepper ───────────────────────────────────────────────────────────── */
+
+.app-stepper-marker {
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 1px solid;
+    transition:
+        background-color var(--app-motion-fast, 0ms) var(--app-ease, ease-out),
+        border-color var(--app-motion-fast, 0ms) var(--app-ease, ease-out);
+}
+
+.app-stepper-step {
+    transition: background-color var(--app-motion-fast, 0ms) var(--app-ease, ease-out);
+}
+
+button.app-stepper-step:hover {
+    background: color-mix(in srgb, var(--app-primary) 7%, transparent);
+}
+
+.app-stepper-line {
+    height: 2px;
+    min-width: 0.75rem;
+    border-radius: 999px;
+    transition: background-color var(--app-motion-med, 0ms) var(--app-ease, ease-out);
+}
+
+.app-stepper-line--v {
+    width: 2px;
+    height: 0.75rem;
+    margin-left: 0.625rem;
+}
+
+/* ── File gallery + connection card ────────────────────────────────────── */
+
+.app-file-card,
+.app-connector-card {
+    border-color: var(--border-default);
+    background: var(--bg-card);
+    box-shadow: var(--app-shadow-1, none);
+}
+
+button.app-file-card {
+    transition:
+        border-color var(--app-motion-fast, 0ms) var(--app-ease, ease-out),
+        background-color var(--app-motion-fast, 0ms) var(--app-ease, ease-out);
+}
+
+button.app-file-card:hover {
+    border-color: var(--app-primary);
+    background: color-mix(in srgb, var(--app-primary) 5%, var(--bg-card));
+}
+
+.app-file-card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: calc(var(--app-radius, 8px) * 0.75);
+    background: color-mix(in srgb, var(--app-primary) 10%, transparent);
+    color: var(--app-primary);
+}
+
+/* ── Markdown code block ───────────────────────────────────────────────── */
+
+/* The copy button only appears on hover/focus so a page of code blocks does not
+   read as a page of buttons — but focus-within keeps it reachable by keyboard. */
+.app-code-block .app-code-copy {
+    opacity: 0;
+    transition: opacity var(--app-motion-fast, 0ms) var(--app-ease, ease-out);
+}
+
+.app-code-block:hover .app-code-copy,
+.app-code-block:focus-within .app-code-copy {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    /* No hover to reveal it with — a touch user would never find it. */
+    .app-code-block .app-code-copy {
+        opacity: 1;
+    }
+}
+
+/* Screen-enter transition (stamped by AppRenderer in A3; inert until then). */
+@keyframes app-screen-enter {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.app-screen-enter {
+    animation: app-screen-enter var(--app-motion-med, 0ms) var(--app-ease, ease-out) both;
+}
+
+/*
+ * A dashboard screen reads as a CANVAS of cards rather than a document, so it
+ * takes the recessed background — but only where the design asked for depth
+ * (a hairline app keeps one flat background, exactly as before).
+ */
+.app-design--surface-soft [data-app-screen-kind="dashboard"],
+.app-design--surface-elevated [data-app-screen-kind="dashboard"],
+.app-design--surface-soft.app-runtime[data-app-screen-kind="dashboard"],
+.app-design--surface-elevated.app-runtime[data-app-screen-kind="dashboard"] {
+    background: var(--bg-secondary);
+}
+
+/*
+ * SURFACE COMPONENTS — stat tiles and cards. They carry stable hooks and no
+ * styling of their own; a design variant is what gives them a real surface.
+ */
+.app-design--surface-soft .app-stat,
+.app-design--surface-soft .app-card,
+.app-design--surface-elevated .app-stat,
+.app-design--surface-elevated .app-card {
+    background: var(--bg-card);
+    border-radius: var(--app-radius, 8px);
+    padding: calc(4px * var(--app-space, 1) * 3);
+    box-shadow: var(--app-shadow-1);
+}
+
+.app-design--surface-elevated .app-stat,
+.app-design--surface-elevated .app-card {
+    box-shadow: var(--app-shadow-2);
+}
+
+.app-design--surface-flat .app-stat,
+.app-design--surface-flat .app-card {
+    background: var(--bg-secondary);
+    border-radius: var(--app-radius, 8px);
+    padding: calc(4px * var(--app-space, 1) * 3);
+}
+
+/*
+ * DATA GRID — universal polish (no design required): a hovered clickable row
+ * reads as clickable, and the header stays put while the body scrolls.
+ * Optional zebra striping is a per-grid prop.
+ */
+.app-grid-row-clickable:hover > td {
+    background: color-mix(in srgb, var(--app-primary) 5%, transparent);
+}
+
+.app-grid-zebra > tbody > tr:nth-child(even) > td {
+    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+
+.app-grid-zebra > tbody > tr.app-grid-row-clickable:hover > td {
+    background: color-mix(in srgb, var(--app-primary) 5%, transparent);
+}
+
+/*
+ * A focusable surface inside the rendered app — a clickable grid row, a kanban
+ * card. These are controls, so they need a visible focus indicator; without one
+ * a keyboard user can reach them and has no idea where they are.
+ *
+ * --text-secondary rather than --app-primary: the ring has to contrast against
+ * whatever the author picked, and a pale primary would leave it invisible.
+ */
+.app-focusable:focus-visible {
+    outline: 2px solid var(--text-secondary);
+    outline-offset: -2px;
+}

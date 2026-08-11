@@ -14,7 +14,9 @@ import LegalDocsPanel from '../components/admin/LegalDocsPanel';
 import AppearancePanel from '../components/admin/appearance-studio/AppearancePanel';
 import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsitePanel';
 import AnalyticsPanel from '../components/admin/ProductWebsite/AnalyticsPanel';
+import ReleaseNotesPanel from '../components/admin/ProductWebsite/ReleaseNotesPanel';
 import ServerLicensePanel from '../components/admin/ServerLicensePanel';
+import ModulesPanel from '../components/admin/ModulesPanel';
 import SupportInboxPanel from '../components/admin/SupportInboxPanel';
 import AccessPermissionsPanel from '../components/admin/AccessPermissionsPanel';
 import { useDeploymentMode } from '../hooks/useDeploymentMode';
@@ -36,7 +38,13 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         return perms.includes('all') || perms.includes(perm);
     };
 
-    const isSuperAdmin = isPlatformAdmin || hasPermission('all');
+    // Platform admin means users.role === 'admin' — NOT the 'all' permission.
+    // The server draws the same line (auth/permissions.js requireSuperAdmin),
+    // and it deliberately does not honour 'all': that wildcard is reachable
+    // from inside a tenant via a role attached to a group. Including it here
+    // would render operator-only tabs that then 403 on every request, which
+    // reads as a broken console rather than a clean denial.
+    const isSuperAdmin = isPlatformAdmin;
 
     // Tab definitions — each tab requires its page-level permission
     // 'agents' tab accepts admin_agents (catch-all) OR any granular admin_agents_* permission
@@ -58,30 +66,34 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         // Access & Permissions — grant features/integrations to All members or
         // per group, within the plan/license ceiling. Available to org-admins
         // too (they manage their own org); super-admins get an org picker.
-        { id: 'access', label: t('admin.tab_access') || 'Access', perm: ['admin_security', 'org_admin', 'manage_users'], superAdminOnly: false },
+        { id: 'access', label: t('admin.tab_access', 'Access'), perm: ['admin_security', 'org_admin', 'manage_users'], superAdminOnly: false },
         { id: 'monitoring', label: t('admin.tab_monitoring'), perm: ['admin_monitoring'], superAdminOnly: false, minTier: 'enterprise' },
-        // Compliance Hub is a Bee Flow Cloud governance surface. Self-hosted
-        // installs manage their own compliance posture, so the tab is hidden.
-        { id: 'compliance', label: t('admin.tab_compliance'), perm: ['admin_compliance'], superAdminOnly: false, minTier: 'enterprise', cloudOnly: true },
+        // Compliance Hub — available on cloud AND self-hosted (Enterprise):
+        // self-hosted GDPR customers are exactly who the hub serves. Also
+        // reachable from Settings → Organisation for org-admins/DPOs.
+        { id: 'compliance', label: t('admin.tab_compliance'), perm: ['admin_compliance'], superAdminOnly: false, minTier: 'enterprise' },
         // Bee Flow customer-support inbox. Visible to any super-admin (or a
         // user with the `admin_support` permission), on cloud and self-hosted
         // alike — outbound email + AI reply are best-effort and degrade
         // gracefully if SMTP / KB aren't configured.
-        { id: 'support', label: t('admin.tab_support') || 'Support', perm: ['admin_support'], superAdminOnly: true, minTier: 'enterprise' },
+        { id: 'support', label: t('admin.tab_support', 'Support'), perm: ['admin_support'], superAdminOnly: true, minTier: 'enterprise' },
         // Subscriptions are a Bee Flow Cloud feature. Self-hosted installs
         // manage paid access via license keys (Settings → License & Usage).
         { id: 'subscriptions', label: t('admin.tab_subscriptions'), perm: ['admin_subscriptions'], superAdminOnly: true, cloudOnly: true },
         // Server-wide licence governs every org/user on this install.
         // Available to super-admins on any deployment mode — a single-tenant
         // operator applies one licence for the whole server.
-        { id: 'licenses', label: t('admin.tab_server_license') || 'Server licence', perm: ['all'], superAdminOnly: true },
+        { id: 'licenses', label: t('admin.tab_server_license', 'Server licence'), perm: ['all'], superAdminOnly: true },
+        // Optional server modules — import/remove feature modules install-wide.
+        // Mirrors the Server-licence gating: global super-admin, any deployment.
+        { id: 'modules', label: t('admin.tab_modules', 'Modules'), perm: ['all'], superAdminOnly: true },
         { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise' },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
         // Legal — platform admin edits the legal documents (content + version +
         // which require consent) and manages optional (marketing) consents.
         // Legal & Consent is a Bee Flow Cloud surface; self-hosted installs are
         // governed by their licence agreement, so the tab is hidden there.
-        { id: 'legal', label: t('admin.tab_legal') || 'Legal', perm: ['admin_ai_config'], superAdminOnly: true, cloudOnly: true },
+        { id: 'legal', label: t('admin.tab_legal', 'Legal'), perm: ['admin_ai_config'], superAdminOnly: true, cloudOnly: true },
         // Product website builder — a Bee Flow Cloud marketing surface. On a
         // self-hosted install the public site is disabled (root goes straight
         // to /app), so the editor tab is hidden too.
@@ -89,7 +101,11 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         // Website analytics — self-hosted usage tracking for the CMS site.
         // Gated identically to product-website so it only surfaces when the
         // Website CMS product is active (super-admin, Enterprise, cloud).
-        { id: 'website-analytics', label: t('admin.tab_website_analytics') || 'Website Analytics', perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise', cloudOnly: true },
+        { id: 'website-analytics', label: t('admin.tab_website_analytics', 'Website Analytics'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise', cloudOnly: true },
+        // Release notes review queue. Same gating as the two tabs above — it is
+        // part of the Website CMS surface, and it is where machine-drafted
+        // changelog copy is approved before a customer ever sees it.
+        { id: 'release-notes', label: t('admin.tab_release_notes', 'Release Notes'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise', cloudOnly: true },
     ];
 
     // If current tab isn't allowed, fall back to the first tab the user has access to
@@ -125,6 +141,15 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     const requestedTabDef = tabs.find(t => t.id === requestedTab);
     const isRequestedAllowed = checkTabAccess(requestedTabDef);
     const activeTab = isRequestedAllowed ? requestedTab : (firstAllowedTab?.id || requestedTab);
+
+    // The tab bar scrolls horizontally (it's at capacity). Bring the active tab
+    // into view so newly-added right-edge tabs (e.g. Website Analytics) aren't
+    // stranded off-screen when selected.
+    const tabScrollRef = React.useRef(null);
+    React.useEffect(() => {
+        const el = tabScrollRef.current?.querySelector(`a[href="/admin/${activeTab}"]`);
+        el?.scrollIntoView?.({ inline: 'center', block: 'nearest' });
+    }, [activeTab]);
 
     const handleTabClick = (tabId) => {
         if (onNavigate) {
@@ -167,6 +192,22 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         </div>
     );
 
+    // Product website — full-screen builder. It escapes the admin chrome
+    // entirely (no dashboard top bar): the builder owns its own TopBar and
+    // navigates back / cross-links via onExit / onNavigate. Gating is
+    // identical to the tab (checkTabAccess ran above); a forbidden request
+    // falls through to the normal chrome + renderAccessDenied below.
+    if (activeTab === 'product-website' && isTabAllowed) {
+        return (
+            <div className="h-full" style={{ background: 'var(--bg-primary)' }}>
+                <ProductWebsitePanel
+                    onExit={() => handleTabClick(firstAllowedTab?.id || 'agents')}
+                    onNavigate={onNavigate}
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-card)' }}>
             {/* Top Navigation Bar */}
@@ -186,25 +227,30 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     </h2>
                 </div>
 
-                <div className="flex gap-2 p-1 rounded-lg" style={{ background: 'var(--bg-tertiary)' }} data-surface="default" data-static>
-                    {tabs.map((tab) => {
-                        if (!checkTabAccess(tab)) return null;
+                {/* Scrollable so the full tab set (now incl. Website Analytics)
+                    is always reachable — the bar is at capacity and a fixed
+                    single row would clip the rightmost tabs off-screen. */}
+                <div ref={tabScrollRef} className="flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
+                    <div className="flex gap-2 p-1 rounded-lg w-max mx-auto" style={{ background: 'var(--bg-tertiary)' }} data-surface="default" data-static>
+                        {tabs.map((tab) => {
+                            if (!checkTabAccess(tab)) return null;
 
-                        return (
-                            <NavLink
-                                key={tab.id}
-                                href={`/admin/${tab.id}`}
-                                onNavigate={() => handleTabClick(tab.id)}
-                                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === tab.id
-                                    ? 'bg-[var(--accent-primary)] text-white shadow-sm'
-                                    : 'text-muted hover:text-primary hover:bg-white/5'
-                                    }`}
-                                style={{ textDecoration: 'none', color: 'inherit' }}
-                            >
-                                {tab.label}
-                            </NavLink>
-                        );
-                    })}
+                            return (
+                                <NavLink
+                                    key={tab.id}
+                                    href={`/admin/${tab.id}`}
+                                    onNavigate={() => handleTabClick(tab.id)}
+                                    className={`shrink-0 whitespace-nowrap px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === tab.id
+                                        ? 'bg-[var(--accent-primary)] text-white shadow-sm'
+                                        : 'text-muted hover:text-primary hover:bg-white/5'
+                                        }`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                >
+                                    {tab.label}
+                                </NavLink>
+                            );
+                        })}
+                    </div>
                 </div>
 
                 <div className="w-20"></div> {/* Spacer for balance */}
@@ -257,6 +303,12 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                                 <ServerLicensePanel />
                             </div>
                         </div>
+                    ) : activeTab === 'modules' ? (
+                        <div className="absolute inset-0 overflow-auto p-6">
+                            <div className="mx-auto max-w-5xl">
+                                <ModulesPanel />
+                            </div>
+                        </div>
                     ) : activeTab === 'appearance' ? (
                         <div className="absolute inset-0">
                             <AppearancePanel />
@@ -269,13 +321,13 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                         <div className="absolute inset-0 overflow-auto">
                             <LegalDocsPanel />
                         </div>
-                    ) : activeTab === 'product-website' ? (
-                        <div className="absolute inset-0">
-                            <ProductWebsitePanel />
-                        </div>
                     ) : activeTab === 'website-analytics' ? (
                         <div className="absolute inset-0">
                             <AnalyticsPanel />
+                        </div>
+                    ) : activeTab === 'release-notes' ? (
+                        <div className="absolute inset-0">
+                            <ReleaseNotesPanel />
                         </div>
                     ) : null}
             </div>

@@ -16,6 +16,8 @@ const STAGE_ICONS = {
     compacting:             Layers,
     building_prompt:        Sparkles,
     guardrails:             Shield,
+    privacy_scan:           Shield,
+    privacy_scan_large:     Shield,
     tool_pre_check:         ListTree,
     processed_history:      History,
     streaming_start:        Loader,

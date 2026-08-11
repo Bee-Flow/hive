@@ -8,10 +8,11 @@ import DetailEmptyState from './detail/DetailEmptyState';
 import { useCapture } from './capture/CaptureContext';
 import useTranscriptions from './hooks/useTranscriptions';
 import useMediaQuery from './hooks/useMediaQuery';
+import useMeetingSources from './hooks/useMeetingSources';
 import { useRecorder } from './hooks/RecorderContext';
 
 function MeetingNotesInner({ user, onBack }) {
-    const { items, loading, reload, removeLocal, patchLocal } = useTranscriptions();
+    const { items, loading, error, reload, removeLocal, patchLocal } = useTranscriptions();
     const [selectedId, setSelectedId] = useState(() => {
         if (typeof window !== 'undefined' && window.__beeflowPendingMeetingId) {
             const id = window.__beeflowPendingMeetingId;
@@ -24,6 +25,18 @@ function MeetingNotesInner({ user, onBack }) {
     const { version, consumeLastResult, lastResultId } = useRecorder();
     const isMobile = useMediaQuery('(max-width: 767px)');
     const [leftView, setLeftView] = useState('library'); // 'library' | 'upcoming'
+
+    // "Upcoming" only exists when a supported live-meeting source (Nextcloud
+    // Talk or Google Meet) is actually connected — an org on e.g. Outlook +
+    // Teams gets no tab that could never show a meeting. Hidden until the
+    // probe answers, so unsupported setups never see it flash.
+    const meetingSources = useMeetingSources();
+    const upcomingAvailable = meetingSources.talk || meetingSources.gmeet;
+    useEffect(() => {
+        if (!meetingSources.loading && !upcomingAvailable && leftView === 'upcoming') {
+            setLeftView('library');
+        }
+    }, [meetingSources.loading, upcomingAvailable, leftView]);
 
     // When a capture finishes anywhere in the app, refresh the list and
     // auto-select the new transcription if one is pending. If the upload
@@ -117,29 +130,33 @@ function MeetingNotesInner({ user, onBack }) {
             <div className="flex-1 flex overflow-hidden">
                 {showLibrary && (
                     <div className={`${isMobile ? 'w-full' : 'w-[420px] xl:w-[460px] border-r'} flex flex-col overflow-hidden`} style={{ borderColor: 'var(--border-subtle)' }}>
-                        <div className="flex items-center gap-1 px-3 pt-3">
-                            {[['library', 'Library'], ['upcoming', 'Upcoming']].map(([id, label]) => {
-                                const active = leftView === id;
-                                return (
-                                    <button
-                                        key={id}
-                                        type="button"
-                                        onClick={() => setLeftView(id)}
-                                        className="px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors"
-                                        style={{
-                                            background: active ? 'color-mix(in srgb, #0082C9 12%, transparent)' : 'transparent',
-                                            color: active ? '#0082C9' : 'var(--text-muted)',
-                                        }}
-                                    >
-                                        {label}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        {leftView === 'library' ? (
+                        {upcomingAvailable && (
+                            <div className="flex items-center gap-1 px-3 pt-3">
+                                {[['library', 'Library'], ['upcoming', 'Upcoming']].map(([id, label]) => {
+                                    const active = leftView === id;
+                                    return (
+                                        <button
+                                            key={id}
+                                            type="button"
+                                            onClick={() => setLeftView(id)}
+                                            className="px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors"
+                                            style={{
+                                                background: active ? 'color-mix(in srgb, #0082C9 12%, transparent)' : 'transparent',
+                                                color: active ? '#0082C9' : 'var(--text-muted)',
+                                            }}
+                                        >
+                                            {label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        {leftView === 'library' || !upcomingAvailable ? (
                             <MeetingLibrary
                                 meetings={items}
                                 loading={loading}
+                                error={error}
+                                onRetry={reload}
                                 currentUserId={user?.id}
                                 selectedId={selectedId}
                                 onSelect={setSelectedId}
@@ -159,8 +176,10 @@ function MeetingNotesInner({ user, onBack }) {
                             <MeetingDetail
                                 id={selectedId}
                                 currentUserId={user?.id}
+                                currentUserName={user?.displayName || user?.username || ''}
                                 onChanged={onChanged}
                                 onDeleted={onDeleted}
+                                onOpenNote={setSelectedId}
                             />
                         ) : (
                             <DetailEmptyState />
@@ -181,9 +200,11 @@ function MeetingNotesInner({ user, onBack }) {
                         <MeetingDetail
                             id={selectedId}
                             currentUserId={user?.id}
+                            currentUserName={user?.displayName || user?.username || ''}
                             onBack={() => setSelectedId(null)}
                             onChanged={onChanged}
                             onDeleted={onDeleted}
+                            onOpenNote={setSelectedId}
                         />
                     </div>
                 )}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { colLabel, colToIndex, parseAnyRef, evaluateTable, displayResult, isFormulaCell } from './formula.js';
+import { colLabel, colToIndex, parseAnyRef, evaluateTable, displayResult, isFormulaCell, formulaSrc, rawIsFormula } from './formula.js';
 
 // Build a table node from a 2D array of cell strings. A string starting with '='
 // becomes a formula cell; everything else is a plain-text cell.
@@ -95,5 +95,106 @@ describe('formula evaluation', () => {
     const t = table([['=1+1', 'plain']]);
     expect(isFormulaCell(t.content[0].content[0])).toBe(true);
     expect(isFormulaCell(t.content[0].content[1])).toBe(false);
+  });
+});
+
+/* ── round 2: bare ranges, error sentinels, header exclusion, relaxed cells ── */
+
+// Cell builder that also supports attrs (header rows).
+const cellN = (s, attrs = null) => ({
+  type: 'tableCell',
+  ...(attrs ? { attrs } : {}),
+  content: [{
+    type: 'paragraph',
+    content: typeof s === 'string' && s.startsWith('=')
+      ? [{ type: 'formula', attrs: { src: s } }]
+      : [{ type: 'text', text: String(s) }],
+  }],
+});
+const rowN = (...cells) => ({ type: 'tableRow', content: cells });
+const tableN = (...rows) => ({ type: 'table', content: rows });
+const dispT = (t, r, c) => displayResult(evaluateTable(t).get(`${r},${c}`));
+
+describe('bare ranges (pick gestures) fold through SUM', () => {
+  it('a bare rectangle and a bare whole-column range evaluate', () => {
+    const g = [['1', '2', '=A1:B2'], ['3', '4', '=B:B']];
+    expect(disp(g, 0, 2)).toBe('10');   // 1+2+3+4
+    expect(disp(g, 1, 2)).toBe('6');    // 2+4
+  });
+
+  it('a bare range composes with arithmetic', () => {
+    const g = [['1', '10'], ['2', '20'], ['3', '30'], ['=A1+B2:B3', '']];
+    expect(disp(g, 3, 0)).toBe('51');   // 1 + (20+30)
+  });
+
+  it('a bare column letter without a colon is still #NAME?', () => {
+    expect(disp([['=B', '1']], 0, 0)).toBe('#NAME?');
+  });
+});
+
+describe('error handling in ranges and literals', () => {
+  it('a range skips an erroring cell; a DIRECT ref still propagates', () => {
+    const g = [['=1/0'], ['2'], ['=SUM(A1:A2)'], ['=A1+1']];
+    // Deliberate deviation from Excel: one broken cell must not blank a
+    // whole-column aggregate (S10).
+    expect(disp(g, 2, 0)).toBe('2');
+    expect(disp(g, 3, 0)).toBe('#DIV/0!');
+  });
+
+  it('a literal #REF! in an expression evaluates to #REF!, not #ERR!', () => {
+    expect(disp([['=#REF!']], 0, 0)).toBe('#REF!');
+    expect(disp([['=B1+#REF!', '5']], 0, 0)).toBe('#REF!');
+  });
+});
+
+describe('whole-column ranges exclude the header row', () => {
+  it('a numeric header value is not aggregated', () => {
+    const t = tableN(
+      rowN(cellN('100', { header: true }), cellN('Total', { header: true })),
+      rowN(cellN('2'), cellN('=A:A')),
+      rowN(cellN('3'), cellN('=SUM(A:A)')),
+    );
+    expect(dispT(t, 1, 1)).toBe('5');   // bare column pick
+    expect(dispT(t, 2, 1)).toBe('5');   // function-arg column range
+  });
+
+  it('a headerless table still aggregates every row', () => {
+    const t = tableN(rowN(cellN('100'), cellN('=A:A')), rowN(cellN('2'), cellN('')));
+    expect(dispT(t, 0, 1)).toBe('102');
+  });
+});
+
+describe('relaxed formula-cell shape (S7)', () => {
+  const wsCell = {
+    type: 'tableCell',
+    content: [{
+      type: 'paragraph',
+      content: [
+        { type: 'text', text: ' ' },
+        { type: 'formula', attrs: { src: '=1+1' } },
+        { type: 'text', text: '  ' },
+      ],
+    }],
+  };
+
+  it('whitespace-only strays keep it a formula cell; real text does not', () => {
+    expect(isFormulaCell(wsCell)).toBe(true);
+    const strayK = { ...wsCell, content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { src: '=1+1' } }, { type: 'text', text: 'k' }] }] };
+    expect(isFormulaCell(strayK)).toBe(false);
+    const twoAtoms = { ...wsCell, content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { src: '=1' } }, { type: 'formula', attrs: { src: '=2' } }] }] };
+    expect(isFormulaCell(twoAtoms)).toBe(false);
+  });
+
+  it('formulaSrc walks to the atom and the cell still evaluates', () => {
+    expect(formulaSrc(wsCell)).toBe('=1+1');
+    const t = { type: 'table', content: [{ type: 'tableRow', content: [wsCell] }] };
+    expect(displayResult(evaluateTable(t).get('0,0'))).toBe('2');
+  });
+
+  it('rawIsFormula is exported for the serialization layers', () => {
+    expect(rawIsFormula('=A1')).toBe(true);
+    expect(rawIsFormula('  = 1')).toBe(true);
+    expect(rawIsFormula('plain')).toBe(false);
+    expect(rawIsFormula(null)).toBe(false);
   });
 });

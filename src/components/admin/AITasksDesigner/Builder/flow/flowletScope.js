@@ -20,6 +20,8 @@
  * objects, the input definition is never mutated.
  */
 
+import { applyDeleteNodes } from './nodeOps';
+
 export const LAYER_KEY_RE = /^[a-z][a-z0-9_]*$/;
 
 /**
@@ -200,6 +202,100 @@ export function countLayerRefs(def, key) {
 export function deleteLayerFromDefinition(def, key) {
     const { [key]: _removed, ...rest } = def?.layers || {};
     return { ...def, layers: rest };
+}
+
+/**
+ * True when this flowlet has no steps of its own — nothing has been built in
+ * it yet. The palette's "Create flowlet" drops a `call_layer` node as part of
+ * creating one, so a brand-new flowlet is instantly "in use" and its delete
+ * button greys out; the only way back was to hunt down that call node on the
+ * canvas first (BFSF-340). An empty flowlet is safe to remove call sites and
+ * all — there is nothing to lose.
+ *
+ * @param {object|null} def whole (root) definition
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isLayerEmpty(def, key) {
+    const layer = def?.layers?.[key];
+    if (!layer) return false;
+    // layer_output is the flowlet skeleton's terminator, not a user step.
+    return !(layer.steps || []).some(s => s && s.type !== 'layer_output');
+}
+
+/**
+ * Remove a flowlet AND every `call_layer` step that references it, across the
+ * root graph and every other flowlet, healing each graph around the removed
+ * nodes so nothing downstream is stranded. Nested call sites (inside a loop
+ * body or a parallel branch) are dropped from their body array — those arrays
+ * carry no edges of their own.
+ *
+ * @param {object} def whole (root) definition
+ * @param {string} key
+ * @returns {object} next definition
+ */
+export function deleteLayerAndCalls(def, key) {
+    if (!def || !key) return def;
+    const isCall = (s) => s?.type === 'call_layer' && s.layerKey === key;
+
+    const stripNested = (step) => {
+        if (!step || typeof step !== 'object') return step;
+        let next = step;
+        if (Array.isArray(step.body)) {
+            next = { ...next, body: step.body.filter(s => !isCall(s)).map(stripNested) };
+        }
+        if (Array.isArray(step.branches)) {
+            next = {
+                ...next,
+                branches: step.branches.map(branch => (
+                    Array.isArray(branch)
+                        ? branch.filter(s => !isCall(s)).map(stripNested)
+                        : (Array.isArray(branch?.steps)
+                            ? { ...branch, steps: branch.steps.filter(s => !isCall(s)).map(stripNested) }
+                            : branch)
+                )),
+            };
+        }
+        return next;
+    };
+
+    const strip = (graph) => {
+        if (!graph) return graph;
+        const topIds = (graph.steps || []).filter(isCall).map(s => s.id);
+        const healed = topIds.length ? applyDeleteNodes(graph, topIds) : graph;
+        return { ...healed, steps: (healed.steps || []).map(stripNested) };
+    };
+
+    const root = strip(def);
+    const layers = Object.fromEntries(
+        Object.entries(root.layers || {})
+            .filter(([k]) => k !== key)
+            .map(([k, layer]) => [k, strip(layer)]),
+    );
+    return { ...root, layers };
+}
+
+/**
+ * Where a flowlet is called from, as scope keys ('root' or a flowlet key),
+ * one entry per call site. `countLayerRefs` gives the raw total; this names
+ * the places, which is what a confirmation prompt needs to be honest about.
+ *
+ * @param {object|null} def whole (root) definition
+ * @param {string} key
+ * @returns {string[]}
+ */
+export function layerCallScopes(def, key) {
+    if (!def || !key) return [];
+    const out = [];
+    for (const step of walkSteps(def.steps || [])) {
+        if (step?.type === 'call_layer' && step.layerKey === key) out.push('root');
+    }
+    for (const [k, layer] of Object.entries(def.layers || {})) {
+        for (const step of walkSteps(layer?.steps || [])) {
+            if (step?.type === 'call_layer' && step.layerKey === key) out.push(k);
+        }
+    }
+    return out;
 }
 
 /**

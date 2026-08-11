@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import KBsStudio from './index.jsx';
 import { authFetch } from '../../../../utils/helpers';
+import { ok } from '@/test/http';
 
 // Stub the detail page (not under test here) and the auth-aware fetch.
 vi.mock('../../../KBDetailPage', () => ({ default: () => null }));
@@ -14,8 +15,6 @@ vi.mock('../../../../hooks/useTranslation', () => ({
         }[key] || key),
     }),
 }));
-
-const ok = (body) => Promise.resolve({ ok: true, json: async () => body });
 
 const mockFetches = ({ kbs = [], categories = [], categoriesReject = false } = {}) => {
     authFetch.mockImplementation((url) => {

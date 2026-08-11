@@ -54,11 +54,26 @@ export function domFromPos(domForNode, doc, p) {
     }
   };
   for (const c of blockEl.childNodes) { visit(c); if (result) break; }
-  if (!result) result = { node: blockEl, offset: remaining > 0 ? blockEl.childNodes.length : 0 };
+  if (!result) {
+    // Every token was consumed without a match, so the position is at the END
+    // of the block. This used to return offset 0 when `remaining` landed on
+    // exactly 0 — which happens for a caret sitting after a trailing atom or
+    // <br> (Shift+Enter at the end of a paragraph, or inserting an inline
+    // formula last). The caret was written to the START of the paragraph, and
+    // since the DOM selection is read back into the model, the next character
+    // typed went there too.
+    const kids = blockEl.childNodes;
+    let end = kids.length;
+    // An empty block renders one filler <br>; the caret belongs before it.
+    while (end > 0 && isFiller(kids[end - 1])) end -= 1;
+    result = { node: blockEl, offset: end };
+  }
   return result;
 }
 
 /* ── helpers ────────────────────────────────────────────── */
+
+const isFiller = (n) => n && n.nodeType === 1 && n.getAttribute && n.getAttribute('data-bf-filler') != null;
 
 function tokenOffset(blockEl, target, targetOffset) {
   if (target === blockEl) {
@@ -78,7 +93,14 @@ function tokenOffset(blockEl, target, targetOffset) {
     if (n.nodeType === 3) { count += n.length; return; }
     if (n.nodeType === 1) {
       if (n.getAttribute && n.getAttribute('data-bf-filler') != null) return;
-      if (n.getAttribute && n.getAttribute('data-bf-atom') != null) { count += 1; return; }
+      if (n.getAttribute && n.getAttribute('data-bf-atom') != null) {
+        // A selection landing INSIDE an atom's rendered DOM (node views render
+        // real elements) must resolve to the atom's own token, not fall through
+        // and accumulate the whole block — which mapped the caret to the end.
+        if (n.contains && n.contains(target)) { done = true; return; }
+        count += 1;
+        return;
+      }
       if (n.tagName === 'BR') { count += 1; return; }
       for (const c of n.childNodes) { visit(c); if (done) return; }
     }

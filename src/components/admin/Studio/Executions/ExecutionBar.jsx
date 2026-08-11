@@ -11,6 +11,7 @@ import { formatDuration, formatRelative } from '../RoutinesStudio/historyUtils';
  */
 export default function ExecutionBar({ run, onBack, onRetry, onCancel, onApprove, onOpenEditor, showOpenEditor = true }) {
     const [pending, setPending] = useState(null);
+    const [actionError, setActionError] = useState(null);
     if (!run) return null;
 
     const isError = run.status === 'error';
@@ -21,7 +22,16 @@ export default function ExecutionBar({ run, onBack, onRetry, onCancel, onApprove
     const act = async (key, fn) => {
         if (pending || !fn) return;
         setPending(key);
-        try { await fn(); } finally { setPending(null); }
+        setActionError(null);
+        try {
+            await fn();
+        } catch (e) {
+            // Surface the failure — without a catch this was an unhandled
+            // promise rejection and the button just silently reset.
+            setActionError(`${key} failed: ${e?.message || 'unknown error'}`);
+        } finally {
+            setPending(null);
+        }
     };
 
     return (
@@ -74,6 +84,9 @@ export default function ExecutionBar({ run, onBack, onRetry, onCancel, onApprove
                     </button>
                 )}
             </div>
+            {actionError && (
+                <div className="w-full mt-1 text-xs text-red-600 dark:text-red-400" role="alert">{actionError}</div>
+            )}
         </div>
     );
 }

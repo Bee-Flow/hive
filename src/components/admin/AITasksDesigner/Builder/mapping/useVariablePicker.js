@@ -15,20 +15,26 @@ import { useCallback, useState } from 'react';
 export default function useVariablePicker() {
     const [anchor, setAnchor] = useState(null);
     const [open, setOpen] = useState(false);
+    // Seed for the picker's search box — set by inline autocomplete
+    // (typing `{{su` opens the picker pre-filtered to "su"); the plain
+    // {} button passes nothing, so the query resets to '' as before.
+    const [initialQuery, setInitialQuery] = useState('');
 
-    const openPicker = useCallback((el) => {
+    const openPicker = useCallback((el, opts = {}) => {
         setAnchor(el || null);
+        setInitialQuery(opts.initialQuery || '');
         setOpen(true);
     }, []);
 
     const closePicker = useCallback(() => {
         setOpen(false);
+        setInitialQuery('');
     }, []);
 
     return {
         open,
         openPicker,
         closePicker,
-        pickerProps: { open, anchorEl: anchor, onClose: closePicker },
+        pickerProps: { open, anchorEl: anchor, onClose: closePicker, initialQuery },
     };
 }

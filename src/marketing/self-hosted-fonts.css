@@ -78,3 +78,123 @@
     font-style: normal;
     font-display: swap;
 }
+
+/*
+ * ── The production design's own families, self-hosted ────────────────
+ *
+ * Fraunces / Inter / IBM Plex Mono are what the live beeflow.nl design doc
+ * actually names (server/scripts/content/beeflowSite.js `design.fonts`), and
+ * they used to be the only families still fetched from Google — injected as a
+ * runtime <link> AFTER React mounted, so the h1 first painted in the system
+ * stack and then re-melted into Fraunces. That family swap on the largest
+ * text on the page was one of Lighthouse's three CLS sources, and the CDN
+ * request itself sat oddly on a product whose pitch is that visitor data
+ * stays off third-party infrastructure.
+ *
+ * Files are the latin subset from Fontsource (OFL 1.1); Fraunces and Inter
+ * as single variable-weight WOFF2s, IBM Plex Mono as the four static weights
+ * the design system uses. Served same-origin like every family above, and
+ * preloaded from the server-rendered <head> (server/core/seo/head.js) so the
+ * bytes are usually in before first paint.
+ *
+ * Each family also gets a metric-matched local FALLBACK FACE below. The
+ * cssFontStack builders put "<Family> Fallback" between the web font and the
+ * generic stack, so if paint ever does beat the WOFF2, the text lays out in
+ * a system font whose glyph advance/ascent/descent are adjusted to the web
+ * font's numbers — the later swap then changes pixels, not positions, which
+ * is what keeps it out of CLS. Override values are computed from capsize
+ * font metrics (xWidthAvg ratio → size-adjust; ascent/descent ÷ size-adjust),
+ * not hand-tuned.
+ */
+
+@font-face {
+    font-family: 'Fraunces';
+    src: url('/fonts/fraunces/Fraunces-Variable.woff2') format('woff2-variations'),
+         url('/fonts/fraunces/Fraunces-Variable.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+/* Fraunces (upm 2000, asc 1956, desc -510, xAvg 938) over Georgia
+   (upm 2048, asc 1878, desc -449, xAvg 913). */
+@font-face {
+    font-family: 'Fraunces Fallback';
+    src: local('Georgia');
+    size-adjust: 105.2%;
+    ascent-override: 92.96%;
+    descent-override: 24.24%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('/fonts/inter/Inter-Variable.woff2') format('woff2-variations'),
+         url('/fonts/inter/Inter-Variable.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+/* Inter (upm 2048, asc 1984, desc -494, xAvg 978) over Arial
+   (upm 2048, asc 1854, desc -434, gap 67, xAvg 913). */
+@font-face {
+    font-family: 'Inter Fallback';
+    src: local('Arial');
+    size-adjust: 107.12%;
+    ascent-override: 90.44%;
+    descent-override: 22.52%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'IBM Plex Mono';
+    src: url('/fonts/ibm-plex-mono/IBMPlexMono-400.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Mono';
+    src: url('/fonts/ibm-plex-mono/IBMPlexMono-500.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Mono';
+    src: url('/fonts/ibm-plex-mono/IBMPlexMono-600.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'IBM Plex Mono';
+    src: url('/fonts/ibm-plex-mono/IBMPlexMono-700.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+/* IBM Plex Mono (upm 1000, asc 1025, desc -275, xAvg 600) over Courier New
+   (upm 2048, asc 1705, desc -615, xAvg 1229) — the advance ratio is within
+   0.02% so size-adjust is effectively 1. */
+@font-face {
+    font-family: 'IBM Plex Mono Fallback';
+    src: local('Courier New');
+    size-adjust: 100%;
+    ascent-override: 102.5%;
+    descent-override: 27.5%;
+    line-gap-override: 0%;
+}
+
+/* The app shell's code font (chat code blocks, editors). Self-hosted for the
+   same reason as the three families above: it was the last thing index.html
+   still fetched from Google, and the shell request rode along on every
+   marketing pageview too. The face is only downloaded when something on the
+   page actually uses the family — an @font-face costs nothing until then. */
+@font-face {
+    font-family: 'Fira Code';
+    src: url('/fonts/fira-code/FiraCode-Variable.woff2') format('woff2-variations'),
+         url('/fonts/fira-code/FiraCode-Variable.woff2') format('woff2');
+    font-weight: 300 700;
+    font-style: normal;
+    font-display: swap;
+}

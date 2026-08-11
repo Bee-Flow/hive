@@ -5,9 +5,14 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import katex from 'katex';
 
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 export default function MathView({ node, view, inline, editable }) {
   const latex = node.attrs?.latex || '';
-  const [editing, setEditing] = useState(false);
+  // A freshly inserted formula has no TeX yet — open the input immediately
+  // rather than making the user discover the double-click (BFSF-317).
+  const [editing, setEditing] = useState(() => latex === '');
   const [draft, setDraft] = useState(latex);
   const inputRef = useRef(null);
 
@@ -15,11 +20,18 @@ export default function MathView({ node, view, inline, editable }) {
   useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
 
   const html = useMemo(() => {
+    // KaTeX escapes its own error output, but the catch branch used to return
+    // the raw source straight into dangerouslySetInnerHTML below.
     try { return katex.renderToString(latex || '\\,', { throwOnError: false, displayMode: !inline }); }
-    catch { return latex; }
+    catch { return escapeHtml(latex); }
   }, [latex, inline]);
 
-  const commit = () => { setEditing(false); if (draft !== latex) view.updateAtom(node, { latex: draft }); };
+  const commit = () => {
+    setEditing(false);
+    // Abandoning an empty formula should leave nothing behind, not an empty atom.
+    if (!draft.trim()) { if (!latex) view.deleteAtom(node); return; }
+    if (draft !== latex) view.updateAtom(node, { latex: draft });
+  };
 
   if (editing && editable) {
     return (

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import ToolInputForm from './ToolInputForm';
+import { typeInEditor } from '../../../../../test/refEditor';
 
 describe('ToolInputForm — adding inputs', () => {
     beforeEach(() => cleanup());
@@ -31,7 +32,7 @@ describe('ToolInputForm — adding inputs', () => {
         render(<ToolInputForm inputs={{}} onChange={onChange} inputSchema={null} />);
         fireEvent.click(screen.getByText('Add field'));
         const valueInput = screen.getByPlaceholderText('value');
-        fireEvent.change(valueInput, { target: { value: 'hello' } });
+        typeInEditor(valueInput, 'hello');
         expect(onChange).not.toHaveBeenCalled(); // still local until blur
         fireEvent.blur(valueInput);
         expect(onChange).toHaveBeenCalledWith({ field: { kind: 'literal', value: 'hello' } });

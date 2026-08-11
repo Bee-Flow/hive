@@ -1,5 +1,6 @@
 import { Workflow, Zap, Repeat } from 'lucide-react';
 import React from 'react';
+import { humanizeFieldTail } from '../flow/displayHelpers';
 import { parseRefTokens, resolveChipLabel } from './refTokens';
 
 /**
@@ -38,7 +39,12 @@ export default function RefChips({ text, mode = 'expression', stepLabelById = nu
                     >
                         <Icon size={10} className="shrink-0 opacity-70" />
                         <span className="font-medium">{name}</span>
-                        {suffix && <span className="opacity-70">▸ {suffix}</span>}
+                        {/* The FIELD's name, not its path: at rest the chip
+                            read "Filter ▸ items[0].id", which tells a
+                            non-technical author nothing about where the value
+                            comes from (BFSF-330). The exact path stays one
+                            hover — or one click into the field — away. */}
+                        {suffix && <span className="opacity-70">▸ {humanizeFieldTail(suffix)}</span>}
                     </span>
                 );
             })}

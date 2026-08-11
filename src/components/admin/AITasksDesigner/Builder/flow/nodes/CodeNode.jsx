@@ -1,5 +1,6 @@
 import React from 'react';
 import { Code2, Lock } from 'lucide-react';
+import { nodeHelp, nodeTypeLabel } from '../nodeDefs';
 import StepNodeBase, { NodeChip, ForEachBadge } from './StepNodeBase';
 
 export default function CodeNode({ id, data }) {
@@ -40,7 +41,8 @@ export default function CodeNode({ id, data }) {
     return (
         <StepNodeBase
             icon={<Code2 size={14} />}
-            typeLabel="Code"
+            typeLabel={nodeTypeLabel('code')}
+            help={nodeHelp('code')}
             body={body}
             badges={badges}
             hoverDetail={hoverDetail}

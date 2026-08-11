@@ -1,5 +1,6 @@
 import React from 'react';
 import { LogOut } from 'lucide-react';
+import { nodeHelp, nodeTypeLabel } from '../nodeDefs';
 import StepNodeBase from './StepNodeBase';
 
 /**
@@ -22,7 +23,8 @@ export default function FlowletOutputNode({ id, data }) {
     return (
         <StepNodeBase
             icon={<LogOut size={14} />}
-            typeLabel="Return"
+            typeLabel={nodeTypeLabel('layer_output')}
+            help={nodeHelp('layer_output')}
             body={body}
             runStep={runStep}
             issues={issues}

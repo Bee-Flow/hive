@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
-import { lazy } from './utils/lazyWithReload';
 import { v4 as uuidv4 } from 'uuid';
+import { useTranslation } from './hooks/useTranslation';
+import MessageItem from './components/chat/MessageItem';
+import DirectChatWelcome from './components/DirectChatWelcome';
+import InputArea from './components/InputArea';
+import { RequireTier, useLicenseContext } from './components/LicenseContext';
+import SearchOverlay from './components/SearchOverlay';
+import Sidebar from './components/Sidebar';
+import WelcomeScreen from './components/WelcomeScreen';
+import useChatEngine from './hooks/useChatEngine';
+import { lazy } from './utils/lazyWithReload';
 
 // ── Chat-critical (eager) ────────────────────────────────────────────
 // These components are on the main chat path; deferring them costs more
 // in flicker than they save in bundle size.
-import Sidebar from './components/Sidebar';
-import { RequireTier, useLicenseContext } from './components/LicenseContext';
-import InputArea from './components/InputArea';
-import WelcomeScreen from './components/WelcomeScreen';
-import MessageItem from './components/chat/MessageItem';
-import DirectChatWelcome from './components/DirectChatWelcome';
-import SearchOverlay from './components/SearchOverlay';
 
 // ── Lazy: admin / studio / notebooks / marketplaces ──────────────────
 // Each of these is opened from a modal slot or a separate route. Lazy
@@ -37,7 +39,6 @@ const EmailKBSettings = lazy(() => import('./components/EmailKBSettings'));
 const NotebooksPage = lazy(() => import('./pages/NotebooksPage'));
 const LegalStudioPage = lazy(() => import('./pages/legal/LegalStudioPage'));
 
-import useChatEngine from './hooks/useChatEngine';
 import { useViewport } from './hooks/useViewport';
 
 // Shared Suspense fallback — keeps lazy slots from flashing layout shifts.
@@ -52,9 +53,10 @@ function LazyFallback() {
 }
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
-import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from './utils/agentAvatar';
+import { normalizeLoadedMessages, hasRenderableContent } from './utils/messageShape';
 import scopedStorage from './utils/scopedStorage';
-import { normalizeLoadedMessages } from './utils/messageShape';
+import { loadWorkspaceNotebook } from './utils/workspaceNotebook';
+import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from './utils/agentAvatar';
 import { X, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
 import beeFlowIcon from './assets/BeeFlow-logo-Icon-2026.svg';
 
@@ -66,12 +68,22 @@ const AgentHub = ({
     showAgentWizard = false, onCloseAgentWizard,
     showStudio = false, studioRoute = { section: 'agents', id: null }, onCloseStudio,
     showAITasks = false, onCloseAITasks, initialAITaskId = null,
+    // Projects is URL-driven now. `initialProjectRoute` is null when we are not
+    // on a projects path, { projectId: null } for the list, and
+    // { projectId, tab } for one project — so the list and the detail view are
+    // distinct destinations instead of the list only appearing once the detail
+    // view is closed.
+    showProjects = false, initialProjectRoute = null, onProjectRouteChange, onCloseProjects,
     showSkillsPanel = false, onCloseSkillsPanel,
     showEmailKB = false, onCloseEmailKB,
     // Notebooks rendered inline (previously a standalone page at App level).
     showNotebooks = false, onCloseNotebooks, initialNotebookId = null, onNotebookChange,
     showLegal = false, onCloseLegal, initialMatterId = null, onMatterChange,
 }) => {
+    // Share/collaboration copy is user-facing and Dutch-translated, so it goes
+    // through the same dictionary as the rest of the UI rather than being
+    // hardcoded here.
+    const { t } = useTranslation();
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
         const perms = user?.permissions || [];
@@ -158,7 +170,6 @@ const AgentHub = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [collapseForStudio]);
     const [notebookContent, setNotebookContent] = useState('');
-    const [notebookLastFetchedId, setNotebookLastFetchedId] = useState(null);
     const [notebookSelection, setNotebookSelection] = useState('');
     const [showNotebook, setShowNotebook] = useState(false);
     const [notebookLinkedId, setNotebookLinkedId] = useState(null);
@@ -306,6 +317,33 @@ const AgentHub = ({
     const [showProjectsStore, setShowProjectsStore] = useState(false);
     // null = closed, '' = create-new, otherwise an existing project id
     const [activeProjectId, setActiveProjectId] = useState(null);
+
+    // The URL is the source of truth for which projects view is open. Keeping
+    // these in sync one-way (route → state) means a reload, a deep link and a
+    // back-button press all land in the same place, which none of them did
+    // while this was local-only state.
+    useEffect(() => {
+        if (!showProjects) {
+            setShowProjectsStore(false);
+            return;
+        }
+        setShowProjectsStore(true);
+        // `undefined` route id means the list; a real id means that project.
+        setActiveProjectId(initialProjectRoute?.projectId ?? null);
+    }, [showProjects, initialProjectRoute?.projectId]);
+
+    // Navigate by changing the URL, not by flipping local booleans, so history
+    // records the move. Falls back to local state when the host didn't wire the
+    // callback (embedded/preview renders of AgentHub).
+    const goToProject = useCallback((projectId, tab) => {
+        if (onProjectRouteChange) onProjectRouteChange(projectId, tab);
+        else { setShowProjectsStore(true); setActiveProjectId(projectId ?? null); }
+    }, [onProjectRouteChange]);
+
+    const closeProjects = useCallback(() => {
+        if (onCloseProjects) onCloseProjects();
+        else { setShowProjectsStore(false); setActiveProjectId(null); }
+    }, [onCloseProjects]);
 
     // Conversation Labels State
     const [conversationLabels, setConversationLabels] = useState([]);
@@ -505,6 +543,27 @@ const AgentHub = ({
                 setDirectCompletedSessionSkillIds(completedSkillIds);
             }
         }, []),
+        // Refetch the persisted turn after a dropped stream. useChatEngine
+        // exposes this hook and the recovery poller is gated on it — but the
+        // main chat surface never passed one, so the whole auto-recovery path
+        // was dead code exactly where it matters most. The server persists the
+        // finished reply even when the SSE connection dies, so this turns an
+        // "interrupted" notice into the real answer without a page reload.
+        reloadConversation: useCallback(async () => {
+            const convId = directChatMode ? currentDirectConversation?.id : currentConversation?.id;
+            if (!convId) return null;
+            const url = directChatMode
+                ? `${API_BASE}/ai/direct/conversations/${convId}`
+                : `${API_BASE}/agents/${selectedAgent?.id}/conversations/${convId}`;
+            if (!directChatMode && !selectedAgent?.id) return null;
+            const res = await authFetch(url);
+            if (!res.ok) return null;
+            const data = await res.json();
+            const raw = typeof data.messages === 'string' ? JSON.parse(data.messages) : (data.messages || []);
+            return normalizeLoadedMessages(raw)
+                .filter(m => m.role !== 'tool' && m.role !== 'system' && hasRenderableContent(m))
+                .map(({ toolCall, isStreaming, ...clean }) => clean);
+        }, [directChatMode, currentDirectConversation?.id, currentConversation?.id, selectedAgent?.id]),
     });
 
     // Voice Chat (Beta) — completed voice turns flow up from the embedded
@@ -900,20 +959,11 @@ const AgentHub = ({
                                     updateDirectChatUrl(match.id);
 
                                     // Fetch notebook content
-                                    try {
-                                        const wsRes = await authFetch(`${API_BASE}/ai/direct/conversations/${match.id}/workspace`);
-                                        if (wsRes.ok) {
-                                            const wsData = await wsRes.json();
-                                            const convContent = wsData.content || '';
-                                            setNotebookLinkedId(wsData.notebookId || null);
-                                            if (convContent.trim().length > 0) {
-                                                setNotebookContent(convContent);
-                                                setShowNotebook(true);
-                                            }
-                                        }
-                                    } catch (wsErr) {
-                                        console.error('Failed to fetch direct notebook from URL:', wsErr);
-                                    }
+                                    await loadWorkspaceNotebook(
+                                        `${API_BASE}/ai/direct/conversations/${match.id}/workspace`,
+                                        { setNotebookLinkedId, setNotebookContent, setShowNotebook },
+                                        { logLabel: 'Failed to fetch direct notebook from URL:' },
+                                    );
                                 }
                             }
                         }
@@ -988,26 +1038,11 @@ const AgentHub = ({
 
                 // Fetch notebook content — always swap to match the selected conversation
                 if (agentId && data.id) {
-                    try {
-                        const wsRes = await authFetch(`${API_BASE}/agents/${agentId}/conversations/${data.id}/workspace`);
-                        if (wsRes.ok) {
-                            const wsData = await wsRes.json();
-                            const convContent = wsData.content || '';
-                            setNotebookLinkedId(wsData.notebookId || null);
-                            if (convContent.trim().length > 0) {
-                                setNotebookContent(convContent);
-                                setShowNotebook(true);
-                            } else {
-                                // New conversation has no notebook — hide and clear
-                                setNotebookContent('');
-                                setShowNotebook(false);
-                            }
-                            setNotebookLastFetchedId(data.id);
-                        }
-                    } catch (e) {
-                        console.error('Failed to fetch notebook', e);
-                        // Don't clear notebook on fetch error — keep existing content
-                    }
+                    await loadWorkspaceNotebook(
+                        `${API_BASE}/agents/${agentId}/conversations/${data.id}/workspace`,
+                        { setNotebookLinkedId, setNotebookContent, setShowNotebook },
+                        { logLabel: 'Failed to fetch notebook' },
+                    );
                 }
 
                 let parsedMessages = [];
@@ -1017,10 +1052,16 @@ const AgentHub = ({
                     parsedMessages = data.messages || [];
                 }
 
+                // Canonicalise FIRST: normalizeLoadedMessages flattens block content
+                // to text (BFSF-307), so everything below can assume a string.
+                parsedMessages = normalizeLoadedMessages(parsedMessages);
+
                 // Filter out tool messages and empty messages - only show user and assistant with content
+                // `system` is dropped too: chatStream injects a tool-loop nudge as a
+                // system turn, and MessageItem only special-cases user/tool, so a
+                // persisted system row renders as an assistant bubble.
                 parsedMessages = parsedMessages.filter(m =>
-                    m.role !== 'tool' &&
-                    ((m.content && typeof m.content === 'string' && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts || (m.attachments && m.attachments.length > 0))
+                    m.role !== 'tool' && m.role !== 'system' && hasRenderableContent(m)
                 );
 
                 // Strip streaming-only progress fields — these are only relevant during live chat
@@ -1033,13 +1074,9 @@ const AgentHub = ({
                     return clean;
                 });
 
-                // Canonicalise thinking shape + deleted flag in one pass.
-                parsedMessages = normalizeLoadedMessages(parsedMessages);
 
                 // Remove messages that became empty after cleanup
-                parsedMessages = parsedMessages.filter(m =>
-                    m.role === 'user' || (m.content && typeof m.content === 'string' && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts
-                );
+                parsedMessages = parsedMessages.filter(m => m.role === 'user' || hasRenderableContent(m));
 
                 setMessages(parsedMessages);
             }
@@ -1252,6 +1289,50 @@ const AgentHub = ({
     // Load projects on mount (only if the feature is enabled for this user)
     useEffect(() => { if (projectsEnabled) loadProjects(); }, [projectsEnabled]);
 
+    /**
+     * Share a conversation into the project it is filed under — or stop.
+     *
+     * Distinct from handleMoveToProject: filing is private bookkeeping, this
+     * publishes the conversation to every project member. It also RE-ENCRYPTS
+     * the messages to a project-held key, which is why the confirm spells the
+     * consequence out rather than asking "are you sure?", and why the server
+     * accepts it only from the conversation's owner (on the zero-knowledge tier
+     * only they hold the key that opens the current ciphertext).
+     */
+    const handleShareToProject = async (conv) => {
+        const projectId = conv.project_id;
+        if (!projectId) return;
+        const type = conv.agent_id ? 'agent' : 'direct';
+        const currentlyShared = conv.shared_scope === 'project';
+
+        if (!currentlyShared && !window.confirm(
+            `${t('projects.share_encryption_warning')}\n\n${t('projects.share_thread')}?`
+        )) return;
+
+        try {
+            const url = `${API_BASE}/api/projects/${projectId}/threads`;
+            const res = currentlyShared
+                ? await authFetch(`${url}/${conv.id}?type=${type}`, { method: 'DELETE' })
+                : await authFetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ conversationId: conv.id, type }),
+                });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                // 403 = not the owner, 503 = the project key is unavailable.
+                // Both are worth stating plainly; neither is a generic failure.
+                window.alert(err.error || t('projects.share_owner_only'));
+                return;
+            }
+            // Refresh so the row picks up its new shared_scope.
+            if (directChatMode) loadDirectConversations();
+            else if (selectedAgent) loadConversations(selectedAgent.id);
+        } catch (e) {
+            window.alert(t('projects.share_owner_only'));
+        }
+    };
+
     const handleMoveToProject = async (conv, targetProject) => {
         try {
             const type = directChatMode ? 'direct' : 'agent';
@@ -1411,6 +1492,11 @@ const AgentHub = ({
         if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
         if (onCloseNotebooks) onCloseNotebooks();
+        // BFSF-267: Legal is the FIRST branch of the main-content ternary, so
+        // while it's open no chat-context navigation (New Chat, Agents, a
+        // conversation, the KB store) could visibly do anything — the user was
+        // stuck until a reload. Mirror the Notebooks close.
+        if (onCloseLegal) onCloseLegal();
         setShowMarketplace(false);
         setShowKBStore(false);
         setActiveKBId(null);
@@ -1464,24 +1550,11 @@ const AgentHub = ({
                 updateDirectChatUrl(conv.id);
 
                 // Fetch notebook content — always swap to match the selected conversation
-                try {
-                    const wsRes = await authFetch(`${API_BASE}/ai/direct/conversations/${conv.id}/workspace`);
-                    if (wsRes.ok) {
-                        const wsData = await wsRes.json();
-                        const convContent = wsData.content || '';
-                        setNotebookLinkedId(wsData.notebookId || null);
-                        if (convContent.trim().length > 0) {
-                            setNotebookContent(convContent);
-                            setShowNotebook(true);
-                        } else {
-                            // New conversation has no notebook — hide and clear
-                            setNotebookContent('');
-                            setShowNotebook(false);
-                        }
-                    }
-                } catch (e) {
-                    console.error('Failed to fetch direct notebook', e);
-                }
+                await loadWorkspaceNotebook(
+                    `${API_BASE}/ai/direct/conversations/${conv.id}/workspace`,
+                    { setNotebookLinkedId, setNotebookContent, setShowNotebook },
+                    { logLabel: 'Failed to fetch direct notebook' },
+                );
             }
         } catch (e) { console.error('Failed to load direct conversation:', e); }
     };
@@ -1719,6 +1792,75 @@ const AgentHub = ({
         );
     }
 
+    // Right-hand split column shared by the agent-chat and direct-chat layouts.
+    // The notebook / gamma-preview / webpage panels are mutually exclusive and
+    // render identically in both modes apart from which conversation id the
+    // notebook binds to (and the onAskAI debug log's mode tag).
+    const renderSidePanels = (mode) => {
+        const conversationId = mode === 'agent'
+            ? currentConversation?.id
+            : currentDirectConversation?.id;
+        return (
+            <>
+                {/* Notebook Pane — sibling split column at all viewport sizes
+                    (mobile uses a separate full-screen layout, not handled here). */}
+                {!isMobile && notebooksEnabled && showNotebook && !showGammaPreview && (
+                    <div className={notebookWrapperClass}>
+                        <WorkspaceNotebook
+                            content={notebookContent}
+                            onChange={setNotebookContent}
+                            onSave={saveNotebook}
+                            onClose={() => setShowNotebook(false)}
+                            onSelectionChange={(text) => { setNotebookSelection(text); }}
+                            onAskAI={(message) => {
+                                if (mode === 'agent') {
+                                    console.log('[Notebook AI] AgentHub.onAskAI -> sendMessage, isLoading=', isLoading, 'mode=agent', 'agent=', selectedAgent?.id);
+                                } else {
+                                    console.log('[Notebook AI] AgentHub.onAskAI -> sendMessage, isLoading=', isLoading, 'mode=direct');
+                                }
+                                sendMessage(message, []);
+                            }}
+                            onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
+                            user={user}
+                            conversationId={conversationId}
+                            existingNotebookId={notebookLinkedId}
+                            onNotebookIdChange={setNotebookLinkedId}
+                        />
+                    </div>
+                )}
+                {!isMobile && showGammaPreview && (
+                    <div className={notebookWrapperClass}>
+                        <GammaPreviewPanel
+                            preview={gammaPreview}
+                            onClose={() => setShowGammaPreview(false)}
+                            onUpdate={setGammaPreview}
+                        />
+                    </div>
+                )}
+                {!isMobile && sidePanelWebpageId && !showNotebook && !showGammaPreview && (
+                    <div className={notebookWrapperClass}>
+                        <SideWebpagePanel
+                            webpageId={sidePanelWebpageId}
+                            onClose={closeWebpagePanel}
+                            user={user}
+                            onLoaded={setSidePanelWebpage}
+                            onFilesLoaded={(files) => {
+                                if (files) setSidePanelWebpageFiles({
+                                    html: files.html || '',
+                                    css: files.css || '',
+                                    js: files.js || '',
+                                });
+                            }}
+                            onSelectionAttach={(sel) => { if (sel?.text) setAttachedWebpageSelection(sel); }}
+                            reloadKey={sidePanelReloadKey}
+                            onNavigate={onNavigate}
+                        />
+                    </div>
+                )}
+            </>
+        );
+    };
+
     return (
         <Suspense fallback={<LazyFallback />}>
         <div className="flex h-full bg-[var(--bg-primary)] overflow-hidden">
@@ -1793,28 +1935,24 @@ const AgentHub = ({
                 activeProject={activeProject}
                 onSelectProject={(p) => setActiveProject(p)}
                 onCreateProject={() => {
-                    if (onCloseSettings) onCloseSettings();
-                    if (onCloseAgentDesigner) onCloseAgentDesigner();
-                    if (onCloseAITasks) onCloseAITasks();
-                    if (onCloseSkillsPanel) onCloseSkillsPanel();
-                    if (onCloseEmailKB) onCloseEmailKB();
-                    setShowMarketplace(false);
-                    setShowKBStore(false); setActiveKBId(null);
-                    setShowProjectsStore(true);
-                    setActiveProjectId('');
+                    // BFSF-267: these hand-rolled subset closes missed Legal
+                    // (and Studio/AgentWizard/Notebooks) — route through the
+                    // single source of truth, then navigate.
+                    closeAllOverlays();
+                    goToProject('');
                 }}
                 onEditProject={(p) => {
-                    if (onCloseSettings) onCloseSettings();
-                    if (onCloseAgentDesigner) onCloseAgentDesigner();
-                    if (onCloseAITasks) onCloseAITasks();
-                    if (onCloseSkillsPanel) onCloseSkillsPanel();
-                    if (onCloseEmailKB) onCloseEmailKB();
-                    setShowMarketplace(false);
-                    setShowKBStore(false); setActiveKBId(null);
-                    setShowProjectsStore(true);
-                    setActiveProjectId(p.id);
+                    closeAllOverlays();
+                    goToProject(p.id);
+                }}
+                onBrowseProjects={() => {
+                    // The list had no way in at all: it only rendered after the
+                    // detail view was closed, and nothing opened it directly.
+                    closeAllOverlays();
+                    goToProject(null);
                 }}
                 onMoveToProject={handleMoveToProject}
+                onShareToProject={handleShareToProject}
                 onRenameConversation={handleRenameConversation}
                 onPinConversation={handlePinConversation}
                 onLabelConversation={handleLabelConversation}
@@ -1900,6 +2038,7 @@ const AgentHub = ({
                         initialStepId={studioRoute.section === 'aiTasks' && studioRoute.routineKind === 'step' ? studioRoute.id : null}
                         initialFlowletKey={studioRoute.section === 'aiTasks' ? (studioRoute.sub || null) : null}
                         initialWebpageId={studioRoute.section === 'webpages' ? studioRoute.id : null}
+                        initialStudioAppId={studioRoute.section === 'apps' ? studioRoute.id : null}
                         onClose={onCloseStudio}
                         onNavigate={onNavigate}
                         modelTiers={modelTiers}
@@ -2014,32 +2153,60 @@ const AgentHub = ({
                         user={user}
                     />
                 ) : (showProjectsStore && activeProjectId !== null) ? (
-                    /* Project detail / create page */
+                    /* Project detail / create page — /app/projects/:id */
                     <ProjectDetailPage
                         projectId={activeProjectId || null}
+                        initialTab={initialProjectRoute?.tab || undefined}
                         user={user}
-                        onClose={() => setActiveProjectId(null)}
+                        onClose={() => goToProject(null)}
+                        onTabChange={(tab) => {
+                            if (activeProjectId) goToProject(activeProjectId, tab);
+                        }}
                         onSaved={(saved) => {
                             loadProjects();
                             // After creating a new project, switch to its edit view.
-                            if (activeProjectId === '' && saved?.id) {
-                                setActiveProjectId(saved.id);
-                            }
+                            if (activeProjectId === '' && saved?.id) goToProject(saved.id);
                         }}
                         onDeleted={(id) => {
                             loadProjects();
                             if (activeProject?.id === id) setActiveProject(null);
-                            setActiveProjectId(null);
+                            goToProject(null);
+                        }}
+                        onOpenThread={(thread) => {
+                            // Opening a shared thread leaves the project page and
+                            // lands in the chat itself, with the project left
+                            // active so its instructions and knowledge apply to
+                            // whatever the member replies.
+                            const proj = projects.find(p => p.id === activeProjectId);
+                            if (proj) setActiveProject(proj);
+                            closeProjects();
+                            if (thread.type === 'agent' && thread.agentId) {
+                                const agent = agents.find(a => a.id === thread.agentId);
+                                if (agent) {
+                                    handleSelectAgent(agent);
+                                    selectConversation(agent.id, thread.id);
+                                }
+                            } else {
+                                setDirectChatMode(true);
+                                handleSelectDirectConversation({ id: thread.id });
+                            }
+                        }}
+                        onOpenResource={(kind, item) => {
+                            // Each of these already has its own destination; the
+                            // project page is a directory, not a second viewer.
+                            if (kind === 'notebook') window.location.assign(`/app/notebooks/${item.id}`);
+                            else if (kind === 'app') window.location.assign(`/app/apps/${item.id}`);
+                            else if (kind === 'automation') window.location.assign(`/app/routines/${item.id}`);
                         }}
                     />
                 ) : showProjectsStore ? (
-                    /* Projects list / browse */
+                    /* Projects list — /app/projects */
                     <ProjectsPage
                         projects={projects}
                         user={user}
-                        onSelectProject={(p) => setActiveProjectId(p.id)}
-                        onCreateProject={() => setActiveProjectId('')}
-                        onClose={() => setShowProjectsStore(false)}
+                        onSelectProject={(p) => goToProject(p.id)}
+                        onCreateProject={() => goToProject('')}
+                        onClose={closeProjects}
                     />
                 ) : selectedAgent ? (
                     <>
@@ -2240,57 +2407,7 @@ const AgentHub = ({
                                 )}
                             </div>
 
-                            {/* Notebook Pane — sibling split column at all viewport sizes
-                                (mobile uses a separate full-screen layout, not handled here). */}
-                            {!isMobile && notebooksEnabled && showNotebook && !showGammaPreview && (
-                                <div className={notebookWrapperClass}>
-                                    <WorkspaceNotebook
-                                        content={notebookContent}
-                                        onChange={setNotebookContent}
-                                        onSave={saveNotebook}
-                                        onClose={() => setShowNotebook(false)}
-                                        onSelectionChange={(text) => { setNotebookSelection(text); }}
-                                        onAskAI={(message) => {
-                                            console.log('[Notebook AI] AgentHub.onAskAI -> sendMessage, isLoading=', isLoading, 'mode=agent', 'agent=', selectedAgent?.id);
-                                            sendMessage(message, []);
-                                        }}
-                                        onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
-                                        user={user}
-                                        conversationId={currentConversation?.id}
-                                        existingNotebookId={notebookLinkedId}
-                                        onNotebookIdChange={setNotebookLinkedId}
-                                    />
-                                </div>
-                            )}
-                            {!isMobile && showGammaPreview && (
-                                <div className={notebookWrapperClass}>
-                                    <GammaPreviewPanel
-                                        preview={gammaPreview}
-                                        onClose={() => setShowGammaPreview(false)}
-                                        onUpdate={setGammaPreview}
-                                    />
-                                </div>
-                            )}
-                            {!isMobile && sidePanelWebpageId && !showNotebook && !showGammaPreview && (
-                                <div className={notebookWrapperClass}>
-                                    <SideWebpagePanel
-                                        webpageId={sidePanelWebpageId}
-                                        onClose={closeWebpagePanel}
-                                        user={user}
-                                        onLoaded={setSidePanelWebpage}
-                                        onFilesLoaded={(files) => {
-                                            if (files) setSidePanelWebpageFiles({
-                                                html: files.html || '',
-                                                css: files.css || '',
-                                                js: files.js || '',
-                                            });
-                                        }}
-                                        onSelectionAttach={(sel) => { if (sel?.text) setAttachedWebpageSelection(sel); }}
-                                        reloadKey={sidePanelReloadKey}
-                                        onNavigate={onNavigate}
-                                    />
-                                </div>
-                            )}
+                            {renderSidePanels('agent')}
                         </div>
                     </>
                 ) : directChatMode ? (
@@ -2462,57 +2579,7 @@ const AgentHub = ({
                                 )}
                             </div>
 
-                            {/* Notebook Pane — sibling split column at all viewport sizes
-                                (mobile uses a separate full-screen layout, not handled here). */}
-                            {!isMobile && notebooksEnabled && showNotebook && !showGammaPreview && (
-                                <div className={notebookWrapperClass}>
-                                    <WorkspaceNotebook
-                                        content={notebookContent}
-                                        onChange={setNotebookContent}
-                                        onSave={saveNotebook}
-                                        onClose={() => setShowNotebook(false)}
-                                        onSelectionChange={(text) => { setNotebookSelection(text); }}
-                                        onAskAI={(message) => {
-                                            console.log('[Notebook AI] AgentHub.onAskAI -> sendMessage, isLoading=', isLoading, 'mode=direct');
-                                            sendMessage(message, []);
-                                        }}
-                                        onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
-                                        user={user}
-                                        conversationId={currentDirectConversation?.id}
-                                        existingNotebookId={notebookLinkedId}
-                                        onNotebookIdChange={setNotebookLinkedId}
-                                    />
-                                </div>
-                            )}
-                            {!isMobile && showGammaPreview && (
-                                <div className={notebookWrapperClass}>
-                                    <GammaPreviewPanel
-                                        preview={gammaPreview}
-                                        onClose={() => setShowGammaPreview(false)}
-                                        onUpdate={setGammaPreview}
-                                    />
-                                </div>
-                            )}
-                            {!isMobile && sidePanelWebpageId && !showNotebook && !showGammaPreview && (
-                                <div className={notebookWrapperClass}>
-                                    <SideWebpagePanel
-                                        webpageId={sidePanelWebpageId}
-                                        onClose={closeWebpagePanel}
-                                        user={user}
-                                        onLoaded={setSidePanelWebpage}
-                                        onFilesLoaded={(files) => {
-                                            if (files) setSidePanelWebpageFiles({
-                                                html: files.html || '',
-                                                css: files.css || '',
-                                                js: files.js || '',
-                                            });
-                                        }}
-                                        onSelectionAttach={(sel) => { if (sel?.text) setAttachedWebpageSelection(sel); }}
-                                        reloadKey={sidePanelReloadKey}
-                                        onNavigate={onNavigate}
-                                    />
-                                </div>
-                            )}
+                            {renderSidePanels('direct')}
                         </div>
                     </>
                 ) : (

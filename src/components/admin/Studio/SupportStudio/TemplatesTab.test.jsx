@@ -2,11 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import TemplatesTab from './TemplatesTab';
 import { authFetch } from '../../../../utils/helpers';
+import { ok } from '@/test/http';
 
 vi.mock('../../../../utils/helpers', () => ({ API_BASE: '', authFetch: vi.fn() }));
-vi.mock('../../../../hooks/useTranslation', () => ({ default: () => ({ t: (_k, fallback) => fallback || _k }) }));
-
-const ok = (body) => Promise.resolve({ ok: true, json: async () => body });
+vi.mock('../../../../hooks/useTranslation', () => import('@/test/useTranslationMock'));
 
 describe('TemplatesTab', () => {
     beforeEach(() => { cleanup(); authFetch.mockReset(); });

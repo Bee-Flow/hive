@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import IconButton from '../../../components/shared/IconButton';
 import { formatDuration, formatRelativeDate } from '../lib/format';
+import { getSourceMeta } from '../lib/sourceMeta';
 
 export default function MeetingHeader({
     meeting,
@@ -21,6 +22,8 @@ export default function MeetingHeader({
     onRemoveTag,
     busy,
     publishMenuSlot = null,
+    // Derived server-side: no audio and nothing to recover it from.
+    audioGone = false,
 }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(meeting.title || '');
@@ -28,6 +31,7 @@ export default function MeetingHeader({
     const menuRef = useRef(null);
     const [tagDraft, setTagDraft] = useState('');
     const [showTagInput, setShowTagInput] = useState(false);
+    const sourceMeta = getSourceMeta(meeting.source);
 
     useEffect(() => { setDraft(meeting.title || ''); }, [meeting.id, meeting.title]);
 
@@ -92,6 +96,20 @@ export default function MeetingHeader({
                         {meeting.language && (
                             <span className="inline-flex items-center gap-1"><Languages className="w-3 h-3" />{String(meeting.language).toUpperCase()}</span>
                         )}
+                        {sourceMeta && (
+                            <span
+                                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border"
+                                title={sourceMeta.title}
+                                style={{
+                                    color: sourceMeta.color,
+                                    borderColor: `color-mix(in srgb, ${sourceMeta.color} 35%, transparent)`,
+                                    background: `color-mix(in srgb, ${sourceMeta.color} 12%, transparent)`,
+                                }}
+                            >
+                                <sourceMeta.Icon className="w-3 h-3" />
+                                {sourceMeta.label}
+                            </span>
+                        )}
                         {meeting.provider && (
                             <span className="px-1.5 py-0.5 rounded-full" style={{ background: 'var(--bg-tertiary)' }}>{meeting.provider}</span>
                         )}
@@ -124,7 +142,17 @@ export default function MeetingHeader({
                                 )}
                                 <MenuItem icon={Download} label="Export as Markdown" onClick={() => { setMenuOpen(false); onExport?.('md'); }} />
                                 <MenuItem icon={Download} label="Export as Text" onClick={() => { setMenuOpen(false); onExport?.('txt'); }} />
-                                <MenuItem icon={RefreshCw} label="Re-transcribe" onClick={() => { setMenuOpen(false); onReprocess?.(); }} disabled={busy} />
+                                {/* Disabled when the audio is gone for good. Leaving it
+                                    enabled is what produced the original complaint: a
+                                    click, a spinner, then an alert telling the user to
+                                    upload a file that never existed. */}
+                                <MenuItem
+                                    icon={RefreshCw}
+                                    label="Re-transcribe"
+                                    onClick={() => { setMenuOpen(false); onReprocess?.(); }}
+                                    disabled={busy || audioGone}
+                                    title={audioGone ? 'The audio for this meeting is no longer available' : undefined}
+                                />
                                 {meeting.isOwner !== false && (
                                     <MenuItem icon={Trash2} label="Delete" danger onClick={() => { setMenuOpen(false); onDelete?.(); }} />
                                 )}
@@ -179,12 +207,13 @@ export default function MeetingHeader({
     );
 }
 
-function MenuItem({ icon: Icon, label, onClick, danger, disabled }) {
+function MenuItem({ icon: Icon, label, onClick, danger, disabled, title }) {
     return (
         <button
             type="button"
             onClick={onClick}
             disabled={disabled}
+            title={title}
             className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors disabled:opacity-50"
             style={{
                 color: danger ? '#ef4444' : 'var(--text-primary)',

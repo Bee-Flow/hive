@@ -4,6 +4,7 @@ import { astToMarkdown } from '../serialization/astToMd.js';
 import { createState, applyTransform } from './state.js';
 import { textSelection, pos } from './selection.js';
 import * as T from './transforms.js';
+import { makeTable } from './tables.js';
 
 const stateFrom = (md) => createState(markdownToAst(md));
 const toMd = (state) => astToMarkdown(state.doc).trim();
@@ -139,5 +140,51 @@ describe('atom insertion', () => {
     s = applyTransform(s, (x) => T.insertBlockNode(x, { type: 'image', attrs: { src: 'x.png' } }));
     expect(s.selection.type).toBe('node');
     expect(toMd(s)).toContain('![](x.png)');
+  });
+});
+
+describe('tables inserted inside a cell route after the host table (S8)', () => {
+  const tableMd = '| a | b |\n| - | - |\n| 1 | 2 |';
+  const cellsContainType = (tblNode, type) => (tblNode.content || []).some(
+    (r) => (r.content || []).some((c) => JSON.stringify(c).includes(`"${type}"`)),
+  );
+
+  it('insideTableCell detects cell descendants only', () => {
+    const s = stateFrom(tableMd);
+    expect(T.insideTableCell(s.doc, [0, 1, 0, 0])).toBe(true);   // paragraph in a cell
+    expect(T.insideTableCell(s.doc, [0])).toBe(false);           // the table itself
+    const p = stateFrom('plain');
+    expect(T.insideTableCell(p.doc, [0])).toBe(false);
+  });
+
+  it('insertBlockNode(table) with the caret in a cell lands after the table', () => {
+    let s = sel(stateFrom(tableMd), pos([0, 1, 0, 0], 1));
+    s = applyTransform(s, (x) => T.insertBlockNode(x, makeTable(2, 2, true)));
+    expect(s.doc.content.filter((n) => n.type === 'table')).toHaveLength(2);
+    expect(cellsContainType(s.doc.content[0], 'table')).toBe(false);  // no nesting
+    expect(s.doc.content[1].type).toBe('table');
+    // Caret continues inside the NEW table, not in the host cell.
+    expect(s.selection.type).toBe('text');
+    expect(s.selection.anchor.path[0]).toBe(1);
+  });
+
+  it('insertBlocks with a table among the blocks routes ALL of them after the table', () => {
+    let s = sel(stateFrom(tableMd), pos([0, 1, 0, 0], 1));
+    const blocks = [
+      { type: 'paragraph', content: [{ type: 'text', text: 'caption' }] },
+      makeTable(2, 2, false),
+    ];
+    s = applyTransform(s, (x) => T.insertBlocks(x, blocks));
+    expect(s.doc.content.slice(0, 3).map((n) => n.type)).toEqual(['table', 'paragraph', 'table']);
+    expect(cellsContainType(s.doc.content[0], 'table')).toBe(false);
+    // The host cell kept its own text; the caption did not leak into it.
+    expect(JSON.stringify(s.doc.content[0])).not.toContain('caption');
+    expect(s.doc.content[1].content[0].text).toBe('caption');
+  });
+
+  it('a table insert with the caret OUTSIDE any cell is unchanged behaviour', () => {
+    let s = sel(stateFrom('para'), pos([0], 4));
+    s = applyTransform(s, (x) => T.insertBlockNode(x, makeTable(2, 2, true)));
+    expect(s.doc.content[1].type).toBe('table');
   });
 });

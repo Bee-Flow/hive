@@ -1,20 +1,26 @@
-import React, { useState } from 'react';
-import { Bot, Sparkles, ListChecks, BookOpen, Globe, Bug, ShieldAlert, Mic, LifeBuoy, Target } from 'lucide-react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
-import AgentStudio from '../AgentStudio';
-import AITasksDesigner from '../AITasksDesigner';
-import SkillsStudio from './SkillsStudio';
-import KBsStudio from './KBsStudio';
-import WebpagesPage from '../../../pages/WebpagesPage';
-import TestsStudio from './TestsStudio';
-import SecurityStudio from './SecurityStudio';
-import SupportStudio from './SupportStudio';
-import LeadStudio from './LeadStudio';
-import MeetingNotesPage from '../../../pages/meeting-notes/MeetingNotesPage';
 import { useLicenseContext } from '../../LicenseContext';
+import { useEntitlements } from '../../EntitlementsContext';
+import { useRuntimeStudioApps } from '../../../moduleRuntime/registry';
+import { STUDIO_APPS, makeCanUse } from './studioApps';
 
-// Unified Studio: a single shell hosting Agents, Skills, Knowledge Bases, and AI Tasks.
-// All sections share a sidebar-list + editor-right split layout.
+// Unified Studio: a single shell hosting Agents, Skills, Knowledge Bases, and
+// AI Tasks. All sections share a sidebar-list + editor-right split layout.
+// The tab list, gating and per-app props all come from the studioApps.jsx
+// registry; each app loads as its own lazy chunk.
+
+// Local Suspense fallback (same spinner as AgentHub's LazyFallback). Must stay
+// local: without a boundary here, the first visit to a lazy tab would suspend
+// the whole hub instead of just the section pane.
+function StudioSectionLoading() {
+    return (
+        <div className="flex items-center justify-center w-full h-full">
+            <div className="w-6 h-6 rounded-full border-2 border-[var(--border-default)] border-t-[var(--accent-primary)] animate-spin" />
+        </div>
+    );
+}
+
 export default function Studio({
     user,
     section = 'agents',     // 'agents' | 'skills' | 'knowledge' | 'aiTasks' | 'webpages'
@@ -25,103 +31,90 @@ export default function Studio({
     initialStepId = null,
     initialFlowletKey = null,
     initialWebpageId = null,
+    initialStudioAppId = null,
     onClose,
     onNavigate,
     hasPermission = () => true,
     modelTiers = {},
     onEditingChange,
 }) {
-    const { t } = useTranslation();
+    const { t, locale } = useTranslation();
     const { hasFeature: hasLicenseFeature } = useLicenseContext();
-    const [agentEditing, setAgentEditing] = useState(false);
-    const [automationEditing, setAutomationEditing] = useState(false);
-    const editing = agentEditing || automationEditing;
-    const handleAgentEditing = (next) => {
-        setAgentEditing(next);
-        onEditingChange?.(next || automationEditing);
-    };
-    const handleAutomationEditing = (next) => {
-        setAutomationEditing(next);
-        onEditingChange?.(next || agentEditing);
-    };
+    // Runtime (remotely-installed) modules contribute extra Studio apps. They
+    // merge AFTER the build-time apps and gate purely on the entitlement
+    // capability (server is authoritative — this is display-only).
+    const { can } = useEntitlements();
+    const runtimeApps = useRuntimeStudioApps();
+    const allApps = useMemo(() => [...STUDIO_APPS, ...runtimeApps], [runtimeApps]);
+    // Per-app fullscreen-editing flags (Agents + Routines report these). The
+    // tab bar hides while ANY app is editing; onEditingChange fires with the
+    // aggregate, computed against the render-scope map — same semantics as the
+    // old per-app handlers (only the mounted app ever reports in a tick).
+    const [editingById, setEditingById] = useState({});
+    const editing = Object.values(editingById).some(Boolean);
+    // The `setEditing` prop handed to the active app (below) is a fresh arrow
+    // function every render (it closes over `activeApp.id`), so any child
+    // effect keyed on that prop's identity re-fires every render. Without a
+    // no-op guard here, that re-fire calls reportEditing → setEditingById with
+    // a new object → Studio re-renders → new setEditing → the child's effect
+    // deps change again → infinite render loop (React error #185, seen on
+    // /app/studio/routines). Bailing out (returning the SAME object) when the
+    // value hasn't actually changed makes React skip the re-render and stops
+    // the cascade regardless of how often the child's unstable-prop effect
+    // re-invokes us with the same value.
+    const reportEditing = useCallback((appId, next) => {
+        const nextVal = !!next;
+        setEditingById(prev => (prev[appId] === nextVal ? prev : { ...prev, [appId]: nextVal }));
+    }, []);
+    // Notify the parent only when the AGGREGATE boolean actually flips — not
+    // on every render — using a ref for the callback so an unstable
+    // `onEditingChange` identity from the parent can't retrigger this either.
+    const onEditingChangeRef = useRef(onEditingChange);
+    useEffect(() => { onEditingChangeRef.current = onEditingChange; });
+    useEffect(() => { onEditingChangeRef.current?.(editing); }, [editing]);
 
-    // Webpages tab: licence feature is authoritative. canUseFeature is the
-    // server-derived intersection of licence × beta and includes webpages
-    // automatically when the tier matches, but we re-check the licence
-    // explicitly so a stale session can't keep the tab visible after a
-    // downgrade.
-    const canSeeWebpages = hasLicenseFeature('webpages') && !!(user?.canUseFeature?.webpages ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages')));
-    // Mirrors the canSeeWebpages pattern — playwright_tests is enterprise-tier
-    // + beta-opt-in. canUseFeature already does the AND on the server side.
-    const canSeeTests = hasLicenseFeature('playwright_tests') && !!(user?.canUseFeature?.playwright_tests ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('playwright_tests')));
-    // Security Scan — enterprise + beta opt-in (mirrors canSeeTests). Beta-only;
-    // the server-resolved canUseFeature is authoritative.
-    const canSeeSecurity = hasLicenseFeature('security_scan') && !!(user?.canUseFeature?.security_scan ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('security_scan')));
-    // Meeting Notes is enterprise + beta opt-in (mirrors webpages/tests). We
-    // intentionally rely on canUseFeature (server-resolved license × beta)
-    // rather than spot-checking betaFeatures so super-admin grants flow
-    // correctly down to ordinary org members.
-    const canSeeMeetingNotes = hasLicenseFeature('meeting_notes') && !!(user?.canUseFeature?.meeting_notes ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('meeting_notes')));
-    // Support Studio — enterprise + beta opt-in (license × beta via canUseFeature)
-    // AND the org-level support_inbox permission (the inbox is gated per member,
-    // not just per org). hasPermission resolves the user's effective permissions.
-    const canSeeSupport = hasLicenseFeature('support_inbox')
-        && !!(user?.canUseFeature?.support_inbox ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('support_inbox')))
-        && (hasPermission('support_inbox') || hasPermission('all'));
-    // Lead Studio — enterprise + beta opt-in (license × beta via canUseFeature).
-    // Gated purely on license × beta like Security/Tests/Webpages — NO separate
-    // per-member permission (enabling the beta for the org is enough to see it).
-    const canSeeLeadStudio = hasLicenseFeature('lead_studio')
-        && !!(user?.canUseFeature?.lead_studio ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('lead_studio')));
-    // BFSF-226: the AI Tasks tab (Routines + Automations) was previously shown
-    // unconditionally, so restricted/Free-tier orgs saw a feature the backend
-    // 403s and the admin panel flags as "Blocked". Gate it like the siblings:
-    // visible when the plan grants *either* routines or automations. The
-    // canUseFeature map is the server-resolved licence × beta intersection;
-    // hasLicenseFeature re-checks the licence so a stale session can't keep the
-    // tab after a downgrade. AITasksDesigner keeps its own internal guards.
-    const canUse = (id) => !!(user?.canUseFeature?.[id] ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes(id)));
-    const canSeeRoutines = (hasLicenseFeature('agent_routines') && canUse('agent_routines'))
-        || (hasLicenseFeature('automations') && canUse('automations'));
-    const tabs = [
-        { id: 'agents',    label: t('studio.tab.agents'),    icon: <Bot size={14} /> },
-        { id: 'skills',    label: t('studio.tab.skills'),    icon: <Sparkles size={14} /> },
-        { id: 'knowledge', label: t('studio.tab.knowledge'), icon: <BookOpen size={14} /> },
-        ...(canSeeRoutines ? [{ id: 'aiTasks', label: t('studio.tab.ai_tasks'), icon: <ListChecks size={14} /> }] : []),
-        ...(canSeeWebpages ? [{ id: 'webpages', label: t('studio.tab.webpages') || 'Webpages', icon: <Globe size={14} /> }] : []),
-        ...(canSeeTests ? [{ id: 'tests', label: t('studio.tab.tests') || 'Tests', icon: <Bug size={14} /> }] : []),
-        ...(canSeeSecurity ? [{ id: 'security', label: t('studio.tab.security') || 'Security Scan', icon: <ShieldAlert size={14} /> }] : []),
-        ...(canSeeSupport ? [{ id: 'support', label: t('studio.tab.support') || 'Support', icon: <LifeBuoy size={14} /> }] : []),
-        ...(canSeeLeadStudio ? [{ id: 'leadStudio', label: t('studio.tab.lead_studio') || 'Lead Studio', icon: <Target size={14} /> }] : []),
-        ...(canSeeMeetingNotes ? [{ id: 'meetingNotes', label: t('studio.tab.meeting_notes') || 'Meeting Notes', icon: <Mic size={14} /> }] : []),
-    ];
+    const canUse = makeCanUse(user);
+    const gateCtx = { user, hasLicenseFeature, hasPermission, canUse, can };
+    const visibleApps = allApps.filter((app) => app.gate(gateCtx));
 
-    const switchTo = (id) => {
+    const switchTo = (app) => {
         if (!onNavigate) return;
-        const seg = id === 'aiTasks' ? 'routines'
-            : id === 'meetingNotes' ? 'meeting-notes'
-            : id === 'leadStudio' ? 'lead-studio'
-            : id;
-        onNavigate(`studio/${seg}`);
+        onNavigate(`studio/${app.urlSegment}`);
     };
+
+    // Tab label: runtime apps carry a locale-aware label() function; built-in
+    // apps use their i18n key (with the historical literal fallback).
+    const tabLabel = (app) => (typeof app.label === 'function'
+        ? app.label(t, locale)
+        : (app.labelFallback ? (t(app.labelKey) || app.labelFallback) : t(app.labelKey)));
+
+    // The active section renders even when its gate is false — the server
+    // 403s the data, matching the pre-registry behaviour.
+    const activeApp = allApps.find((app) => app.id === section) || null;
+    const ActiveComponent = activeApp?.Component;
+    // Stable per-app-id identity (only changes when the active tab does) so
+    // a child effect keyed on this prop's reference doesn't re-fire every
+    // Studio render — belt-and-braces alongside the no-op guard above.
+    const setEditing = useCallback((next) => reportEditing(activeApp?.id, next), [activeApp?.id, reportEditing]);
 
     return (
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
             {/* Top sub-nav — hidden in any fullscreen edit mode */}
             {!editing && (
             <div className="flex items-center gap-1 px-4 py-2 border-b border-[var(--border-default)]">
-                {tabs.map((tab) => {
-                    const active = section === tab.id;
+                {visibleApps.map((app) => {
+                    const active = section === app.id;
+                    const { Icon } = app;
                     return (
                         <button
-                            key={tab.id}
-                            onClick={() => switchTo(tab.id)}
+                            key={app.id}
+                            onClick={() => switchTo(app)}
                             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition ${active
                                 ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)] font-medium'
                                 : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
                         >
-                            {tab.icon}
-                            {tab.label}
+                            <Icon size={14} />
+                            {tabLabel(app)}
                         </button>
                     );
                 })}
@@ -130,90 +123,27 @@ export default function Studio({
 
             {/* Sub-section */}
             <div className="flex-1 min-h-0">
-                {section === 'agents' && (
-                    <AgentStudio
-                        user={user}
-                        initialAgentId={initialAgentId}
-                        onClose={onClose}
-                        onNavigate={onNavigate}
-                        hasPermission={hasPermission}
-                        onEditingChange={handleAgentEditing}
-                    />
-                )}
-                {section === 'skills' && (
-                    <SkillsStudio
-                        user={user}
-                        initialSkillId={initialSkillId}
-                        onNavigate={onNavigate}
-                        hasPermission={hasPermission}
-                    />
-                )}
-                {section === 'knowledge' && (
-                    <KBsStudio
-                        user={user}
-                        initialKbId={initialKbId}
-                        onNavigate={onNavigate}
-                        hasPermission={hasPermission}
-                    />
-                )}
-                {section === 'webpages' && (
-                    <WebpagesPage
-                        user={user}
-                        initialWebpageId={initialWebpageId}
-                        onWebpageChange={(id) => onNavigate && onNavigate(id ? `studio/webpages/${id}` : 'studio/webpages')}
-                        embedded
-                        hasPermission={hasPermission}
-                    />
-                )}
-                {section === 'aiTasks' && (
-                    <AITasksDesigner
-                        initialTaskId={initialTaskId}
-                        initialStepId={initialStepId}
-                        initialFlowletKey={initialFlowletKey}
-                        onClose={onClose}
-                        onNavigate={onNavigate}
-                        modelTiers={modelTiers}
-                        embedded={true}
-                        user={user}
-                        onEditingChange={handleAutomationEditing}
-                    />
-                )}
-                {section === 'tests' && (
-                    <TestsStudio
-                        user={user}
-                        onNavigate={onNavigate}
-                        hasPermission={hasPermission}
-                    />
-                )}
-                {section === 'security' && (
-                    <SecurityStudio
-                        user={user}
-                        onNavigate={onNavigate}
-                        hasPermission={hasPermission}
-                        modelTiers={modelTiers}
-                    />
-                )}
-                {section === 'support' && (
-                    <SupportStudio
-                        user={user}
-                        onNavigate={onNavigate}
-                        hasPermission={hasPermission}
-                    />
-                )}
-                {section === 'leadStudio' && (
-                    <LeadStudio
-                        user={user}
-                        onNavigate={onNavigate}
-                        hasPermission={hasPermission}
-                        modelTiers={modelTiers}
-                    />
-                )}
-                {section === 'meetingNotes' && (
-                    <MeetingNotesPage
-                        user={user}
-                        embedded
-                        onBack={null}
-                    />
+                {activeApp && (
+                    <Suspense fallback={<StudioSectionLoading />}>
+                        <ActiveComponent
+                            {...activeApp.getProps({
+                                user,
+                                initialAgentId,
+                                initialSkillId,
+                                initialKbId,
+                                initialTaskId,
+                                initialStepId,
+                                initialFlowletKey,
+                                initialWebpageId,
+                                initialStudioAppId,
+                                onClose,
+                                onNavigate,
+                                hasPermission,
+                                modelTiers,
+                                setEditing,
+                            })}
+                        />
+                    </Suspense>
                 )}
             </div>
         </div>

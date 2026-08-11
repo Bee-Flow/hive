@@ -1,5 +1,6 @@
 import React from 'react';
-import { Download, History, AlertCircle, Loader2, Check } from 'lucide-react';
+import { Download, History } from 'lucide-react';
+import SaveStatus from './SaveStatus';
 
 const LANG_LABELS = { html: 'HTML', css: 'CSS', js: 'JavaScript' };
 
@@ -30,14 +31,6 @@ function fmtSize(bytes) {
     return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-function fmtTime(date) {
-    if (!date) return '';
-    const diff = (Date.now() - date.getTime()) / 1000;
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    return `${Math.floor(diff / 3600)}h ago`;
-}
-
 export default function StatusBar({
     activeFile,
     cursor,          // { line, col }
@@ -46,6 +39,7 @@ export default function StatusBar({
     lastSavedAt,
     onDownload,
     onVersions,
+    onRetrySave,
 }) {
     return (
         <div
@@ -53,11 +47,7 @@ export default function StatusBar({
             style={{ height: 22, background: 'var(--vsc-statusbar-bg)', color: 'var(--vsc-statusbar-fg)' }}
         >
             {/* Save state */}
-            <span className="flex items-center gap-1">
-                {saveState === 'saving' && <><Loader2 size={10} className="animate-spin" /> Saving…</>}
-                {saveState === 'error'  && <><AlertCircle size={10} /> Save failed</>}
-                {saveState === 'saved'  && <><Check size={10} /> Saved {fmtTime(lastSavedAt)}</>}
-            </span>
+            <SaveStatus saveState={saveState} lastSavedAt={lastSavedAt} onRetry={onRetrySave} size={11} />
 
             <span style={{ opacity: 0.4 }}>|</span>
 

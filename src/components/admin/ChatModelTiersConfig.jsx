@@ -1,18 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { API_BASE, authFetch } from '../../utils/helpers';
+import React, { useState, useEffect } from 'react';
+import SearchableModelSelect from './shared/SearchableModelSelect';
 import beeFlowIcon from '../../assets/BeeFlow-logo-Icon-2026.svg';
-
-// Convert a model ID into a human-readable display name
-const formatModelId = (id) => {
-    if (!id) return id;
-    // Strip date suffixes like -20251101 or -2411
-    let name = id.replace(/-\d{6,8}$/, '').replace(/-\d{4}$/, '');
-    // Split on hyphens, capitalize each part
-    return name.split('-').map(part => {
-        if (/^\d/.test(part)) return part; // Keep version numbers as-is
-        return part.charAt(0).toUpperCase() + part.slice(1);
-    }).join(' ');
-};
+import { API_BASE, authFetch } from '../../utils/helpers';
+import { getModelDisplayName } from '../../utils/modelMeta';
 
 // Reuse model metadata from AIConfigPanel
 const getModelMeta = (id) => {
@@ -27,23 +17,14 @@ const getModelMeta = (id) => {
     return null;
 };
 
-// Get the best display name for a model, using multiple fallbacks
-const getDisplayName = (model) => {
-    const meta = getModelMeta(model.id);
-    if (meta?.name) return meta.name;
-    // Use server-provided name if it differs from the raw ID
-    if (model.name && model.name !== model.id) return model.name;
-    // Auto-format from ID as a last resort
-    return formatModelId(model.id);
-};
-
 // Detect models that support OpenAI reasoning settings
 const isReasoningCapable = (modelId) => {
     if (!modelId) return false;
-    if (/^o\d/.test(modelId)) return true;                       // o1, o3, o4-mini, etc.
-    if (/^gpt-5/.test(modelId)) return true;                     // GPT-5 family
-    if (/^claude-haiku-4-5/.test(modelId)) return false;         // Haiku 4.5: no adaptive thinking
-    if (/^claude-(opus|sonnet)-4/.test(modelId)) return true;    // Claude Opus/Sonnet 4.x
+    if (/^o\d/.test(modelId)) return true;                          // o1, o3, o4-mini, etc.
+    if (/^gpt-5/.test(modelId)) return true;                        // GPT-5 family
+    if (/^claude-haiku-4-5/.test(modelId)) return false;            // Haiku 4.5: no adaptive thinking
+    if (/^claude-(opus|sonnet)-[45]/.test(modelId)) return true;    // Claude Opus/Sonnet 4.x & 5.x
+    if (/^claude-(fable|mythos)/.test(modelId)) return true;        // Fable/Mythos 5 (always-on thinking)
     return false;
 };
 
@@ -51,11 +32,13 @@ const isReasoningCapable = (modelId) => {
 const isClaudeReasoning = (modelId) => {
     if (!modelId) return false;
     if (/^claude-haiku-4-5/.test(modelId)) return false;
-    return /^claude-(opus|sonnet)-4/.test(modelId);
+    return /^claude-(opus|sonnet)-[45]/.test(modelId) || /^claude-(fable|mythos)/.test(modelId);
 };
 
-// Opus 4.7 exposes an additional 'xhigh' effort level between 'high' and 'max'
-const isClaudeOpus47 = (modelId) => /^claude-opus-4-7/.test(modelId || '');
+// Adaptive-only Claude family: rejects a manual thinking budget and exposes the
+// 'xhigh' effort level — Opus 4.7/4.8, Sonnet 5, Fable/Mythos 5. (Opus 4.6 /
+// Sonnet 4.6 still accept a fixed budget.)
+const isClaudeAdaptiveOnly = (modelId) => /^claude-(opus-4-[78]|sonnet-5|fable-5|mythos)/.test(modelId || '');
 
 // Any Claude model (used to show Claude-specific tier settings inline)
 const isClaudeModel = (modelId) => /^claude-/.test(modelId || '');
@@ -109,8 +92,11 @@ const MODEL_META = {
     'o3-mini': { name: 'o3 Mini', cat: 'Reasoning' },
     'o4-mini': { name: 'o4 Mini', cat: 'Reasoning' },
     // Claude
+    'claude-fable-5': { name: 'Claude Fable 5', cat: 'Reasoning' },
+    'claude-opus-4-8': { name: 'Claude Opus 4.8', cat: 'Reasoning' },
     'claude-opus-4-7': { name: 'Claude Opus 4.7', cat: 'Reasoning' },
     'claude-opus-4-6': { name: 'Claude Opus 4.6', cat: 'Reasoning' },
+    'claude-sonnet-5': { name: 'Claude Sonnet 5', cat: 'Generalist' },
     'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', cat: 'Generalist' },
     'claude-haiku-4-5': { name: 'Claude Haiku 4.5', cat: 'Generalist' },
 };
@@ -161,10 +147,10 @@ const CLAUDE_RECOMMENDED = {
         note: 'Per-agent depth handled by the swarm runtime.',
     },
     thinking: {
-        modelId: 'claude-sonnet-4-6',
-        maxTokens: 32768, temperature: 0.7,
-        reasoningEffort: 'medium', reasoningSummary: true, budgetTokens: 10000,
-        note: 'Extended thinking with 10K budget → guaranteed ~22K output.',
+        modelId: 'claude-sonnet-5',
+        maxTokens: 32768, temperature: 1,
+        reasoningEffort: 'medium', reasoningSummary: true, budgetTokens: undefined,
+        note: 'Sonnet 5 adaptive-only — Effort controls thinking depth (no manual budget).',
     },
     writer: {
         modelId: 'claude-sonnet-4-6',
@@ -201,334 +187,6 @@ const slugifyTierLabel = (label) => {
     return slug ? `custom:${slug}` : '';
 };
 
-
-/** Searchable model selector — full-screen overlay with filters */
-const SearchableModelSelect = ({ value, label, groups, getModelMeta, onChange, hiddenIds = [], onToggleHidden }) => {
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState('');
-    const [activeProvider, setActiveProvider] = useState(null);   // null = all
-    const [activeFamily, setActiveFamily] = useState(null);       // null = all
-    const [showHidden, setShowHidden] = useState(false);
-    const inputRef = useRef(null);
-    const hiddenSet = new Set(hiddenIds);
-
-    // Focus search input when opening
-    useEffect(() => {
-        if (open && inputRef.current) {
-            setTimeout(() => inputRef.current?.focus(), 50);
-        }
-    }, [open]);
-
-    // Close on Escape
-    useEffect(() => {
-        if (!open) return;
-        const handler = (e) => { if (e.key === 'Escape') setOpen(false); };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, [open]);
-
-    // Detect model family from ID
-    const getFamily = (modelId) => {
-        if (/^gpt-5/.test(modelId)) return 'GPT-5';
-        if (/^gpt-4\.1/.test(modelId)) return 'GPT-4.1';
-        if (/^gpt-4o/.test(modelId)) return 'GPT-4o';
-        if (/^gpt-4/.test(modelId)) return 'GPT-4';
-        if (/^o\d/.test(modelId)) return 'o-series';
-        if (/^mistral-large/.test(modelId)) return 'Mistral Large';
-        if (/^mistral-medium/.test(modelId)) return 'Mistral Medium';
-        if (/^mistral-small/.test(modelId)) return 'Mistral Small';
-        if (/^magistral/.test(modelId)) return 'Magistral';
-        if (/^codestral/.test(modelId)) return 'Codestral';
-        if (/^devstral/.test(modelId)) return 'Devstral';
-        if (/^pixtral/.test(modelId)) return 'Pixtral';
-        if (/^ministral/.test(modelId)) return 'Ministral';
-        if (/^mistral/.test(modelId)) return 'Mistral Other';
-        return 'Other';
-    };
-
-    // Build provider list and family list from all models
-    const providerNames = Object.keys(groups);
-    const allFamilies = new Set();
-    Object.values(groups).flat().forEach(m => allFamilies.add(getFamily(m.id)));
-    const familyList = [...allFamilies].sort();
-
-    // Filter models by search + provider + family + hidden state
-    const lowerSearch = search.toLowerCase();
-    const filteredGroups = {};
-    Object.entries(groups).forEach(([provName, models]) => {
-        // Provider filter
-        if (activeProvider && provName !== activeProvider) return;
-        const filtered = models.filter(m => {
-            // Hidden filter — always show the currently selected model so
-            // the picker doesn't lie about its own state, but otherwise
-            // hide blocked models unless "Show hidden" is on.
-            if (hiddenSet.has(m.id) && m.id !== value && !showHidden) return false;
-            // Family filter
-            if (activeFamily && getFamily(m.id) !== activeFamily) return false;
-            // Text search
-            if (!lowerSearch) return true;
-            const meta = getModelMeta(m.id);
-            const name = meta?.name || '';
-            const cat = meta?.cat || '';
-            return m.id.toLowerCase().includes(lowerSearch)
-                || name.toLowerCase().includes(lowerSearch)
-                || cat.toLowerCase().includes(lowerSearch);
-        });
-        if (filtered.length > 0) filteredGroups[provName] = filtered;
-    });
-    const totalResults = Object.values(filteredGroups).reduce((s, a) => s + a.length, 0);
-    const hiddenCount = hiddenIds.length;
-
-    return (
-        <>
-            {/* Trigger button */}
-            <button
-                type="button"
-                onClick={() => { setOpen(true); setSearch(''); setActiveProvider(null); setActiveFamily(null); }}
-                className="w-full px-3 py-2.5 rounded-lg border outline-none text-sm text-left flex items-center justify-between transition-colors hover:border-[var(--accent-primary)]"
-                style={{
-                    background: 'var(--bg-secondary)',
-                    borderColor: 'var(--border-default)',
-                    color: value ? 'var(--text-primary)' : 'var(--text-muted)',
-                }}
-            >
-                <span className="truncate">{label}</span>
-                <svg className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-            </button>
-
-            {/* Overlay modal */}
-            {open && (
-                <div
-                    className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-                    style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-                    onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
-                >
-                    <div
-                        className="w-full max-w-2xl rounded-2xl border shadow-2xl flex flex-col"
-                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', maxHeight: '80vh' }}
-                    >
-                        {/* Header */}
-                        <div className="flex items-center justify-between px-5 pt-5 pb-3">
-                            <div>
-                                <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Select Model</h3>
-                                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                    {totalResults} model{totalResults !== 1 ? 's' : ''}{search ? ` matching "${search}"` : ' available'}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setOpen(false)}
-                                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/10 transition-colors"
-                                style={{ color: 'var(--text-muted)' }}
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        {/* Search input */}
-                        <div className="px-5 pb-3">
-                            <div className="relative">
-                                <svg className="absolute left-3 top-3 w-5 h-5" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
-                                <input
-                                    ref={inputRef}
-                                    type="text"
-                                    value={search}
-                                    onChange={e => setSearch(e.target.value)}
-                                    placeholder="Search by name, ID, or category..."
-                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border outline-none text-sm"
-                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Filter chips */}
-                        <div className="px-5 pb-3 space-y-2">
-                            {/* Provider filter */}
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider mr-1" style={{ color: 'var(--text-muted)' }}>Provider</span>
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveProvider(null)}
-                                    className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
-                                    style={{
-                                        background: !activeProvider ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                                        color: !activeProvider ? '#fff' : 'var(--text-muted)',
-                                    }}
-                                >All</button>
-                                {providerNames.map(p => (
-                                    <button
-                                        key={p}
-                                        type="button"
-                                        onClick={() => setActiveProvider(activeProvider === p ? null : p)}
-                                        className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
-                                        style={{
-                                            background: activeProvider === p ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                                            color: activeProvider === p ? '#fff' : 'var(--text-muted)',
-                                        }}
-                                    >{p}</button>
-                                ))}
-                            </div>
-                            {/* Hidden toggle — only render when there's something to manage */}
-                            {(hiddenCount > 0 || onToggleHidden) && (
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[10px] font-semibold uppercase tracking-wider mr-1" style={{ color: 'var(--text-muted)' }}>Hidden</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowHidden(s => !s)}
-                                        className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
-                                        style={{
-                                            background: showHidden ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                                            color: showHidden ? '#fff' : 'var(--text-muted)',
-                                        }}
-                                        title={hiddenCount === 0 ? 'No models hidden yet' : `${hiddenCount} model${hiddenCount === 1 ? '' : 's'} hidden`}
-                                    >
-                                        {showHidden ? `Showing hidden (${hiddenCount})` : `Show hidden (${hiddenCount})`}
-                                    </button>
-                                </div>
-                            )}
-                            {/* Family filter */}
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider mr-1" style={{ color: 'var(--text-muted)' }}>Family</span>
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveFamily(null)}
-                                    className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
-                                    style={{
-                                        background: !activeFamily ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                                        color: !activeFamily ? '#fff' : 'var(--text-muted)',
-                                    }}
-                                >All</button>
-                                {familyList.map(f => (
-                                    <button
-                                        key={f}
-                                        type="button"
-                                        onClick={() => setActiveFamily(activeFamily === f ? null : f)}
-                                        className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
-                                        style={{
-                                            background: activeFamily === f ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
-                                            color: activeFamily === f ? '#fff' : 'var(--text-muted)',
-                                        }}
-                                    >{f}</button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Model list */}
-                        <div className="flex-1 overflow-y-auto px-2 pb-4" style={{ minHeight: 0 }}>
-                            {/* Clear option */}
-                            <button
-                                type="button"
-                                onClick={() => { onChange(''); setOpen(false); }}
-                                className="w-full text-left px-4 py-2.5 rounded-lg text-sm hover:bg-white/5 transition-colors mb-1"
-                                style={{ color: 'var(--text-muted)' }}
-                            >
-                                — Not configured —
-                            </button>
-
-                            {Object.entries(filteredGroups).map(([provName, models]) => (
-                                <div key={provName} className="mb-2">
-                                    {/* Provider header */}
-                                    <div
-                                        className="sticky top-0 z-10 px-4 py-2 text-xs font-semibold uppercase tracking-wider rounded-lg mb-1"
-                                        style={{ background: 'var(--bg-secondary)', color: 'var(--accent-primary)' }}
-                                    >
-                                        {provName} ({models.length})
-                                    </div>
-                                    <div className="grid gap-0.5">
-                                        {models.map(m => {
-                                            const meta = getModelMeta(m.id);
-                                            const displayName = getDisplayName(m);
-                                            const isSelected = m.id === value;
-                                            const isHidden = hiddenSet.has(m.id);
-                                            return (
-                                                <div
-                                                    key={m.id}
-                                                    className={`w-full rounded-lg text-sm flex items-stretch transition-all ${isSelected
-                                                        ? 'ring-1 ring-[var(--accent-primary)]'
-                                                        : 'hover:bg-white/5'
-                                                        }`}
-                                                    style={{
-                                                        background: isSelected ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
-                                                        color: 'var(--text-primary)',
-                                                        opacity: isHidden ? 0.55 : 1,
-                                                    }}
-                                                >
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => { onChange(m.id); setOpen(false); }}
-                                                        className="flex-1 min-w-0 text-left px-4 py-2.5 flex items-center gap-3"
-                                                    >
-                                                        {/* Checkmark */}
-                                                        <span className="w-5 text-center shrink-0" style={{ color: 'var(--accent-primary)' }}>
-                                                            {isSelected ? '✓' : ''}
-                                                        </span>
-                                                        {/* Model info */}
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="font-medium flex items-center gap-2">
-                                                                <span className="truncate">{displayName}</span>
-                                                                {isHidden && (
-                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>Hidden</span>
-                                                                )}
-                                                            </div>
-                                                            {displayName !== m.id && (
-                                                                <div className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{m.id}</div>
-                                                            )}
-                                                        </div>
-                                                        {/* Category badge */}
-                                                        {meta?.cat && (
-                                                            <span
-                                                                className="text-[10px] px-2 py-1 rounded-full shrink-0 font-medium"
-                                                                style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}
-                                                            >
-                                                                {meta.cat}
-                                                            </span>
-                                                        )}
-                                                    </button>
-                                                    {/* Hide / unhide toggle */}
-                                                    {onToggleHidden && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => { e.stopPropagation(); onToggleHidden(m.id); }}
-                                                            className="px-3 flex items-center justify-center hover:bg-white/10 rounded-r-lg transition-colors shrink-0"
-                                                            style={{ color: 'var(--text-muted)' }}
-                                                            title={isHidden ? 'Show this model in tier pickers' : 'Hide this model from tier pickers'}
-                                                        >
-                                                            {isHidden ? (
-                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                                                                </svg>
-                                                            ) : (
-                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                                </svg>
-                                                            )}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-
-                            {totalResults === 0 && (
-                                <div className="px-4 py-12 text-center" style={{ color: 'var(--text-muted)' }}>
-                                    <p className="text-lg mb-1">No models found</p>
-                                    <p className="text-sm">Try a different search term</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-        </>
-    );
-};
 
 const ChatModelTiersConfig = ({ allModels = [] }) => {
     const [config, setConfig] = useState({
@@ -955,7 +613,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     const renderTierCard = (tier, tierConfig, updateFn, defaults) => {
         const isExpanded = expandedTier === tier.key;
         const selectedModel = chatModels.find(m => m.id === tierConfig.modelId);
-        const displayName = selectedModel ? getDisplayName(selectedModel) : null;
+        const displayName = selectedModel ? getModelDisplayName(selectedModel) : null;
         const selectedLabel = selectedModel
             ? (displayName !== selectedModel.id
                 ? displayName
@@ -987,8 +645,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                         value={tierConfig.modelId || ''}
                         label={selectedLabel}
                         groups={byProvider}
-                        getModelMeta={getModelMeta}
-                        onChange={val => updateFn(tier.key, 'modelId', val)}
+                        onChange={({ modelId }) => updateFn(tier.key, 'modelId', modelId)}
                         hiddenIds={hiddenModelIds}
                         onToggleHidden={toggleHiddenModel}
                     />
@@ -997,7 +654,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                         cost down (e.g. Haiku) regardless of the main model. */}
                     {tier.key === 'standard' && (() => {
                         const bootstrapModel = chatModels.find(m => m.id === tierConfig.bootstrapModelId);
-                        const bootstrapDisplayName = bootstrapModel ? getDisplayName(bootstrapModel) : null;
+                        const bootstrapDisplayName = bootstrapModel ? getModelDisplayName(bootstrapModel) : null;
                         const bootstrapLabel = bootstrapModel
                             ? (bootstrapDisplayName !== bootstrapModel.id ? bootstrapDisplayName : bootstrapModel.id)
                             : '— Same as main model —';
@@ -1010,8 +667,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                     value={tierConfig.bootstrapModelId || ''}
                                     label={bootstrapLabel}
                                     groups={byProvider}
-                                    getModelMeta={getModelMeta}
-                                    onChange={val => updateFn(tier.key, 'bootstrapModelId', val || '')}
+                                    onChange={({ modelId }) => updateFn(tier.key, 'bootstrapModelId', modelId || '')}
                                     hiddenIds={hiddenModelIds}
                                     onToggleHidden={toggleHiddenModel}
                                 />
@@ -1069,11 +725,14 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                     value={tierConfig.temperature !== undefined ? tierConfig.temperature : defaults.temperature}
                                     onChange={e => updateFn(tier.key, 'temperature', parseFloat(e.target.value) || defaults.temperature)}
                                     min={0} max={2} step={0.1}
-                                    className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
+                                    disabled={isClaudeAdaptiveOnly(tierConfig.modelId)}
+                                    className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm disabled:opacity-60"
                                     style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                                 />
                                 <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                                    0 = deterministic, 1 = creative. Default: {defaults.temperature}
+                                    {isClaudeAdaptiveOnly(tierConfig.modelId)
+                                        ? 'This model rejects temperature — thinking depth is set by Effort.'
+                                        : `0 = deterministic, 1 = creative. Default: ${defaults.temperature}`}
                                 </p>
                             </div>
                             {isReasoningCapable(tierConfig.modelId) && (
@@ -1097,7 +756,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                                     <option value="low">Low — quick tasks</option>
                                                     <option value="medium">Medium — balanced (default)</option>
                                                     <option value="high">High — complex reasoning</option>
-                                                    {isClaudeOpus47(tierConfig.modelId) ? (
+                                                    {isClaudeAdaptiveOnly(tierConfig.modelId) ? (
                                                         <>
                                                             <option value="xhigh">xHigh — extended exploration</option>
                                                             <option value="max">Max — no thinking constraints</option>
@@ -1171,10 +830,10 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                         </div>
 
                         {/* Claude-specific row: thinking mode + budget tokens.
-                            Only Sonnet 4.6 / Opus 4.6 honour budget_tokens — Opus 4.7
-                            rejects manual budget (adaptive-only) and Haiku has no
-                            thinking at all. */}
-                        {isClaudeReasoning(tierConfig.modelId) && !isClaudeOpus47(tierConfig.modelId) && (() => {
+                            Only Sonnet 4.6 / Opus 4.6 honour budget_tokens — the
+                            adaptive-only family (Opus 4.7/4.8, Sonnet 5, Fable 5)
+                            rejects manual budget and Haiku has no thinking at all. */}
+                        {isClaudeReasoning(tierConfig.modelId) && !isClaudeAdaptiveOnly(tierConfig.modelId) && (() => {
                             const mode = (tierConfig.budgetTokens && tierConfig.budgetTokens > 0) ? 'extended' : 'adaptive';
                             return (
                                 <div className="mt-4 pt-4 border-t flex gap-4 flex-wrap" style={{ borderColor: 'var(--border-default)' }}>
@@ -1238,11 +897,11 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                             );
                         })()}
 
-                        {/* Opus 4.7 explainer — only adaptive is supported */}
-                        {isClaudeOpus47(tierConfig.modelId) && (
+                        {/* Adaptive-only explainer — manual budgets are not supported */}
+                        {isClaudeAdaptiveOnly(tierConfig.modelId) && (
                             <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border-default)' }}>
                                 <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                    <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Opus 4.7 uses adaptive thinking only.</span> The API rejects manual thinking budgets — the Effort dropdown above controls how deep the model thinks. Use Auto-retry on empty output (Claude Settings panel) as a safety net for heavy reasoning runs.
+                                    <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{getModelMeta(tierConfig.modelId)?.name || 'This model'} uses adaptive thinking only.</span> The API rejects manual thinking budgets and the temperature setting — the Effort dropdown above controls how deep the model thinks. Use Auto-retry on empty output (Claude Settings panel) as a safety net for heavy reasoning runs.
                                 </p>
                             </div>
                         )}
@@ -1255,7 +914,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     const renderCustomTierCard = (tier) => {
         const isExpanded = expandedCustomId === tier.id;
         const selectedModel = chatModels.find(m => m.id === tier.modelId);
-        const displayName = selectedModel ? getDisplayName(selectedModel) : null;
+        const displayName = selectedModel ? getModelDisplayName(selectedModel) : null;
         const selectedLabel = selectedModel
             ? (displayName !== selectedModel.id ? displayName : selectedModel.id)
             : '— Not configured —';
@@ -1313,8 +972,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                         value={tier.modelId || ''}
                         label={selectedLabel}
                         groups={byProvider}
-                        getModelMeta={getModelMeta}
-                        onChange={val => updateCustomTier(tier.id, { modelId: val })}
+                        onChange={({ modelId }) => updateCustomTier(tier.id, { modelId })}
                         hiddenIds={hiddenModelIds}
                         onToggleHidden={toggleHiddenModel}
                     />
@@ -1389,8 +1047,8 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                             <option value="low">Low</option>
                                             <option value="medium">Medium</option>
                                             <option value="high">High</option>
-                                            {isClaudeOpus47(tier.modelId) && <option value="xhigh">xHigh</option>}
-                                            {isClaudeOpus47(tier.modelId) && <option value="max">Max</option>}
+                                            {isClaudeAdaptiveOnly(tier.modelId) && <option value="xhigh">xHigh</option>}
+                                            {isClaudeAdaptiveOnly(tier.modelId) && <option value="max">Max</option>}
                                             {isCodexMax(tier.modelId) && <option value="xhigh">xHigh</option>}
                                         </>
                                     )}
@@ -1412,8 +1070,9 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                 </select>
                             </div>
                         )}
-                        {/* Claude thinking mode + budget tokens (Sonnet/Opus 4.6 only — Opus 4.7 is adaptive-only). */}
-                        {isClaudeReasoning(tier.modelId) && !isClaudeOpus47(tier.modelId) && (() => {
+                        {/* Claude thinking mode + budget tokens (Sonnet/Opus 4.6 only —
+                            the adaptive-only family Opus 4.7/4.8, Sonnet 5, Fable 5 has no manual budget). */}
+                        {isClaudeReasoning(tier.modelId) && !isClaudeAdaptiveOnly(tier.modelId) && (() => {
                             const mode = (tier.budgetTokens && tier.budgetTokens > 0) ? 'extended' : 'adaptive';
                             return (
                                 <div className="w-full flex gap-4 flex-wrap mt-2">
@@ -1472,10 +1131,10 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                 </div>
                             );
                         })()}
-                        {isClaudeOpus47(tier.modelId) && (
+                        {isClaudeAdaptiveOnly(tier.modelId) && (
                             <div className="w-full mt-2">
                                 <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                    Opus 4.7 uses adaptive thinking only — the Effort dropdown controls how deep the model thinks. Manual thinking budgets are not supported.
+                                    {getModelMeta(tier.modelId)?.name || 'This model'} uses adaptive thinking only — the Effort dropdown controls how deep the model thinks. Manual thinking budgets and the temperature setting are not supported.
                                 </p>
                             </div>
                         )}
@@ -1488,7 +1147,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     // Compact EU model picker for a custom tier — lives inside the EU section.
     const renderCustomTierEuRow = (tier) => {
         const selectedModel = chatModels.find(m => m.id === tier.euModelId);
-        const displayName = selectedModel ? getDisplayName(selectedModel) : null;
+        const displayName = selectedModel ? getModelDisplayName(selectedModel) : null;
         const label = selectedModel
             ? (displayName !== selectedModel.id ? displayName : selectedModel.id)
             : '— Not configured —';
@@ -1509,8 +1168,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                         value={tier.euModelId || ''}
                         label={label}
                         groups={byProvider}
-                        getModelMeta={getModelMeta}
-                        onChange={val => updateCustomTier(tier.id, { euModelId: val })}
+                        onChange={({ modelId }) => updateCustomTier(tier.id, { euModelId: modelId })}
                         hiddenIds={hiddenModelIds}
                         onToggleHidden={toggleHiddenModel}
                     />
@@ -1733,7 +1391,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                     </label>
                     {(() => {
                         const selected = chatModels.find(m => m.id === classifierModel);
-                        const display = selected ? getDisplayName(selected) : null;
+                        const display = selected ? getModelDisplayName(selected) : null;
                         const label = selected
                             ? (display !== selected.id ? display : selected.id)
                             : '— Use Fast tier model —';
@@ -1742,8 +1400,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                 value={classifierModel || ''}
                                 label={label}
                                 groups={byProvider}
-                                getModelMeta={getModelMeta}
-                                onChange={val => setClassifierModel(val || '')}
+                                onChange={({ modelId }) => setClassifierModel(modelId || '')}
                                 hiddenIds={hiddenModelIds}
                                 onToggleHidden={toggleHiddenModel}
                             />
@@ -1785,7 +1442,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                     </label>
                     {(() => {
                         const selected = chatModels.find(m => m.id === titleModel);
-                        const display = selected ? getDisplayName(selected) : null;
+                        const display = selected ? getModelDisplayName(selected) : null;
                         const label = selected
                             ? (display !== selected.id ? display : selected.id)
                             : '— Use Fast tier model —';
@@ -1794,8 +1451,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                 value={titleModel || ''}
                                 label={label}
                                 groups={byProvider}
-                                getModelMeta={getModelMeta}
-                                onChange={val => setTitleModel(val || '')}
+                                onChange={({ modelId }) => setTitleModel(modelId || '')}
                                 hiddenIds={hiddenModelIds}
                                 onToggleHidden={toggleHiddenModel}
                             />

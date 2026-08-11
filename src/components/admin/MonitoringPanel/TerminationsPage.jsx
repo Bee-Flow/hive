@@ -7,9 +7,15 @@ import {
     fmt, fmtDuration, fmtTime, shortModel, COLORS,
     Card, Empty, MetricCard
 } from './shared';
+import { TYPE_ORDER, isLargeInput, LARGE_ATTACHMENT_BYTES_THRESHOLD, LARGE_INPUT_TOKEN_THRESHOLD } from '../../../utils/terminationsModel';
+import { authFetch } from '../../../utils/helpers';
 
 const API = (import.meta.env.VITE_API_URL || '') + '/api/terminations';
-const OPTS = { credentials: 'include' };
+// authFetch, not raw fetch. Both send credentials, but authFetch also sets the
+// no-store handling that exists because the Nextcloud proxy path was replaying
+// stale per-user API responses from the browser cache — and usage figures are
+// exactly that kind of per-org, always-changing response. It is also the seam
+// the public demo transport hooks, so a raw fetch here silently bypasses it.
 
 const TYPE_META = {
     max_tokens:     { label: 'Max tokens',     color: COLORS.amber,  icon: ZapOff },
@@ -18,11 +24,9 @@ const TYPE_META = {
     aborted:        { label: 'Aborted',        color: COLORS.cyan,   icon: XCircle },
 };
 
-const TYPE_ORDER = ['max_tokens', 'max_iterations', 'error', 'aborted'];
-
 async function fetchJson(url) {
     try {
-        const r = await fetch(url, OPTS);
+        const r = await authFetch(url);
         if (!r.ok) return null;
         return await r.json();
     } catch { return null; }
@@ -58,20 +62,6 @@ function fmtBytes(n) {
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
     if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
     return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-// Heuristic: a stop is "input-driven" when the prompt was unusually large or
-// dominated the budget. Surfaces the case where a user uploads a big PDF and
-// the model truncates the answer because there is no room left for output.
-const LARGE_INPUT_TOKEN_THRESHOLD = 8000;
-const LARGE_ATTACHMENT_BYTES_THRESHOLD = 256 * 1024; // 256 KB
-
-function isLargeInput(row) {
-    if ((row.attachment_bytes || 0) >= LARGE_ATTACHMENT_BYTES_THRESHOLD) return true;
-    if ((row.prompt_tokens || 0) >= LARGE_INPUT_TOKEN_THRESHOLD) return true;
-    const total = (row.prompt_tokens || 0) + (row.completion_tokens || 0);
-    if (total > 0 && (row.prompt_tokens / total) >= 0.85 && row.termination_type === 'max_tokens') return true;
-    return false;
 }
 
 function LargeInputBadge() {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { formatRelativeTime } from '../utils/dateFormatters';
 import {
     ArrowLeft, Upload, FileText, Trash2, Pencil, Check, X,
     Loader2, Search, Download, Bot, ChevronDown, File, Plus, Settings, BookOpen, ChevronRight,
@@ -10,17 +11,6 @@ import MessageItem from '../components/chat/MessageItem';
 import InputArea from '../components/InputArea';
 import KnowledgePanel from '../components/KnowledgePanel';
 import MeetingPicker from '../components/meeting-picker/MeetingPicker';
-
-function timeAgo(dateStr) {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diff = (now - d) / 1000;
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return d.toLocaleDateString();
-}
 
 // Normalize parameter — supports both string "Name" and { name, description } formats
 function getParam(p) {
@@ -818,7 +808,7 @@ export default function TemplatesPage({ user, onBack }) {
                                         <div className="flex items-center gap-3 mt-1">
                                             <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{template.fileName}</span>
                                             <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>·</span>
-                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{timeAgo(template.createdAt)}</span>
+                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{formatRelativeTime(template.createdAt)}</span>
                                         </div>
                                         {template.parameters.length > 0 && (
                                             <div className="flex flex-wrap gap-1 mt-2">

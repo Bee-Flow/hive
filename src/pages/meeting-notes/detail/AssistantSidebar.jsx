@@ -5,16 +5,25 @@ import MessageItem from '../../../components/chat/MessageItem';
 import useChatEngine from '../../../hooks/useChatEngine';
 import { formatDuration } from '../lib/format';
 
-const SUGGESTIONS = [
-    'Summarize the key decisions made',
-    'List open questions',
-    'Draft a follow-up email',
-];
-
 export default function AssistantSidebar({ meeting, open, onClose }) {
     const [input, setInput] = useState('');
     const scrollerRef = useRef(null);
     const endRef = useRef(null);
+
+    // Starter prompts. The follow-up email one is addressed with the stored
+    // attendee names (falling back to the identified speakers) — we keep no
+    // attendee emails by design, so the draft stays copy-out, never auto-send.
+    const suggestions = useMemo(() => {
+        const names = (meeting?.attendees?.length ? meeting.attendees : (meeting?.speakers || []).map((s) => s.id))
+            .filter(Boolean).join(', ');
+        return [
+            'Summarize the key decisions made',
+            'List open questions',
+            names
+                ? `Draft a follow-up email to ${names} with the key outcomes and action items`
+                : 'Draft a follow-up email',
+        ];
+    }, [meeting?.attendees, meeting?.speakers]);
 
     const systemPrompt = useMemo(() => {
         if (!meeting) return '';
@@ -99,7 +108,7 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                         <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
                             Try a starter prompt:
                         </div>
-                        {SUGGESTIONS.map((s) => (
+                        {suggestions.map((s) => (
                             <button
                                 key={s}
                                 type="button"

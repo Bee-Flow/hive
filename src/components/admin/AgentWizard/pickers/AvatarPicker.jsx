@@ -36,7 +36,7 @@ export default function AvatarPicker({ avatar, onChange, t, size }) {
     const onFile = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (file.size > 512 * 1024) { alert(t('agent_wizard.avatar.too_large') || 'Image must be under 512KB'); e.target.value = ''; return; }
+        if (file.size > 512 * 1024) { alert(t('agent_wizard.avatar.too_large', 'Image must be under 512KB')); e.target.value = ''; return; }
         const reader = new FileReader();
         reader.onload = (ev) => { onChange(ev.target.result); setOpen(false); };
         reader.readAsDataURL(file);
@@ -51,7 +51,7 @@ export default function AvatarPicker({ avatar, onChange, t, size }) {
                 type="button"
                 onClick={() => setOpen(v => !v)}
                 className={`${size === 'lg' ? 'w-20 h-20 text-4xl rounded-2xl' : 'w-16 h-16 text-3xl rounded-2xl'} bg-[var(--bg-secondary)] border border-[var(--border-default)] flex items-center justify-center overflow-hidden hover:bg-[var(--bg-tertiary)] transition`}
-                title={t('agent_wizard.avatar.title') || 'Avatar'}
+                title={t('agent_wizard.avatar.title', 'Avatar')}
             >
                 {isImage
                     ? <img src={resolveAvatarSrc(avatar)} alt="" className="w-full h-full object-cover" />
@@ -97,7 +97,7 @@ export default function AvatarPicker({ avatar, onChange, t, size }) {
                     <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--border-default)]">
                         <label className="flex-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] transition cursor-pointer text-center flex items-center justify-center gap-1.5">
                             <ImageIcon size={13} />
-                            {t('agent_wizard.avatar.upload') || 'Upload image'}
+                            {t('agent_wizard.avatar.upload', 'Upload image')}
                             <input
                                 type="file"
                                 accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
@@ -111,7 +111,7 @@ export default function AvatarPicker({ avatar, onChange, t, size }) {
                                 onClick={() => { onChange(DEFAULT_AGENT_EMOJI); setOpen(false); }}
                                 className="px-3 py-1.5 text-xs rounded-lg text-[var(--text-tertiary)] hover:text-red-500 hover:bg-[var(--bg-secondary)] transition"
                             >
-                                {t('agent_wizard.avatar.reset') || 'Remove'}
+                                {t('agent_wizard.avatar.reset', 'Remove')}
                             </button>
                         )}
                     </div>

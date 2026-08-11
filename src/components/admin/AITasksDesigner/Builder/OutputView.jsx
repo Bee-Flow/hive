@@ -186,8 +186,23 @@ function RecordTable({ rows, map = null }) {
 
     const shown = rows.slice(0, MAX_ROWS);
 
-    // Fallback: array of non-objects that slipped through — render as a list.
-    if (baseCols.length === 0) return <FriendlyArray arr={rows} map={map} />;
+    // Fallback: no columns discovered — e.g. an array of empty objects (`[{}]`)
+    // or of non-objects that slipped through. Render the rows directly as a
+    // list. Do NOT re-enter FriendlyArray with the same `rows`: for an array
+    // whose items are all empty objects, FriendlyArray would classify them as
+    // tabular and route straight back into RecordTable, which again finds zero
+    // columns — an unbounded RecordTable↔FriendlyArray render loop that hangs
+    // (or OOM-crashes) the panel on a single-element `[{}]`.
+    if (baseCols.length === 0) {
+        return (
+            <ul className="list-disc pl-4 space-y-0.5">
+                {shown.map((v, i) => (
+                    <li key={i} {...mapAttrs(map, `[${i}]`)}><InlineValue value={v} /></li>
+                ))}
+                {rows.length > MAX_ROWS && <li className="list-none text-[var(--text-tertiary)]">+{rows.length - MAX_ROWS} more</li>}
+            </ul>
+        );
+    }
 
     // `min-w-max` lets the table grow to its content width and overflow the
     // OutputView scroll container (height-constrained), so the HORIZONTAL
@@ -195,7 +210,10 @@ function RecordTable({ rows, map = null }) {
     return (
         <div className="min-w-max">
             <table className="w-full border-collapse">
-                <thead>
+                {/* Sticky header: 201 rows of Gmail scroll the column names
+                    off screen instantly, and a table whose columns you can't
+                    name is unreadable. */}
+                <thead className="sticky top-0 z-10 bg-[var(--bg-primary)]">
                     <tr>
                         {cols.map((c) => (
                             <ColHeader
@@ -326,10 +344,32 @@ function InlineValue({ value }) {
     return <span className="break-words" title={s.length > MAX_CELL ? s : undefined}>{truncate(s)}</span>;
 }
 
+/**
+ * A scalar — usually text. Long text used to be cut off at 600 characters with
+ * no way to see the rest, which made this panel useless for exactly the case
+ * that needs it most (an AI answer, an email body, a fetched page).
+ */
+const SCALAR_CLAMP = 600;
 function Scalar({ value, emptyMessage = '—', map = null }) {
+    const [expanded, setExpanded] = useState(false);
     if (value === null || value === undefined) return <Empty>{emptyMessage}</Empty>;
     const s = scalarText(value);
-    return <span className="break-words text-[var(--text-primary)] inline-block" {...mapAttrs(map, '')} title={s.length > 400 ? s : undefined}>{s.length > 600 ? s.slice(0, 599) + '…' : s}</span>;
+    const long = s.length > SCALAR_CLAMP;
+    const shown = long && !expanded ? `${s.slice(0, SCALAR_CLAMP - 1)}…` : s;
+    return (
+        <span className="inline-block max-w-full">
+            <span className="break-words whitespace-pre-wrap text-[var(--text-primary)]" {...mapAttrs(map, '')}>{shown}</span>
+            {long && (
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
+                    className="ml-1.5 text-[10px] text-[var(--accent)] hover:underline align-baseline"
+                >
+                    {expanded ? 'Show less' : `Show all ${s.length} characters`}
+                </button>
+            )}
+        </span>
+    );
 }
 
 function Empty({ children }) {

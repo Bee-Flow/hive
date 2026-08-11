@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { authFetch } from '../../../utils/helpers';
 import { cmsApi } from './cmsApi';
+import useAsyncAction from '../../../hooks/useAsyncAction';
+import useOutsideDismiss from '../../../hooks/useOutsideDismiss';
+import { authFetch } from '../../../utils/helpers';
 import AppIcon from '../../AppIcon';
+import { slugIssues } from '../../../utils/cmsPublicRouting';
 
 /**
  * SitemapView — top-down tree of the site's pages.
@@ -257,9 +260,19 @@ function classifyInternal(edge, parent) {
     return parent.get(edge.target) === edge.source ? 'tree' : 'backlink';
 }
 
+// Throw a useful Error when a CMS response isn't ok — the body's `error`
+// field when present, else a status-coded fallback. Shared by the initial
+// load and every mutation handler so the not-ok boilerplate lives once.
+async function ensureOk(res, fallback) {
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `${fallback} (${res.status})`);
+    }
+}
+
 // ── SitemapView ──────────────────────────────────────────────────────
 
-export default function SitemapView({ siteId, /* eslint-disable-next-line no-unused-vars */ activePageId, onSelectPage }) {
+export default function SitemapView({ siteId, activePageId, onSelectPage, onMutated }) {
     const containerRef = useRef(null);
     const [adminPayload, setAdminPayload] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -285,10 +298,7 @@ export default function SitemapView({ siteId, /* eslint-disable-next-line no-unu
         setError(null);
         try {
             const res = await authFetch(cmsApi.site(siteId));
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || `Failed to load (${res.status})`);
-            }
+            await ensureOk(res, 'Failed to load');
             const data = await res.json();
             setAdminPayload(data);
         } catch (err) {
@@ -641,7 +651,11 @@ export default function SitemapView({ siteId, /* eslint-disable-next-line no-unu
                                         if (typeof onSelectPage === 'function') onSelectPage(target.id);
                                         setFlyout(null);
                                     }}
-                                    onChanged={() => { setFlyout(null); fetchData(); }}
+                                    // Flyout mutations (title/slug/nav/delete/homepage) write the
+                                    // site doc directly, bypassing the panel's copy — notify the
+                                    // host so it can refresh its state and reset undo history
+                                    // (a stale panel-side save would otherwise clobber the change).
+                                    onChanged={() => { setFlyout(null); fetchData(); onMutated?.(); }}
                                 />
                             );
                         })() : null}
@@ -712,7 +726,7 @@ function NodeCard({ page, pos, isHomepage, isOrphan, isActive, inNav, onMouseDow
                     onKeyDown={handleGearKey}
                     className="shrink-0 -mr-1 mt-0.5 w-6 h-6 inline-flex items-center justify-center rounded
                         text-[var(--text-muted)] hover:text-[var(--accent-primary)]
-                        opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                        opacity-40 group-hover:opacity-100 focus:opacity-100 transition-opacity"
                 >
                     <AppIcon name="Settings" className="w-3.5 h-3.5" />
                 </button>
@@ -753,20 +767,7 @@ function Badge({ variant, children }) {
 
 function EdgePopover({ edgePopover, onClose }) {
     const ref = useRef(null);
-    useEffect(() => {
-        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-        const onClick = (e) => {
-            if (ref.current && !ref.current.contains(e.target)) onClose();
-        };
-        document.addEventListener('keydown', onKey);
-        // Defer so the click that opened us doesn't immediately close us.
-        const t = setTimeout(() => document.addEventListener('mousedown', onClick), 0);
-        return () => {
-            clearTimeout(t);
-            document.removeEventListener('keydown', onKey);
-            document.removeEventListener('mousedown', onClick);
-        };
-    }, [onClose]);
+    useOutsideDismiss(ref, onClose);
 
     const kindLabel = edgePopover.info.kind === 'chrome'
         ? 'Nav link (Site chrome)'
@@ -799,8 +800,9 @@ function EdgePopover({ edgePopover, onClose }) {
 function SettingsFlyout({ page, pages, site, siteId, anchorPos, canvasWidth, onClose, onChanged, onOpenInEditor }) {
     const [title, setTitle] = useState(page.title || '');
     const [slug, setSlug]   = useState(page.slug  || '');
-    const [busy, setBusy]   = useState(false);
-    const [err,  setErr]    = useState(null);
+    // One shared async runner for every mutation below — `busy` gates the
+    // whole form, `error` surfaces the last failure. `run` never throws.
+    const { run, loading: busy, error } = useAsyncAction((task) => task());
     const ref = useRef(null);
 
     // In-nav membership lives on the site doc's header.nav, not on the
@@ -812,30 +814,25 @@ function SettingsFlyout({ page, pages, site, siteId, anchorPos, canvasWidth, onC
     }, [site, page.id]);
 
     // Close on Escape / click outside.
-    useEffect(() => {
-        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-        const onClick = (e) => {
-            if (ref.current && !ref.current.contains(e.target)) onClose();
-        };
-        document.addEventListener('keydown', onKey);
-        const t = setTimeout(() => document.addEventListener('mousedown', onClick), 0);
-        return () => {
-            clearTimeout(t);
-            document.removeEventListener('keydown', onKey);
-            document.removeEventListener('mousedown', onClick);
-        };
-    }, [onClose]);
+    useOutsideDismiss(ref, onClose);
 
     // Anchor — clamp so the flyout doesn't overflow the canvas on the right.
     const FLYOUT_W = 280;
     const clampedLeft = Math.min(anchorPos.x, Math.max(0, canvasWidth - FLYOUT_W - 16));
 
-    const handleSaveMeta = async () => {
+    // Reserved slugs / duplicates block the save (server rejects reserved,
+    // and would silently -2-suffix a duplicate); `_` slugs warn only.
+    const slugIssue = slugIssues(slug, {
+        existingSlugs: (pages || []).map(pg => pg.slug),
+        currentSlug: page.slug,
+    });
+
+    const handleSaveMeta = () => {
         const titleChanged = title.trim() !== page.title;
         const slugChanged  = slug.trim()  !== page.slug;
+        if (slugChanged && slugIssue?.blocking) return;
         if (!titleChanged && !slugChanged) { onClose(); return; }
-        setBusy(true); setErr(null);
-        try {
+        run(async () => {
             const patch = {};
             if (titleChanged) patch.title = title.trim();
             if (slugChanged)  patch.slug  = slug.trim();
@@ -844,80 +841,56 @@ function SettingsFlyout({ page, pages, site, siteId, anchorPos, canvasWidth, onC
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(patch),
             });
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || `Save failed (${res.status})`);
-            }
+            await ensureOk(res, 'Save failed');
             onChanged();
-        } catch (e) { setErr(String(e.message || e)); }
-        finally { setBusy(false); }
+        });
     };
 
-    const handleToggleNav = async (next) => {
+    const handleToggleNav = (next) => run(async () => {
         // "Show in nav" maps to adding/removing a nav item pointing at
         // this page. We mutate the full site doc and PUT it back.
-        setBusy(true); setErr(null);
-        try {
-            const navItems = site?.header?.nav || [];
-            let nextNav;
-            if (next) {
-                // Add an entry if there isn't one already.
-                if (!navItems.some(n => n?.link?.kind === 'page' && n.link.pageId === page.id)) {
-                    nextNav = [
-                        ...navItems,
-                        {
-                            id: `nav_${Math.random().toString(36).slice(2, 8)}`,
-                            label: page.title || page.slug || 'Page',
-                            link: { kind: 'page', pageId: page.id },
-                        },
-                    ];
-                } else {
-                    nextNav = navItems;
-                }
+        const navItems = site?.header?.nav || [];
+        let nextNav;
+        if (next) {
+            // Add an entry if there isn't one already.
+            if (!navItems.some(n => n?.link?.kind === 'page' && n.link.pageId === page.id)) {
+                nextNav = [
+                    ...navItems,
+                    {
+                        id: `nav_${Math.random().toString(36).slice(2, 8)}`,
+                        label: page.title || page.slug || 'Page',
+                        link: { kind: 'page', pageId: page.id },
+                    },
+                ];
             } else {
-                nextNav = navItems.filter(n => !(n?.link?.kind === 'page' && n.link.pageId === page.id));
+                nextNav = navItems;
             }
-            const nextSite = { ...site, header: { ...(site.header || {}), nav: nextNav } };
-            const res = await authFetch(cmsApi.site(siteId), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ site: nextSite }),
-            });
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || `Save failed (${res.status})`);
-            }
-            onChanged();
-        } catch (e) { setErr(String(e.message || e)); }
-        finally { setBusy(false); }
-    };
+        } else {
+            nextNav = navItems.filter(n => !(n?.link?.kind === 'page' && n.link.pageId === page.id));
+        }
+        const nextSite = { ...site, header: { ...(site.header || {}), nav: nextNav } };
+        const res = await authFetch(cmsApi.site(siteId), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ site: nextSite }),
+        });
+        await ensureOk(res, 'Save failed');
+        onChanged();
+    });
 
-    const handleSetHomepage = async () => {
-        setBusy(true); setErr(null);
-        try {
-            const res = await authFetch(cmsApi.pageHomepage(siteId, page.id), { method: 'PUT' });
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || `Save failed (${res.status})`);
-            }
-            onChanged();
-        } catch (e) { setErr(String(e.message || e)); }
-        finally { setBusy(false); }
-    };
+    const handleSetHomepage = () => run(async () => {
+        const res = await authFetch(cmsApi.pageHomepage(siteId, page.id), { method: 'PUT' });
+        await ensureOk(res, 'Save failed');
+        onChanged();
+    });
 
-    const handleDelete = async () => {
-        // eslint-disable-next-line no-alert
+    const handleDelete = () => {
         if (!window.confirm(`Delete page "${page.title || page.slug}"? This cannot be undone.`)) return;
-        setBusy(true); setErr(null);
-        try {
+        run(async () => {
             const res = await authFetch(cmsApi.page(siteId, page.id), { method: 'DELETE' });
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || `Delete failed (${res.status})`);
-            }
+            await ensureOk(res, 'Delete failed');
             onChanged();
-        } catch (e) { setErr(String(e.message || e)); }
-        finally { setBusy(false); }
+        });
     };
 
     return (
@@ -964,6 +937,11 @@ function SettingsFlyout({ page, pages, site, siteId, anchorPos, canvasWidth, onC
                         disabled={busy}
                         className="px-2 py-1.5 rounded text-xs font-mono border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
                     />
+                    {slugIssue ? (
+                        <span className={`text-[10px] leading-tight ${slugIssue.blocking ? 'text-red-400' : 'text-amber-500/90'}`}>
+                            ⚠ {slugIssue.message}
+                        </span>
+                    ) : null}
                 </label>
                 <div className="flex items-center justify-between pt-1">
                     <span className="text-xs text-[var(--text-secondary)]">Show in nav</span>
@@ -983,13 +961,13 @@ function SettingsFlyout({ page, pages, site, siteId, anchorPos, canvasWidth, onC
                         />
                     </button>
                 </div>
-                {err ? <p className="text-xs text-red-400">{err}</p> : null}
+                {error ? <p className="text-xs text-red-400">{error.message}</p> : null}
 
                 <div className="flex items-center gap-2 pt-1">
                     <button
                         type="button"
                         onClick={handleSaveMeta}
-                        disabled={busy}
+                        disabled={busy || (slug.trim() !== page.slug && !!slugIssue?.blocking)}
                         className="flex-1 px-3 py-1.5 text-xs rounded-md bg-[var(--accent-primary)] text-white disabled:opacity-50"
                     >
                         {busy ? 'Saving…' : 'Save'}

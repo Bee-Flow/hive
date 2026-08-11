@@ -8,7 +8,7 @@ import { Empty } from '../MonitoringPanel/shared';
  * Generic checks list page used by both GDPR and AIA tabs.
  * Groups by article and renders a CheckCard per item.
  */
-export default function ChecksPage({ checks, regulation, onNavigate, onRerun, rerunningId, loading, focusCheckId }) {
+export default function ChecksPage({ checks, regulation, onNavigate, onRerun, rerunningId, onAutoFix, autoFixingId, onLoadTrail, loading, focusCheckId }) {
     const { t } = useTranslation();
     const list = (checks || []).filter(c => c.regulation === regulation);
 
@@ -42,10 +42,13 @@ export default function ChecksPage({ checks, regulation, onNavigate, onRerun, re
                         {t('compliance.article_label')} {art}
                     </div>
                     {byArticle[art].map(c => (
-                        <CheckCard key={c.check_id} check={c}
+                        <CheckCard key={`${c.check_id}:${c.scope_id || ''}`} check={c}
                             onNavigate={onNavigate}
                             onRerun={onRerun}
                             rerunning={rerunningId === c.check_id}
+                            onAutoFix={onAutoFix}
+                            autoFixing={autoFixingId === c.check_id}
+                            onLoadTrail={onLoadTrail}
                             focus={focusCheckId === c.check_id} />
                     ))}
                 </div>

@@ -34,7 +34,7 @@ export default function WebpagePlanCard({ plan, status = 'pending', planId, onAp
             case 'approved': return { border: 'rgba(2,132,199,0.45)', bg: 'rgba(2,132,199,0.05)' };
             case 'executed': return { border: 'rgba(22,163,74,0.45)', bg: 'rgba(22,163,74,0.05)' };
             case 'rejected': return { border: 'var(--border-subtle)', bg: 'transparent', muted: true };
-            default:         return { border: 'var(--accent-primary)', bg: 'rgba(99,102,241,0.04)' };
+            default:         return { border: 'var(--accent-primary)', bg: 'color-mix(in srgb, var(--accent-primary) 5%, transparent)' };
         }
     })();
 

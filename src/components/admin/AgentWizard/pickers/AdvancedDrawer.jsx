@@ -48,20 +48,20 @@ export default function AdvancedDrawer({
             <aside className="absolute top-0 right-0 h-full w-[400px] max-w-full bg-[var(--bg-card,#fff)] border-l border-[var(--border-default)] shadow-2xl flex flex-col">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-default)]">
                     <span className="text-sm font-semibold text-[var(--text-primary)]">
-                        {t('agent_wizard.builder.advanced_settings') || 'Advanced settings'}
+                        {t('agent_wizard.builder.advanced_settings', 'Advanced settings')}
                     </span>
                     <button
                         type="button"
                         onClick={onClose}
                         className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition"
-                        title={t('common.close') || 'Close'}
+                        title={t('common.close', 'Close')}
                     >
                         <X size={16} />
                     </button>
                 </div>
                 <div className="flex-1 overflow-y-auto px-5 py-2">
                     <CollapsibleSection
-                        title={t('agent_wizard.section.behavior') || 'Behavior'}
+                        title={t('agent_wizard.section.behavior', 'Behavior')}
                         open={openSection === 'behavior'}
                         onToggle={() => handleToggle('behavior')}
                     >
@@ -82,7 +82,7 @@ export default function AdvancedDrawer({
                         />
                     </CollapsibleSection>
                     <CollapsibleSection
-                        title={t('agent_wizard.builder.embed_section') || 'Embed & bubble'}
+                        title={t('agent_wizard.builder.embed_section', 'Embed & bubble')}
                         open={openSection === 'embed'}
                         onToggle={() => handleToggle('embed')}
                     >
@@ -102,7 +102,7 @@ export default function AdvancedDrawer({
                     </CollapsibleSection>
                     {agent?.id && (
                         <CollapsibleSection
-                            title={t('agent_wizard.section.versions') || 'Version History'}
+                            title={t('agent_wizard.section.versions', 'Version History')}
                             open={openSection === 'versions'}
                             onToggle={() => handleToggle('versions')}
                         >

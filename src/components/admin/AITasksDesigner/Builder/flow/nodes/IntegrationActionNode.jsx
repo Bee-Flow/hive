@@ -1,5 +1,6 @@
 import React from 'react';
 import { Wrench, Zap, Repeat } from 'lucide-react';
+import { nodeHelp, nodeTypeLabel } from '../nodeDefs';
 import StepNodeBase, { NodeChip, renderInputsPreview } from './StepNodeBase';
 import IntegrationLogo from './IntegrationLogo';
 import { humanizeToolName } from '../displayHelpers';
@@ -69,7 +70,8 @@ export default function IntegrationActionNode({ id, data }) {
     return (
         <StepNodeBase
             icon={<IntegrationLogo tool={tool} size={16} fallback={<Wrench size={14} />} />}
-            typeLabel="Integration"
+            typeLabel={nodeTypeLabel('integration_action')}
+            help={nodeHelp('integration_action')}
             body={body}
             badges={badges}
             hoverDetail={hoverDetail}

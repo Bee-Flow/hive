@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { setLayerDescription, listLayers, renameLayer, getLayerDependencies } from './flowletScope.js';
+import { setLayerDescription, listLayers, renameLayer, getLayerDependencies, isLayerEmpty, deleteLayerAndCalls, layerCallScopes } from './flowletScope.js';
 
 const baseDef = () => ({
     trigger: { id: 'trg', type: 'trigger', kind: 'manual' },
@@ -125,5 +125,54 @@ describe('getLayerDependencies', () => {
     it('tolerates missing def / unknown key', () => {
         expect(getLayerDependencies(null, 'x')).toEqual({ calls: [], callers: [] });
         expect(getLayerDependencies({ layers: {} }, 'nope')).toEqual({ calls: [], callers: [] });
+    });
+});
+
+describe('isLayerEmpty / deleteLayerAndCalls (BFSF-340)', () => {
+    // The palette's "Create flowlet" drops a call_layer node as part of
+    // creating one, so a brand-new flowlet is instantly "in use" and its
+    // delete button greys out. An empty one is safe to remove wholesale.
+    const defWithCalls = () => ({
+        trigger: { id: 'trg', type: 'trigger', kind: 'manual' },
+        steps: [
+            { id: 'a', type: 'ai_step' },
+            { id: 'cl0', type: 'call_layer', layerKey: 'fresh' },
+            { id: 'z', type: 'notification' },
+            { id: 'lp', type: 'loop', body: [{ id: 'cl1', type: 'call_layer', layerKey: 'fresh' }] },
+        ],
+        edges: [
+            { from: 'trg', to: 'a' }, { from: 'a', to: 'cl0' }, { from: 'cl0', to: 'z' },
+        ],
+        layers: {
+            fresh: { title: 'New flowlet', trigger: { id: 'trg', type: 'trigger', kind: 'layer_input', params: [] }, steps: [{ id: 'out', type: 'layer_output', fields: {} }], edges: [] },
+            other: { title: 'Other', trigger: { id: 'trg', type: 'trigger', kind: 'layer_input', params: [] }, steps: [{ id: 'o1', type: 'call_layer', layerKey: 'fresh' }, { id: 'out', type: 'layer_output', fields: {} }], edges: [] },
+        },
+    });
+
+    it('treats a skeleton flowlet (layer_output only) as empty', () => {
+        const def = defWithCalls();
+        expect(isLayerEmpty(def, 'fresh')).toBe(true);
+        expect(isLayerEmpty(def, 'other')).toBe(false);
+        expect(isLayerEmpty(def, 'nope')).toBe(false);
+    });
+
+    it('drops the flowlet and every call site, healing the graph around them', () => {
+        const next = deleteLayerAndCalls(defWithCalls(), 'fresh');
+        expect(next.layers.fresh).toBeUndefined();
+        expect(next.steps.map(s => s.id)).toEqual(['a', 'z', 'lp']);
+        // The neighbours of the removed call node reconnect.
+        expect(next.edges).toContainEqual(expect.objectContaining({ from: 'a', to: 'z' }));
+        // …in nested bodies and in sibling flowlets too.
+        expect(next.steps.find(s => s.id === 'lp').body).toEqual([]);
+        expect(next.layers.other.steps.map(s => s.id)).toEqual(['out']);
+    });
+
+    it('leaves the definition alone for an unknown key', () => {
+        const def = defWithCalls();
+        expect(deleteLayerAndCalls(def, 'nope').steps.map(s => s.id)).toEqual(['a', 'cl0', 'z', 'lp']);
+    });
+
+    it('names each call site by scope', () => {
+        expect(layerCallScopes(defWithCalls(), 'fresh').sort()).toEqual(['other', 'root', 'root']);
     });
 });

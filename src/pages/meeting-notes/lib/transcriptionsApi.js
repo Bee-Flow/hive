@@ -1,4 +1,4 @@
-import { API_BASE, authFetch } from '../../../utils/helpers';
+import { API_BASE, authFetch, isDemoMode } from '../../../utils/helpers';
 
 async function jsonOrThrow(res) {
     if (!res.ok) {
@@ -28,12 +28,37 @@ export async function getTranscription(id) {
     return jsonOrThrow(res);
 }
 
-export async function uploadAudio({ file, language, title, contextTerms, provider, signal }) {
+/** "Previously in this series" — the prior note from the same Meet/Talk room, or null. */
+export async function getSeriesPrevious(id) {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/${id}/series-previous`);
+    const data = await jsonOrThrow(res);
+    return data.previous || null;
+}
+
+/**
+ * Multi-meeting AI report: one question over up to 10 selected notes.
+ * Returns { report (markdown), usedTranscripts, meetings: [{id,title,createdAt}] }.
+ */
+export async function reportMeetings({ ids, prompt }) {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, prompt }),
+    });
+    return jsonOrThrow(res);
+}
+
+export async function uploadAudio({ file, language, title, contextTerms, attendees, numSpeakers, provider, captureMode, signal }) {
     const formData = new FormData();
     formData.append('audio', file);
+    // 'recording' | 'upload'. Decides what we can honestly tell the user if the
+    // audio is ever missing: a browser recording has no original to re-upload.
+    if (captureMode) formData.append('capture_mode', captureMode);
     formData.append('language', language);
     formData.append('title', title);
     if (contextTerms) formData.append('context_terms', contextTerms);
+    if (attendees) formData.append('attendees', attendees);
+    if (numSpeakers) formData.append('num_speakers', String(numSpeakers));
     if (provider) formData.append('provider', provider);
     const res = await authFetch(`${API_BASE}/api/transcriptions`, {
         method: 'POST',
@@ -96,6 +121,70 @@ export async function setMeetingRecord(token, record, eventUid) {
     return jsonOrThrow(res);
 }
 
+/**
+ * The user's upcoming Google Meet meetings (from their Google Calendar), each
+ * with import status. Returns
+ * `{ connection: { connected, hasMeetScopes, hasSettingsScope, needsReauth },
+ *    autoImport, meetings: [{ eventId, iCalUID, title, start, end, organizerEmail,
+ *    organizerSelf, meetingCode, meetLink, excluded, recordingControlledByHost,
+ *    importedNoteId, status }] }`.
+ */
+export async function listGoogleMeetMeetings() {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/gmeet-meetings`);
+    return jsonOrThrow(res);
+}
+
+/** Toggle auto-import for a single Google Meet meeting (by calendar event id). */
+export async function setGoogleMeetMeetingRecord(eventId, record, { meetingCode, applyToSeries } = {}) {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/gmeet-meetings/${encodeURIComponent(eventId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record, meetingCode, applyToSeries }),
+    });
+    return jsonOrThrow(res);
+}
+
+/**
+ * Recently ended Google Meet meetings with recording availability, for the
+ * manual import panel. Returns `{ items: [{ eventId, meetingCode, title, start,
+ * end, recordingState: 'available'|'processing'|'none', importedNoteId }] }`.
+ */
+export async function listGoogleMeetRecordings() {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/gmeet-recordings`);
+    return jsonOrThrow(res);
+}
+
+/**
+ * Recent Google Meet import jobs (status feed for auto-import).
+ * Returns `{ items: [{ id, title, meetingCode, meetingStart, meetingEnd,
+ * status, errorCode, transcriptionId }] }`.
+ */
+export async function listGoogleMeetImports() {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/gmeet-imports`);
+    return jsonOrThrow(res);
+}
+
+/**
+ * Import one Google Meet recording (server downloads the Drive MP4, extracts
+ * audio and transcribes). Synchronous like `/from-nextcloud`; may return
+ * 202 `{ jobId, status }` when the recording isn't generated yet.
+ */
+export async function importGoogleMeetRecording({ eventId, meetingCode, meetLink, language, title, contextTerms }) {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/from-gmeet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            event_id: eventId,
+            meeting_code: meetingCode,
+            meet_link: meetLink,
+            language,
+            title,
+            context_terms: contextTerms,
+        }),
+    });
+    return jsonOrThrow(res);
+}
+
 export async function patchTranscription(id, patch) {
     const res = await authFetch(`${API_BASE}/api/transcriptions/${id}`, {
         method: 'PATCH',
@@ -115,13 +204,72 @@ export async function reprocessTranscription(id) {
     return jsonOrThrow(res);
 }
 
-export async function regenerateSummary(id, template) {
+/**
+ * Regenerate the summary. Accepts either the legacy string form (a built-in
+ * template key) or an object `{ template?, templateId?, customPrompt? }`:
+ *   - templateId  — a saved custom template (server checks visibility)
+ *   - customPrompt — an ephemeral "try this once" prompt (not saved)
+ *   - template     — a built-in key (default 'general')
+ */
+export async function regenerateSummary(id, arg) {
+    const body = typeof arg === 'string' || arg == null
+        ? { template: arg || 'general' }
+        : {
+            ...(arg.template ? { template: arg.template } : {}),
+            ...(arg.templateId ? { templateId: arg.templateId } : {}),
+            ...(arg.customPrompt ? { customPrompt: arg.customPrompt } : {}),
+        };
     const res = await authFetch(`${API_BASE}/api/transcriptions/${id}/regenerate-summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template }),
+        body: JSON.stringify(body),
     });
     return jsonOrThrow(res);
+}
+
+// ── Custom summary templates (user / org / group) ────────────────────────────
+
+/**
+ * List summary templates visible to the caller. Returns
+ * `{ builtins:[{id,name,nameKey,prompt}], custom:[…], defaultTemplateId, canManageOrg, primaryOrgId }`.
+ */
+export async function listSummaryTemplates() {
+    const res = await authFetch(`${API_BASE}/api/summary-templates`);
+    return jsonOrThrow(res);
+}
+
+/** All org + group templates in the caller's org (org admin only), plus the org's groups. */
+export async function listOrgSummaryTemplates() {
+    const res = await authFetch(`${API_BASE}/api/summary-templates/org`);
+    return jsonOrThrow(res);
+}
+
+/**
+ * Create a template. `scope` is 'user' | 'org' | 'group'. Org/group scope
+ * require org admin; group scope needs `groupId`.
+ */
+export async function createSummaryTemplate({ scope = 'user', name, prompt, groupId, isDefault }) {
+    const res = await authFetch(`${API_BASE}/api/summary-templates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope, name, prompt, groupId, isDefault: !!isDefault }),
+    });
+    return jsonOrThrow(res);
+}
+
+export async function updateSummaryTemplate(id, patch) {
+    const res = await authFetch(`${API_BASE}/api/summary-templates/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+    });
+    return jsonOrThrow(res);
+}
+
+export async function deleteSummaryTemplate(id) {
+    const res = await authFetch(`${API_BASE}/api/summary-templates/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return true;
 }
 
 /**
@@ -135,6 +283,20 @@ export async function updateSpeakers(id, { renames = {}, merges = [] } = {}) {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ renames, merges }),
+    });
+    return jsonOrThrow(res);
+}
+
+/**
+ * Re-run AI speaker naming on the stored transcript (no re-transcription).
+ * `attendees` (names of who was in the room, comma-separated or array) is the
+ * strongest hint and, when given, drives the mapping. Returns the updated note.
+ */
+export async function reidentifySpeakers(id, attendees) {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/${id}/reidentify-speakers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attendees: attendees || '' }),
     });
     return jsonOrThrow(res);
 }
@@ -159,7 +321,22 @@ export async function exportTranscription(id, format) {
 }
 
 export function audioUrl(id) {
+    // An <audio src> is a browser fetch the demo transport cannot intercept,
+    // so on /__demo__/meeting-notes this was a real request to the API from an
+    // anonymous visitor — while the page above the frame promised "no
+    // microphone access and no network access". There is no audio to play:
+    // the sample meeting is a fixture, not a recording. An empty src makes the
+    // player render its unavailable state, which is the truth.
+    if (isDemoMode()) return '';
     return `${API_BASE}/api/transcriptions/${id}/audio`;
+}
+
+/**
+ * Same bytes, served as an attachment. For a meeting recorded in the browser
+ * this is the only way the user can ever get a copy of their own audio out.
+ */
+export function audioDownloadUrl(id) {
+    return `${API_BASE}/api/transcriptions/${id}/audio?download=1`;
 }
 
 export async function listOrgUsers() {

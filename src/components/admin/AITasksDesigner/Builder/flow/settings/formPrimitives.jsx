@@ -1,13 +1,28 @@
 // §WS5 — shared form primitives extracted verbatim from SettingsForm.jsx
 // (the "Chrome helpers" group). Used by SettingsForm and the per-type editors.
+//
+// The class strings themselves live in ./formStyles (pure, React-free) so that
+// CollapsibleSection — which App Studio's inspector also renders — can share
+// them without importing FieldHint. Everything is re-exported here so existing
+// importers keep working unchanged.
 import React from 'react';
 import FieldHint from '../FieldHint';
+import { fieldLabelClass, requiredMarkClass } from './formStyles';
 
-export function FormRow({ label, hint, children }) {
+export {
+    sectionHeaderClass, fieldLabelClass, subLabelClass, disclosureClass,
+    bandClass, railClass, cardClass, requiredMarkClass, FOCUS_RING, FOCUS_RING_INSET,
+    inputClass, textareaClass, denseInputClass, rowInputClass, controlSurfaceClass,
+} from './formStyles';
+
+export function FormRow({ label, hint, required = false, children }) {
     return (
         <div>
-            <div className="flex items-center gap-1 mb-1">
-                <span className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">{label}</span>
+            <div className="flex items-center gap-1.5 mb-1">
+                <span className={fieldLabelClass()}>{label}</span>
+                {/* Sibling, never inside the label span — queries match on the
+                    label text alone. */}
+                {required && <span className={requiredMarkClass()} title="Required">*</span>}
                 <FieldHint title={label}>{hint}</FieldHint>
             </div>
             {children}
@@ -24,11 +39,4 @@ export function ValidationLine({ record }) {
             {record.hint && <div className="text-[var(--text-tertiary)] mt-0.5">→ {record.hint}</div>}
         </div>
     );
-}
-
-export function inputClass() {
-    return 'w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]';
-}
-export function textareaClass() {
-    return 'w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] resize-y';
 }

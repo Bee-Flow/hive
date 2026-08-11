@@ -15,6 +15,15 @@ export default function Footer({ data, isDark, onToggleTheme }) {
     // social link. Returns undefined when nothing is set so the style
     // attribute is omitted entirely (CSS file defaults still win).
     const linkStyle = inlineTextStyle(data.linkStyle);
+    // Accountability row — the footer is a trust surface. Hidden entirely
+    // while every field is empty so old sites are untouched.
+    const acc = data.accountability || {};
+    const accLinks = Array.isArray(acc.links) ? acc.links.filter(l => l && l.label) : [];
+    const showAccountability =
+        !!(acc.address || acc.registration || acc.vat || accLinks.length) || isPreview();
+    // The brand "." flourish is now opt-in (showDot === true); it read as
+    // a template artifact on brands whose name doesn't want it.
+    const showDot = data.brand?.showDot === true;
     return (
         <SectionFrame id="footer" name="Footer" enabled={data.enabled}>
             <footer className="site-footer">
@@ -27,7 +36,7 @@ export default function Footer({ data, isDark, onToggleTheme }) {
                                         <EditableText path="footer.brand.logoText" placeholder="Logo">
                                             {data.brand.logoText || ''}
                                         </EditableText>
-                                        <span className="logo-dot">.</span>
+                                        {showDot ? <span className="logo-dot">.</span> : null}
                                     </span>
                                 </div>
                             ) : null}
@@ -72,11 +81,41 @@ export default function Footer({ data, isDark, onToggleTheme }) {
                             </div>
                         ))}
                     </div>
-                    <div className="footer-bottom">
+                    {/* Accountability and copyright are ONE row, not two stacked
+                        ones. They were separate rows with their own rules, which
+                        gave the footer three horizontal lines and a lot of empty
+                        space for what is really a single strip of small print:
+                        who we are, where we are, the legal links, the locale.
+                        `footer-legal` wraps, so this is one line on desktop and
+                        a tidy stack on a phone — not a promise to overflow. */}
+                    <div className="footer-legal">
+                        {showAccountability ? (
+                            <>
+                                <EditableText path="footer.accountability.address" placeholder="Street 1, 1234 AB City, Netherlands">
+                                    {acc.address || ''}
+                                </EditableText>
+                                <EditableText path="footer.accountability.registration" placeholder="KvK 12345678">
+                                    {acc.registration || ''}
+                                </EditableText>
+                                <EditableText path="footer.accountability.vat" placeholder="VAT NL123456789B01">
+                                    {acc.vat || ''}
+                                </EditableText>
+                                {accLinks.map((l, i) => (
+                                    <a
+                                        key={i}
+                                        href={l.href || '#'}
+                                        onClick={(e) => isPreview() && e.preventDefault()}
+                                    >
+                                        {l.label}
+                                    </a>
+                                ))}
+                            </>
+                        ) : null}
                         <EditableText path="footer.copyright" placeholder="© Company">
                             {data.copyright || ''}
                         </EditableText>
                         <div className="footer-bottom-right">
+                            {data.showLanguageSwitcher ? <FooterLocaleToggle /> : null}
                             {data.socials?.length ? (
                                 <div className="footer-socials">
                                     {data.socials.map((s, i) => (
@@ -109,6 +148,37 @@ export default function Footer({ data, isDark, onToggleTheme }) {
                 </div>
             </footer>
         </SectionFrame>
+    );
+}
+
+// Text-only EN / NL locale toggle (flags are banned — language names as
+// text is the international register). Navigates with ?locale= which
+// RootPathGate reads and persists; a full navigation is correct here
+// because the whole content payload is locale-resolved server-side.
+function FooterLocaleToggle() {
+    const current = (() => {
+        try {
+            const p = new URLSearchParams(window.location.search).get('locale');
+            const v = (p || window.localStorage.getItem('beeflow_locale') || navigator.language || 'en');
+            return v.toLowerCase().split('-')[0] === 'nl' ? 'nl' : 'en';
+        } catch { return 'en'; }
+    })();
+    const go = (loc) => (e) => {
+        e.preventDefault();
+        if (isPreview() || loc === current) return;
+        const url = new URL(window.location.href);
+        url.searchParams.set('locale', loc);
+        window.location.assign(url.toString());
+    };
+    const cls = (loc) => (loc === current
+        ? { fontWeight: 600, color: 'var(--text-primary)' }
+        : { color: 'var(--text-muted)' });
+    return (
+        <span className="footer-locale-toggle" style={{ display: 'inline-flex', gap: 6, fontSize: '0.85rem' }}>
+            <a href="?locale=en" onClick={go('en')} style={cls('en')} aria-current={current === 'en' ? 'true' : undefined}>EN</a>
+            <span style={{ color: 'var(--text-muted)' }}>/</span>
+            <a href="?locale=nl" onClick={go('nl')} style={cls('nl')} aria-current={current === 'nl' ? 'true' : undefined}>NL</a>
+        </span>
     );
 }
 

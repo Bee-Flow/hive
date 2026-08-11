@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { nodeLabel } from './nodeDefs';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import AddStepRibbon, { ribbonTabsForScope, RibbonSearch } from './AddStepRibbon';
 import scopedStorage from '../../../../../utils/scopedStorage';
@@ -62,17 +63,17 @@ describe('AddStepRibbon', () => {
         expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'ai_step' }));
     });
 
-    it('adds If, Loop and Edit fields from the Flow dropdown', () => {
+    it('adds Condition, Loop and Edit data from the Flow dropdown', () => {
         const { onAddNode } = renderRibbon();
         const openFlow = () => fireEvent.click(screen.getByRole('button', { name: 'Flow' }));
         openFlow();
-        fireEvent.click(screen.getByText('If'));
+        fireEvent.click(screen.getByText(nodeLabel('condition')));
         expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'condition' }));
         openFlow();
-        fireEvent.click(screen.getByText('Loop Over Items'));
+        fireEvent.click(screen.getByText(nodeLabel('loop')));
         expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'loop' }));
         openFlow();
-        fireEvent.click(screen.getByText('Edit Fields (Set)'));
+        fireEvent.click(screen.getByText(nodeLabel('set')));
         expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'set' }));
     });
 
@@ -80,17 +81,17 @@ describe('AddStepRibbon', () => {
         const { onAddNode } = renderRibbon();
         // Data + Collection are folded into Flow; "Limit" lives in its Lists section.
         fireEvent.click(screen.getByRole('button', { name: 'Flow' }));
-        fireEvent.click(screen.getByText('Limit'));
+        fireEvent.click(screen.getByText(nodeLabel('limit')));
         expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'limit' }));
     });
 
-    it('keeps only AI step inline — If / Loop / Edit fields are not inline buttons', () => {
+    it('keeps only AI step inline — Condition / Repeat / Edit data are not inline buttons', () => {
         renderRibbon();
         expect(screen.getByText('AI step')).toBeTruthy();
         // With the dropdown closed, the flow items are not rendered at all.
-        expect(screen.queryByText('If')).toBeNull();
-        expect(screen.queryByText('Loop Over Items')).toBeNull();
-        expect(screen.queryByText('Edit Fields (Set)')).toBeNull();
+        expect(screen.queryByText(nodeLabel('condition'))).toBeNull();
+        expect(screen.queryByText(nodeLabel('loop'))).toBeNull();
+        expect(screen.queryByText(nodeLabel('set'))).toBeNull();
     });
 
     it('search finds and adds a step', () => {
@@ -99,8 +100,28 @@ describe('AddStepRibbon', () => {
         const box = screen.getByPlaceholderText('Search steps…');
         // Match via keywords ('datetime') so the label isn't split by <mark>.
         fireEvent.change(box, { target: { value: 'datetime' } });
-        fireEvent.click(screen.getByText('Date & Time'));
+        fireEvent.click(screen.getByText(nodeLabel('datetime')));
         expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'datetime' }));
+    });
+
+    it('finds the Privacy Shield by the words people actually search for', () => {
+        // Nobody types "guard". They type what they are worried about.
+        // The entry is called "Privacy Shield" since BFSF-355 merged the three
+        // privacy steps into one moded node — the label names the family, the
+        // payload still adds a guard — but every keyword of all three has to
+        // keep working, or the consolidation has just hidden the feature.
+        const { onAddNode } = renderRibbon();
+        fireEvent.click(screen.getByRole('button', { name: /Search/ }));
+        const box = screen.getByPlaceholderText('Search steps…');
+        // Keyword-only terms: a term that also appears in the LABEL gets
+        // <mark>-split by the highlighter and stops matching as one text node.
+        for (const term of ['pii', 'gdpr', 'avg', 'sensitive', 'tokenize', 'unmask', 'redact']) {
+            fireEvent.change(box, { target: { value: term } });
+            expect(screen.queryAllByText('Privacy Shield').length, `"${term}" finds the Privacy Shield`).toBeGreaterThan(0);
+        }
+        fireEvent.change(box, { target: { value: 'bsn' } });
+        fireEvent.click(screen.getAllByText('Privacy Shield')[0]);
+        expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'guard' }));
     });
 
     it('shows trigger choices when there is no trigger', () => {
@@ -122,17 +143,19 @@ describe('AddStepRibbon', () => {
             renderRibbon({ embedded: true });
             expect(screen.getByText('AI')).toBeTruthy();
             expect(screen.getByText('Flow control')).toBeTruthy();
-            expect(screen.getByText('Data')).toBeTruthy();
-            expect(screen.getByText('Lists')).toBeTruthy();
+            // 'Data' and 'Lists' used to be two adjacent captions with no rule
+            // an author could apply to guess which one held Condition, Filter
+            // or Edit data (BFSF-361). They are one group now.
+            expect(screen.getByText('Data & lists')).toBeTruthy();
         });
 
         it('adds flow steps directly from visible command buttons (no dropdown)', () => {
             const { onAddNode } = renderRibbon({ embedded: true });
-            fireEvent.click(screen.getByText('If'));
+            fireEvent.click(screen.getByText(nodeLabel('condition')));
             expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'condition' }));
-            fireEvent.click(screen.getByText('Loop Over Items'));
+            fireEvent.click(screen.getByText(nodeLabel('loop')));
             expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'loop' }));
-            fireEvent.click(screen.getByText('Edit Fields (Set)'));
+            fireEvent.click(screen.getByText(nodeLabel('set')));
             expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'set' }));
         });
 
@@ -141,10 +164,13 @@ describe('AddStepRibbon', () => {
                 { key: 'switch', Icon: () => null, label: 'Switch', payload: { kind: 'switch', label: 'Switch' } },
             ];
             const { onAddNode } = renderRibbon({ embedded: true, frequentItems });
-            expect(screen.getByText('Frequent')).toBeTruthy();
-            // 'Switch' also lives under Flow control, so scope the click to the
-            // Frequent quick-add via its "you use this a lot" title.
-            fireEvent.click(screen.getByTitle('Add Switch — you use this a lot'));
+            const caption = screen.getByText('Frequent');
+            expect(caption).toBeTruthy();
+            // 'Switch' can also appear elsewhere on the ribbon, so scope the
+            // click to the Frequent cluster itself (the caption's own panel).
+            // It used to be scoped by the button's `title`, which the screen
+            // tip replaced — a tip is a portalled node, not an attribute.
+            fireEvent.click(within(caption.parentElement).getByText('Switch'));
             expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'switch' }));
         });
 

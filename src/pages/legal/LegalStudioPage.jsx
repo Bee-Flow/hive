@@ -7,29 +7,33 @@ import {
 import { API_BASE, authFetch } from '../../utils/helpers';
 import useChatEngine from '../../hooks/useChatEngine';
 import RichTextEditor from '../../editor/react/RichTextEditor.jsx';
-import { shouldUseNewEditor } from '../../editor/react/useNewEditor.js';
 import NotebookChat from '../notebooks/NotebookChat';
 import NotebookSources from '../notebooks/NotebookSources';
 import NotebookVersions from '../notebooks/NotebookVersions';
 import NotebookWorkspace from '../notebooks/NotebookWorkspace';
 import CitationOverlay from '../notebooks/CitationOverlay';
 import SendForSigningModal from '../notebooks/SendForSigningModal';
-import { preprocessMermaidContent } from '../notebooks/MermaidExtension';
+import useModelTiers from '../notebooks/hooks/useModelTiers';
+import useExportTargets from '../notebooks/hooks/useExportTargets';
+import useDocumentAutosave from '../notebooks/hooks/useDocumentAutosave';
 import { embedImagesAsBase64 } from '../../utils/imageEmbedding';
 import LegalResearchPanel from './LegalResearchPanel';
 import TableOfAuthorities from './TableOfAuthorities';
 import LegalLeftTabs from './LegalLeftTabs';
+import useTranslation from '../../hooks/useTranslation';
+import ConfirmDialog from '../../components/shared/ConfirmDialog';
 
 /* ── Helpers ──────────────────────────────────────────────────── */
-function timeAgo(dateStr) {
+function timeAgo(dateStr, t) {
     if (!dateStr) return '';
     const d = new Date(dateStr);
     const diff = (Date.now() - d) / 1000;
-    if (diff < 60) return 'zojuist';
-    if (diff < 3600) return `${Math.floor(diff / 60)} min geleden`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} u geleden`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)} d geleden`;
-    return d.toLocaleDateString('nl-NL');
+    if (diff < 60) return t('legal.just_now', 'zojuist');
+    if (diff < 3600) return t('legal.min_ago', { n: Math.floor(diff / 60) });
+    if (diff < 86400) return t('legal.hours_ago', { n: Math.floor(diff / 3600) });
+    if (diff < 604800) return t('legal.days_ago', { n: Math.floor(diff / 86400) });
+    // undefined = the viewer's locale; 'nl-NL' was hardcoded.
+    return d.toLocaleDateString(undefined);
 }
 
 const RECHTSGEBIED_LABELS = {
@@ -58,22 +62,24 @@ const RECHTSGEBIED_CHOICES = [
 ];
 
 // Deadline chip: red ≤3d/overdue, amber ≤14d, emerald otherwise.
-function deadlineInfo(dateStr) {
+function deadlineInfo(dateStr, t) {
     if (!dateStr) return null;
     const days = Math.ceil((new Date(dateStr) - Date.now()) / 86400000);
     let color = '#22c55e';
     if (days <= 3) color = '#ef4444';
     else if (days <= 14) color = '#f59e0b';
-    const label = days < 0 ? `${Math.abs(days)} d te laat` : days === 0 ? 'vandaag' : `over ${days} d`;
-    return { days, color, label, date: new Date(dateStr).toLocaleDateString('nl-NL') };
+    const label = days < 0
+        ? t('legal.deadline_overdue', { n: Math.abs(days) })
+        : days === 0 ? t('legal.deadline_today', 'vandaag') : t('legal.deadline_in', { n: days });
+    return { days, color, label, date: new Date(dateStr).toLocaleDateString(undefined) };
 }
 
 // Soonest upcoming (or overdue) deadline from a matter's deadline list.
-function soonestDeadline(deadlines) {
+function soonestDeadline(deadlines, t) {
     if (!Array.isArray(deadlines) || deadlines.length === 0) return null;
     const dated = deadlines
         .filter(d => d && d.date)
-        .map(d => ({ label: d.label || 'Deadline', info: deadlineInfo(d.date) }))
+        .map(d => ({ label: d.label || 'Deadline', info: deadlineInfo(d.date, t) }))
         .filter(d => d.info);
     if (dated.length === 0) return null;
     dated.sort((a, b) => a.info.days - b.info.days);
@@ -97,7 +103,7 @@ async function nbApi(id, path, opts = {}) {
 }
 
 /* ── Compact export menu (reuses notebook export endpoints) ──────── */
-function ExportMenu({ onExport, exporting, disabled }) {
+function ExportMenu({ onExport, exporting, disabled, t }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
     useEffect(() => {
@@ -108,17 +114,17 @@ function ExportMenu({ onExport, exporting, disabled }) {
     return (
         <div className="relative" ref={ref}>
             <button disabled={disabled || !!exporting} onClick={() => setOpen(o => !o)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors text-sm font-medium" style={{ color: 'var(--text-secondary)' }} title="Exporteren">
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors text-sm font-medium" style={{ color: 'var(--text-secondary)' }} title={t('legal.export', 'Exporteren')}>
                 {exporting ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--accent-primary)' }} /> : <Download className="w-4 h-4" />}
-                Export <ChevronDown className={`w-3 h-3 opacity-60 transition-transform ${open ? 'rotate-180' : ''}`} />
+                {t('legal.export_short', 'Export')} <ChevronDown className={`w-3 h-3 opacity-60 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
             {open && !disabled && (
                 <div className="absolute top-full right-0 mt-1 w-48 rounded-xl shadow-xl border overflow-hidden z-50 p-1" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)' }}>
                     <button onClick={() => { setOpen(false); onExport('pdf'); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] flex items-center gap-3 text-sm" style={{ color: 'var(--text-primary)' }}>
-                        <FileDown className="w-4 h-4" style={{ color: '#ef4444' }} /> Download als PDF
+                        <FileDown className="w-4 h-4" style={{ color: '#ef4444' }} /> {t('legal.download_pdf', 'Download als PDF')}
                     </button>
                     <button onClick={() => { setOpen(false); onExport('docx'); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] flex items-center gap-3 text-sm" style={{ color: 'var(--text-primary)' }}>
-                        <FileType2 className="w-4 h-4" style={{ color: '#3b82f6' }} /> Download als Word
+                        <FileType2 className="w-4 h-4" style={{ color: '#3b82f6' }} /> {t('legal.download_word', 'Download als Word')}
                     </button>
                 </div>
             )}
@@ -128,6 +134,11 @@ function ExportMenu({ onExport, exporting, disabled }) {
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export default function LegalStudioPage({ user, onBack, initialMatterId, onMatterChange }) {
+    // This surface was 100% hardcoded Dutch and had no useTranslation at all, so
+    // an English-locale user on the same install could not read it. The legal
+    // TAXONOMY (rechtsgebieden) deliberately stays in Dutch — those are the
+    // proper names of Dutch areas of law, not UI copy.
+    const { t } = useTranslation();
     const canUse = !!(user?.permissions?.includes('all') || user?.permissions?.includes('use_notebooks'));
 
     const [matters, setMatters] = useState([]);
@@ -152,26 +163,37 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
     const [versionsOpen, setVersionsOpen] = useState(false);
 
     // Editor + chat
-    const [documentContent, setDocumentContent] = useState('');
-    const [saveState, setSaveState] = useState('idle');
-    const [lastSavedAt, setLastSavedAt] = useState(null);
+    // Document + save lifecycle come from the SHARED hook (same as NotebooksPage).
+    // The private copy this replaced never reset `saveState` or
+    // `pendingContentRef` on matter switch, so the header kept showing
+    // "Save failed — retry" from the previous dossier and clicking it PUT that
+    // dossier's document into the newly-opened one. The hook keys everything on
+    // `entityId` and flushes the editor for the matter being left.
+    const {
+        documentContent, setDocumentContent,
+        saveState, lastSavedAt, dirty,
+        handleDocSave, retrySave, markDirty,
+        editorRef,
+    } = useDocumentAutosave({ entityId: selected?.id });
+    // See NotebooksPage.handleEditorChange — markDirty was never called, so the
+    // unload guard could not see edits still inside the editor's debounce.
+    const handleEditorChange = useCallback((html) => {
+        markDirty();
+        setDocumentContent(html);
+    }, [markDirty, setDocumentContent]);
     const [exporting, setExporting] = useState(null);
     const [verifying, setVerifying] = useState(false);
     const [verifyToast, setVerifyToast] = useState(null); // { tone, message }
     // SignRequest + Nextcloud export (reuse notebook export endpoints)
     const [signModalOpen, setSignModalOpen] = useState(false);
     const [signSending, setSignSending] = useState(false);
-    const [signRequestConfigured, setSignRequestConfigured] = useState(false);
-    const [nextcloudConfigured, setNextcloudConfigured] = useState(false);
+    const { signRequestConfigured, nextcloudConfigured } = useExportTargets();
     const [nextcloudExporting, setNextcloudExporting] = useState(false);
-    const [selectedTier, setSelectedTier] = useState('auto');
-    const [modelTiers, setModelTiers] = useState({});
+    const { modelTiers, selectedTier, setSelectedTier } = useModelTiers();
     const [citationSource, setCitationSource] = useState(null);
-    const pendingContentRef = useRef(null);
-    const retryTimerRef = useRef(null);
-    const editorRef = useRef(null);
     const fileInputRef = useRef(null);
     const pendingSelectionRef = useRef(null);
+
 
     /* ── Chat engine (reused, pointed at the notebook stream) ── */
     const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading,
@@ -216,13 +238,6 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
         }, [selected?.id]),
     });
 
-    /* ── Load model tiers + export integrations config ── */
-    useEffect(() => {
-        authFetch(`${API_BASE}/ai/config/chat-models`).then(r => r.ok ? r.json() : {}).then(setModelTiers).catch(() => {});
-        authFetch(`${API_BASE}/ai/user-settings`).then(r => r.ok ? r.json() : {}).then(d => setSignRequestConfigured(!!d.hasSignRequestConfig)).catch(() => {});
-        authFetch(`${API_BASE}/auth/app-password-status`).then(r => r.ok ? r.json() : {}).then(d => setNextcloudConfigured(!!d.hasAppPassword)).catch(() => {});
-    }, []);
-
     /* Right-panel resize is handled inside NotebookWorkspace. */
 
     /* ── Fetch matters ── */
@@ -243,18 +258,30 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
     useEffect(() => { fetchMatters(); }, [fetchMatters]);
 
     /* ── Select matter ── */
+    // Generation counter, same as NotebooksPage.selectNotebook: two sequential
+    // awaits mean a slow response for matter A can land after the user has
+    // opened matter B, silently swapping the open dossier while the URL and
+    // onMatterChange still say B.
+    const selectGenRef = useRef(0);
     const selectMatter = useCallback(async (m) => {
+        const gen = ++selectGenRef.current;
+        const isStale = () => selectGenRef.current !== gen;
+        setError(null);
         try {
             const data = await matterApi(`/${m.id}`);
+            if (isStale()) return;
             setSelected(data.matter);
             setSources(data.sources || []);
             setCitations(data.citations || []);
-            setDocumentContent(preprocessMermaidContent(data.matter?.documentContent || ''));
+            // Mermaid needs no pre-pass — the editor's parsers handle ```mermaid
+            // fences and legacy mermaid divs natively.
+            setDocumentContent(data.matter?.documentContent || '');
             // Rehydrate the persistent, encrypted chat history for this dossier so
             // the AI-drafting conversation survives a refresh / dossier switch
             // (Dutch-law drafting record). Falls back to empty on error.
             try {
                 const conv = await nbApi(m.id, '/conversation');
+                if (isStale()) return;
                 const hist = Array.isArray(conv?.messages) ? conv.messages : [];
                 setChatMessages(hist.map((msg, i) => ({
                     ...msg, // keep tokenisationInfo / pii badge / modelId so the privacy panel survives reload
@@ -263,19 +290,36 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                     content: typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''),
                 })));
             } catch (_) {
+                if (isStale()) return;
                 setChatMessages([]);
             }
+            if (isStale()) return;
             setLeftTab('sources');
             onMatterChange?.(m.id);
-        } catch (e) { setError(e.message); }
-    }, [setChatMessages, onMatterChange]);
+        } catch (e) { if (!isStale()) setError(e.message); }
+    }, [setChatMessages, onMatterChange, setDocumentContent]);
 
     /* ── Poll processing sources ── */
     useEffect(() => {
-        if (!selected) return;
-        if (!sources.some(s => s.status === 'processing')) return;
+        if (!selected) return undefined;
+        if (!sources.some(s => s.status === 'processing')) return undefined;
+        const matterId = selected.id;
+        // The poll used to swallow every error, so once it started failing (an
+        // expired session, say) it span forever with no signal at all. Give up
+        // after a few consecutive failures and tell the user.
+        let failures = 0;
         const t = setInterval(async () => {
-            try { const d = await nbApi(selected.id, '/sources'); setSources(d.sources || []); } catch {}
+            try {
+                const d = await nbApi(matterId, '/sources');
+                failures = 0;
+                setSources(d.sources || []);
+            } catch (e) {
+                failures += 1;
+                if (failures >= 3) {
+                    clearInterval(t);
+                    setError(e.message || 'Kon de status van de stukken niet ophalen.');
+                }
+            }
         }, 3000);
         return () => clearInterval(t);
     }, [selected, sources]);
@@ -290,41 +334,6 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
     }, [chatLoading, selected]);
 
     /* ── Document autosave (idle/saving/error + retry) ── */
-    const handleDocSave = useCallback(async (html, { isRetry = false } = {}) => {
-        if (!selected) return;
-        pendingContentRef.current = html;
-        if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
-        setSaveState('saving');
-        try {
-            await nbApi(selected.id, '', { method: 'PUT', body: JSON.stringify({ documentContent: html }) });
-            pendingContentRef.current = null;
-            setSaveState('idle');
-            setLastSavedAt(Date.now());
-        } catch (e) {
-            setSaveState('error');
-            if (!isRetry) retryTimerRef.current = setTimeout(() => { if (pendingContentRef.current !== null) handleDocSave(pendingContentRef.current, { isRetry: true }); }, 5000);
-        }
-    }, [selected]);
-
-    useEffect(() => {
-        if (saveState === 'idle') return;
-        const h = (e) => { e.preventDefault(); e.returnValue = ''; };
-        window.addEventListener('beforeunload', h);
-        return () => window.removeEventListener('beforeunload', h);
-    }, [saveState]);
-
-    useEffect(() => {
-        const onKey = (e) => {
-            const metaS = (e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S');
-            if (!metaS || !selected) return;
-            e.preventDefault();
-            const html = editorRef.current?.getEditor?.()?.getHTML?.() ?? documentContent;
-            handleDocSave(html);
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [selected, documentContent, handleDocSave]);
-
     /* ── Editor AI bubble action (reused contract) ── */
     const handleEditorAIAction = useCallback((actionKey, selectedText, range, customQuery) => {
         if (!selectedText?.trim()) return;
@@ -341,9 +350,17 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
 
     const handleInsertToDocument = useCallback((content) => {
         const html = content.split('\n').filter(l => l.trim()).map(l => `<p>${l}</p>`).join('');
-        setDocumentContent(prev => prev + html);
-        editorRef.current?.insertContent?.(html);
-    }, []);
+        // Insert through the editor only — its onChange owns `documentContent`.
+        // Appending to state as well raced the editor's own update and could
+        // double-insert; see the note in NotebooksPage.handleInsertToDocument.
+        const editor = editorRef.current;
+        if (editor?.insertContent) { editor.insertContent(html); return; }
+        setDocumentContent((prev) => {
+            const next = (prev || '') + html;
+            handleDocSave(next);
+            return next;
+        });
+    }, [setDocumentContent, handleDocSave]);
 
     // Import a .docx/.pdf/.txt into the editor (reuses the notebook import route).
     const handleImportFile = useCallback(async (e) => {
@@ -411,7 +428,7 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
         if (!files?.length || !selected) return;
         for (const file of files) {
             try { const form = new FormData(); form.append('file', file); await authFetch(`${API_BASE}/api/notebooks/${selected.id}/sources/file`, { method: 'POST', body: form }); }
-            catch (e) { setError(`Upload mislukt: ${file.name}`); }
+            catch (e) { setError(t('legal.upload_failed', { name: file.name })); }
         }
         refreshSources();
     };
@@ -420,7 +437,7 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
     const handleAddMeeting = async (meetingId, opts = {}) => { if (meetingId && selected) { try { await nbApi(selected.id, '/sources/meeting', { method: 'POST', body: JSON.stringify({ meetingId, mode: opts.mode === 'summary' ? 'summary' : 'full' }) }); refreshSources(); } catch (e) { setError(e.message); } } };
     const handleDeleteSource = async (sid) => { if (!selected) return; try { await nbApi(selected.id, `/sources/${sid}`, { method: 'DELETE' }); setSources(p => p.filter(s => s.id !== sid)); } catch (e) { setError(e.message); } };
     const handleRetrySource = async (sid) => { if (!selected) return; try { await nbApi(selected.id, `/sources/${sid}/retry`, { method: 'POST' }); setSources(p => p.map(s => s.id === sid ? { ...s, status: 'processing', error: null } : s)); } catch (e) { setError(e.message); } };
-    const handleCancelSource = async (sid) => { if (!selected) return; try { await nbApi(selected.id, `/sources/${sid}/cancel`, { method: 'POST' }); setSources(p => p.map(s => s.id === sid ? { ...s, status: 'error', error: 'Geannuleerd' } : s)); } catch (e) { setError(e.message); } };
+    const handleCancelSource = async (sid) => { if (!selected) return; try { await nbApi(selected.id, `/sources/${sid}/cancel`, { method: 'POST' }); setSources(p => p.map(s => s.id === sid ? { ...s, status: 'error', error: t('legal.cancelled', 'Geannuleerd') } : s)); } catch (e) { setError(e.message); } };
     const handleRenameSource = async (sid, name) => { if (!selected || !name?.trim()) return; const clean = name.trim(); setSources(p => p.map(s => s.id === sid ? { ...s, name: clean } : s)); try { await nbApi(selected.id, `/sources/${sid}`, { method: 'PATCH', body: JSON.stringify({ name: clean }) }); } catch (e) { setError(e.message); refreshSources(); } };
     const handleReorderSources = async (ordered) => { if (!selected || !Array.isArray(ordered)) return; setSources(ordered); try { await nbApi(selected.id, '/sources/reorder', { method: 'PATCH', body: JSON.stringify({ orderedIds: ordered.map(s => s.id) }) }); } catch (e) { setError(e.message); refreshSources(); } };
     const handleBulkDelete = async (ids) => { if (!selected || !ids?.length) return; const set = new Set(ids); setSources(p => p.filter(s => !set.has(s.id))); try { await nbApi(selected.id, '/sources/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }); } catch (e) { setError(e.message); refreshSources(); } };
@@ -471,7 +488,7 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
         const byKind = {};
         citations.forEach(c => { (byKind[c.kind] = byKind[c.kind] || []).push(c); });
         const KIND_LABELS = { jurisprudentie: 'Jurisprudentie', wet: 'Wetgeving', eu: 'EU-recht', tuchtrecht: 'Tuchtrecht', kamerstuk: 'Parlementaire stukken', bekendmaking: 'Officiële publicaties', literatuur: 'Literatuur' };
-        let html = '<h2>Bronnenlijst</h2>';
+        let html = `<h2>${t('legal.source_list', 'Bronnenlijst')}</h2>`;
         for (const kind of Object.keys(byKind)) {
             html += `<h3>${KIND_LABELS[kind] || kind}</h3><ul>`;
             for (const c of byKind[kind]) html += `<li><p>${c.title && c.title !== c.identifier ? c.title + ', ' : ''}${c.identifier || ''}${c.pinpoint ? ' (' + c.pinpoint + ')' : ''}</p></li>`;
@@ -560,9 +577,9 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                     <div className="w-14 h-14 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.1)' }}>
                         <AlertCircle className="w-7 h-7" style={{ color: '#ef4444' }} />
                     </div>
-                    <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Juridisch is uitgeschakeld</h2>
-                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>Je rol bevat geen toegang. Vraag een beheerder om de rechten "Notebooks gebruiken".</p>
-                    {onBack && <button onClick={onBack} className="px-4 py-2 rounded-lg font-medium text-white" style={{ background: 'var(--accent-primary)' }}>Terug</button>}
+                    <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('legal.disabled_title', 'Juridisch is uitgeschakeld')}</h2>
+                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>{t('legal.disabled_body', 'Je rol bevat geen toegang. Vraag een beheerder om de rechten "Notebooks gebruiken".')}</p>
+                    {onBack && <button onClick={onBack} className="px-4 py-2 rounded-lg font-medium text-white" style={{ background: 'var(--accent-primary)' }}>{t('legal.back', 'Terug')}</button>}
                 </div>
             </div>
         );
@@ -570,11 +587,10 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
 
     /* ━━━ DETAIL VIEW ━━━ */
     if (selected) {
-        const nearest = soonestDeadline(selected.settings?.legal?.deadlines);
+        const nearest = soonestDeadline(selected.settings?.legal?.deadlines, t);
         const dl = nearest?.info || null;
         const legal = selected.settings?.legal || {};
         const detailMeta = `${legal.clientName || 'Dossier'}${legal.wederpartij ? ` / ${legal.wederpartij}` : ''} · ${sources.length} stuk${sources.length !== 1 ? 'ken' : ''} · ${totalWords.toLocaleString('nl-NL')} woorden`;
-        const retrySave = () => { if (pendingContentRef.current != null) handleDocSave(pendingContentRef.current); };
         const commandContext = {
             editorRef,
             onExport: handleExport,
@@ -626,6 +642,7 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                     saveState={saveState}
                     lastSavedAt={lastSavedAt}
                     onRetrySave={retrySave}
+                    dirty={dirty}
                     headerExtras={[
                         { id: 'versions', icon: History, label: 'Versiegeschiedenis', active: versionsOpen, onClick: () => setVersionsOpen(o => !o) },
                     ]}
@@ -636,16 +653,16 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                                     <Clock className="w-3 h-3" /> {dl.label}
                                 </span>
                             )}
-                            <ExportMenu onExport={handleExport} exporting={exporting} disabled={!documentContent} />
+                            <ExportMenu onExport={handleExport} exporting={exporting} disabled={!documentContent} t={t} />
                             {signRequestConfigured && (
                                 <button disabled={!documentContent || !!exporting} onClick={() => setSignModalOpen(true)}
-                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors" style={{ color: 'var(--text-secondary)' }} title="Versturen ter ondertekening (SignRequest)">
+                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors" style={{ color: 'var(--text-secondary)' }} title={t('legal.send_for_signing', 'Versturen ter ondertekening (SignRequest)')}>
                                     <PenTool className="w-4 h-4 text-green-500" />
                                 </button>
                             )}
                             {nextcloudConfigured && (
                                 <button disabled={!documentContent || !!exporting || !!nextcloudExporting} onClick={handleNextcloudExport}
-                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors" style={{ color: 'var(--text-secondary)' }} title="Opslaan in Nextcloud (dossier)">
+                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors" style={{ color: 'var(--text-secondary)' }} title={t('legal.save_nextcloud', 'Opslaan in Nextcloud (dossier)')}>
                                     {nextcloudExporting ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0082C9' }} />
                                         : <svg viewBox="0 0 32 32" fill="none" className="w-4 h-4"><path d="M11.5 11.2c-2 0-3.7 1.4-4.2 3.3a3.5 3.5 0 1 0 0 3 4.4 4.4 0 0 0 7 1.7l1.5-1.4 1.6 1.4a4.4 4.4 0 0 0 7-1.7 3.5 3.5 0 1 0 0-3 4.4 4.4 0 0 0-7-1.7l-1.6 1.4-1.5-1.4a4.4 4.4 0 0 0-2.8-1.6zm0 2.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8zm9 0a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z" fill="#0082C9" /></svg>}
                                 </button>
@@ -717,16 +734,15 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                     }
                 >
                     <RichTextEditor
-                        engine={shouldUseNewEditor(user, 'legal') ? 'bf' : 'tiptap'}
                         ref={editorRef}
                         onImportClick={() => fileInputRef.current?.click()}
                         content={documentContent}
-                        onChange={setDocumentContent}
+                        onChange={handleEditorChange}
                         onSave={handleDocSave}
                         onAIAction={handleEditorAIAction}
                         saving={saveState === 'saving'}
                         notebookId={selected?.id}
-                        placeholder="Begin met schrijven, of genereer een stuk via de werkbalk of de AI-chat…"
+                        placeholder={t('legal.editor_placeholder', 'Begin met schrijven, of genereer een stuk via de werkbalk of de AI-chat…')}
                     />
                 </NotebookWorkspace>
             </>
@@ -742,9 +758,9 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                         <Scale className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} />
-                        <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Juridisch</h1>
+                        <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{t('legal.title', 'Juridisch')}</h1>
                     </div>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Dossiers, juridisch onderzoek en het opstellen van stukken met geverifieerde bronnen</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{t('legal.subtitle', 'Dossiers, juridisch onderzoek en het opstellen van stukken met geverifieerde bronnen')}</p>
                 </div>
             </div>
 
@@ -761,20 +777,24 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                     <div className="px-3 py-2.5 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-default)' }}>
                         <div className="relative flex-1">
                             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Zoeken…" className="w-full pl-8 pr-2 py-1.5 text-sm rounded-lg border focus:outline-none focus:ring-1"
+                            <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('legal.search', 'Zoeken…')}
+                                aria-label={t('legal.search', 'Zoeken…')} className="w-full pl-8 pr-2 py-1.5 text-sm rounded-lg border focus:outline-none focus:ring-1"
                                 style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }} />
                         </div>
-                        <button onClick={() => setSidebarFocusId('__new__')} title="Nieuw dossier" className="p-1.5 rounded-lg hover:bg-[var(--bg-secondary)]" style={{ color: 'var(--accent-primary)' }}><Plus size={16} /></button>
+                        <button onClick={() => setSidebarFocusId('__new__')} title={t('legal.new_matter', 'Nieuw dossier')}
+                            aria-label={t('legal.new_matter', 'Nieuw dossier')} className="p-1.5 rounded-lg hover:bg-[var(--bg-secondary)]" style={{ color: 'var(--accent-primary)' }}><Plus size={16} /></button>
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5">
                         {loading && <div className="text-xs p-3" style={{ color: 'var(--text-tertiary)' }}>…</div>}
                         {!loading && filtered.length === 0 && <div className="text-xs p-4 text-center" style={{ color: 'var(--text-tertiary)' }}>{search ? 'Geen resultaten' : 'Nog geen dossiers'}</div>}
                         {filtered.map((m) => {
                             const isFocused = sidebarFocusId === m.id;
-                            const dl = deadlineInfo(m.settings?.legal?.deadlines?.[0]?.date);
+                            // Sorted soonest, matching the detail header — the raw array order made the
+                            // same matter show different deadlines in list vs detail.
+                            const dl = soonestDeadline(m.settings?.legal?.deadlines, t)?.info || null;
                             const rg = m.settings?.legal?.rechtsgebied;
                             return (
-                                <div key={m.id} onClick={() => setSidebarFocusId(m.id)} onDoubleClick={() => selectMatter(m)} title="Klik om te bekijken · dubbelklik om te openen"
+                                <div key={m.id} onClick={() => setSidebarFocusId(m.id)} onDoubleClick={() => selectMatter(m)} title={t('legal.card_hint', 'Klik om te bekijken · dubbelklik om te openen')}
                                     className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-sm transition ${isFocused ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}>
                                     <Scale className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--brand-primary)' }} />
                                     <div className="flex-1 min-w-0">
@@ -786,7 +806,7 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                                             {dl && <span style={{ color: dl.color }}>· {dl.label}</span>}
                                         </div>
                                     </div>
-                                    <button onClick={(e) => { e.stopPropagation(); setPendingDelete(m); }} title="Verwijderen" className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-500" style={{ color: 'var(--text-tertiary)' }}><Trash2 size={13} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); setPendingDelete(m); }} title={t('legal.delete', 'Verwijderen')} aria-label={t('legal.delete', 'Verwijderen')} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-red-500" style={{ color: 'var(--text-tertiary)' }}><Trash2 size={13} /></button>
                                 </div>
                             );
                         })}
@@ -802,27 +822,27 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                             <div className="w-full max-w-md">
                                 <div className="flex items-center gap-3 mb-6">
                                     <div className="w-12 h-12 rounded-xl border-[1.5px] flex items-center justify-center" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}><Plus className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} /></div>
-                                    <div><h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Nieuw dossier</h2><p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Vul de zaakgegevens in</p></div>
+                                    <div><h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{t('legal.new_matter', 'Nieuw dossier')}</h2><p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('legal.new_matter_hint', 'Vul de zaakgegevens in')}</p></div>
                                 </div>
                                 <div className="space-y-2.5">
-                                    <input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setSidebarFocusId(null); }} placeholder="Naam dossier (bv. Jansen / Pietersen)…" className="w-full px-4 py-3 text-base rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle} />
+                                    <input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setSidebarFocusId(null); }} placeholder={t('legal.matter_name_placeholder', 'Naam dossier (bv. Jansen / Pietersen)…')} className="w-full px-4 py-3 text-base rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle} />
                                     <div className="grid grid-cols-2 gap-2.5">
-                                        <input value={form.clientName} onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))} placeholder="Cliënt" className="px-3 py-2 text-sm rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle} />
-                                        <input value={form.wederpartij} onChange={e => setForm(f => ({ ...f, wederpartij: e.target.value }))} placeholder="Wederpartij" className="px-3 py-2 text-sm rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle} />
+                                        <input value={form.clientName} onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))} placeholder={t('legal.client', 'Cliënt')} className="px-3 py-2 text-sm rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle} />
+                                        <input value={form.wederpartij} onChange={e => setForm(f => ({ ...f, wederpartij: e.target.value }))} placeholder={t('legal.counterparty', 'Wederpartij')} className="px-3 py-2 text-sm rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle} />
                                     </div>
                                     <div className="grid grid-cols-2 gap-2.5">
                                         <select value={form.rechtsgebied} onChange={e => setForm(f => ({ ...f, rechtsgebied: e.target.value }))} className="px-3 py-2 text-sm rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle}>
-                                            <option value="">Rechtsgebied…</option>
+                                            <option value="">{t('legal.practice_area', 'Rechtsgebied…')}</option>
                                             {RECHTSGEBIED_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                                         </select>
-                                        <input value={form.zaaknummer} onChange={e => setForm(f => ({ ...f, zaaknummer: e.target.value }))} placeholder="Zaaknummer" className="px-3 py-2 text-sm rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle} />
+                                        <input value={form.zaaknummer} onChange={e => setForm(f => ({ ...f, zaaknummer: e.target.value }))} placeholder={t('legal.case_number', 'Zaaknummer')} className="px-3 py-2 text-sm rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle} />
                                     </div>
-                                    <label className="block text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Eerstvolgende deadline (optioneel)
+                                    <label className="block text-[11px]" style={{ color: 'var(--text-tertiary)' }}>{t('legal.next_deadline_optional', 'Eerstvolgende deadline (optioneel)')}
                                         <input type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} className="mt-1 w-full px-3 py-2 text-sm rounded-xl border-[1.5px] focus:outline-none focus:border-[var(--accent-primary)]" style={fieldStyle} />
                                     </label>
                                 </div>
                                 <div className="flex items-center justify-end gap-2 mt-4">
-                                    <button onClick={() => setSidebarFocusId(null)} className="px-4 py-2 rounded-full text-sm hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>Annuleren</button>
+                                    <button onClick={() => setSidebarFocusId(null)} className="px-4 py-2 rounded-full text-sm hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>{t('legal.cancel', 'Annuleren')}</button>
                                     <button onClick={handleCreate} disabled={!form.name.trim() || creating} className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white disabled:opacity-40" style={{ background: 'var(--accent-primary)' }}>
                                         {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Dossier aanmaken
                                     </button>
@@ -846,24 +866,24 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                                     {renamingId === focused.id ? (
                                         <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleRename(focused.id); if (e.key === 'Escape') setRenamingId(null); }} onBlur={() => handleRename(focused.id)} className="w-full text-lg font-bold bg-transparent outline-none border-b-[1.5px] focus:border-[var(--accent-primary)]" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-subtle)' }} />
                                     ) : (
-                                        <h2 className="text-lg font-bold truncate cursor-text" style={{ color: 'var(--text-primary)' }} onDoubleClick={() => { setRenamingId(focused.id); setRenameValue(focused.name); }} title="Dubbelklik om te hernoemen">{focused.name}</h2>
+                                        <h2 className="text-lg font-bold truncate cursor-text" style={{ color: 'var(--text-primary)' }} onDoubleClick={() => { setRenamingId(focused.id); setRenameValue(focused.name); }} title={t('legal.dblclick_rename', 'Dubbelklik om te hernoemen')}>{focused.name}</h2>
                                     )}
                                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                                        {focused.settings?.legal?.clientName || 'Dossier'}{focused.settings?.legal?.wederpartij ? ` / ${focused.settings.legal.wederpartij}` : ''} · {focused.sourceCount || 0} stuk{(focused.sourceCount || 0) !== 1 ? 'ken' : ''} · Bijgewerkt {timeAgo(focused.updatedAt || focused.createdAt)}
+                                        {focused.settings?.legal?.clientName || 'Dossier'}{focused.settings?.legal?.wederpartij ? ` / ${focused.settings.legal.wederpartij}` : ''} · {t('legal.n_documents', { count: focused.sourceCount || 0 })} · {t('legal.updated_ago', { ago: timeAgo(focused.updatedAt || focused.createdAt, t) })}
                                     </p>
                                 </div>
                                 <div className="flex-shrink-0 flex items-center gap-2">
-                                    <button onClick={() => { setRenamingId(focused.id); setRenameValue(focused.name); }} title="Hernoemen" className="p-2 rounded-lg hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-tertiary)' }}><Pencil size={16} /></button>
-                                    <button onClick={() => setPendingDelete(focused)} title="Verwijderen" className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-500" style={{ color: 'var(--text-tertiary)' }}><Trash2 size={16} /></button>
-                                    <button onClick={() => selectMatter(focused)} className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white" style={{ background: 'var(--accent-primary)' }}>Open dossier <ChevronRight className="w-4 h-4" /></button>
+                                    <button onClick={() => { setRenamingId(focused.id); setRenameValue(focused.name); }} title={t('legal.rename', 'Hernoemen')} aria-label={t('legal.rename', 'Hernoemen')} className="p-2 rounded-lg hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-tertiary)' }}><Pencil size={16} /></button>
+                                    <button onClick={() => setPendingDelete(focused)} title={t('legal.delete', 'Verwijderen')} aria-label={t('legal.delete', 'Verwijderen')} className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-500" style={{ color: 'var(--text-tertiary)' }}><Trash2 size={16} /></button>
+                                    <button onClick={() => selectMatter(focused)} className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white" style={{ background: 'var(--accent-primary)' }}>{t('legal.open_matter', 'Open dossier')} <ChevronRight className="w-4 h-4" /></button>
                                 </div>
                             </div>
                             <div className="flex-1 overflow-auto px-6 py-6">
                                 <div className="max-w-2xl grid grid-cols-2 gap-3">
-                                    <Field label="Cliënt" value={focused.settings?.legal?.clientName} />
-                                    <Field label="Wederpartij" value={focused.settings?.legal?.wederpartij} />
-                                    <Field label="Rechtsgebied" value={RECHTSGEBIED_LABELS[focused.settings?.legal?.rechtsgebied] || focused.settings?.legal?.rechtsgebied} />
-                                    <Field label="Zaaknummer" value={focused.settings?.legal?.zaaknummer} />
+                                    <Field label={t('legal.client', 'Cliënt')} value={focused.settings?.legal?.clientName} />
+                                    <Field label={t('legal.counterparty', 'Wederpartij')} value={focused.settings?.legal?.wederpartij} />
+                                    <Field label={t('legal.practice_area_label', 'Rechtsgebied')} value={RECHTSGEBIED_LABELS[focused.settings?.legal?.rechtsgebied] || focused.settings?.legal?.rechtsgebied} />
+                                    <Field label={t('legal.case_number', 'Zaaknummer')} value={focused.settings?.legal?.zaaknummer} />
                                 </div>
                             </div>
                         </div>
@@ -871,21 +891,19 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                 </section>
             </div>
 
-            {pendingDelete && (
-                <div className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center p-4" onClick={() => setPendingDelete(null)}>
-                    <div className="rounded-xl w-full max-w-md shadow-xl border" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)' }} onClick={e => e.stopPropagation()}>
-                        <div className="flex items-start justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-default)' }}>
-                            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Dossier verwijderen</div>
-                            <button onClick={() => setPendingDelete(null)} style={{ color: 'var(--text-tertiary)' }}><X size={18} /></button>
-                        </div>
-                        <div className="px-5 py-4 text-sm" style={{ color: 'var(--text-secondary)' }}>Dossier <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{pendingDelete.name}</span> en alle stukken verwijderen? Dit kan niet ongedaan worden gemaakt.</div>
-                        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-default)' }}>
-                            <button onClick={() => setPendingDelete(null)} className="px-4 py-2 rounded-full text-sm hover:bg-[var(--bg-secondary)]" style={{ color: 'var(--text-secondary)' }}>Annuleren</button>
-                            <button onClick={confirmDelete} className="px-4 py-2 rounded-full text-sm bg-red-500 text-white hover:bg-red-600">Verwijderen</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Shared ConfirmDialog: the hand-rolled modal had no Escape, no
+                focus trap and no focus restore, and named only "stukken" while
+                the delete also removes the document and its version history. */}
+            <ConfirmDialog
+                open={!!pendingDelete}
+                title={t('legal.confirm_delete_title', 'Dossier verwijderen?')}
+                description={pendingDelete ? t('legal.confirm_delete_body', { name: pendingDelete.name }) : ''}
+                confirmLabel={t('legal.delete', 'Verwijderen')}
+                cancelLabel={t('legal.cancel', 'Annuleren')}
+                destructive
+                onConfirm={confirmDelete}
+                onCancel={() => setPendingDelete(null)}
+            />
         </div>
     );
 }

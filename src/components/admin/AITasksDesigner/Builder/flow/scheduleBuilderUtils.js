@@ -178,7 +178,8 @@ export function describeCron(cron) {
             return `Monthly on day ${preset.day} at ${pad2(preset.hour)}:${pad2(preset.minute)}`;
         case 'custom':
         default:
-            return 'Custom expression';
+            // Never "cron" — see ScheduleBuilder's Advanced field.
+            return 'Custom schedule';
     }
 }
 

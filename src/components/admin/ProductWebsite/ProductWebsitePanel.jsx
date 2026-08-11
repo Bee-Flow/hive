@@ -1,22 +1,31 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authFetch } from '../../../utils/helpers';
 import AppIcon from '../../AppIcon';
-import { Toggle, CreatePageContext } from './fields';
-import { BLOCK_CATALOGUE, BLOCK_EDITORS, BLOCK_DEFAULTS, HeaderEditor, FooterEditor } from './editors';
-import CookieBannerEditor from './CookieBannerEditor';
-import PageList, { SaveTemplateDialog } from './PageList';
+import scopedStorage from '../../../utils/scopedStorage';
+import { CreatePageContext } from './fields';
+import { BLOCK_DEFAULTS, BLOCK_CATALOGUE } from './editors';
+import { SaveTemplateDialog } from './PageList';
 import { exportPage as exportPageToFile } from './pageIO';
 import { ToastHost, showToast } from '../guardrails/Toast';
-import BlockList from './BlockList';
 import SitemapView from './SitemapView';
-import AIPagePanel from './AIPagePanel';
-import SiteSwitcher from './SiteSwitcher';
-import VersionSwitcher from './VersionSwitcher';
-import DesignEditor from './DesignEditor';
-import BlockStyleEditor from './BlockStyleEditor';
-import TranslationPanel from './TranslationPanel';
+import CmsAssistantPane from './assistant/CmsAssistantPane';
 import { cmsApi } from './cmsApi';
 import { setLocalePath, mergePreviewSite, mergePreviewPage } from './localeMerge';
+import { buildPreviewContent, chromeStoragePath, applyChromeEdit } from './preview/previewContent';
+import { coverageForLocale, detectArrayReorder, blockHasArrayOverrides } from './translatable';
+import {
+    SITE_VIRTUAL_ID, DESIGN_VIRTUAL_ID, HEADER_VIRTUAL_ID,
+    COOKIE_VIRTUAL_ID, ANALYTICS_VIRTUAL_ID,
+    isVirtualPageId, isChromeEntryId, normalizeVirtualId,
+} from './sentinels';
+import useDraftHistory from '../../../hooks/useDraftHistory';
+import CmsBuilderShell from './shell/CmsBuilderShell';
+import TopBar from './shell/TopBar';
+import NavigatorPanel from './navigator/NavigatorPanel';
+import InspectorHost from './inspector/InspectorHost';
+import PreviewStage from './preview/PreviewStage';
+import useConfirm from './dialogs/useConfirm';
+import AddBlockDialog from './dialogs/AddBlockDialog';
 
 const ACTIVE_SITE_LS_KEY = 'cms.activeSiteId';
 
@@ -47,15 +56,26 @@ const ACTIVE_SITE_LS_KEY = 'cms.activeSiteId';
  *
  * postMessage protocol:
  *   ← cms-preview-ready
- *   ← cms-edit            { path, value }
+ *   ← cms-edit            { path, value, blockId? }
+ *   ← cms-select          { blockId }
+ *   ← cms-hotkey          { action: 'undo' | 'redo' }
+ *   ← cms-block-action    { blockId, action: 'move-up' | 'move-down' |
+ *                                       'duplicate' | 'delete' | 'settings' }
+ *   ← cms-insert-at       { index }
  *   → cms-preview         { content, design, previewMode }
  *                                                content = { header, footer, blocks };
  *                                                design = site.design (colors/fonts/radius/theme);
  *                                                previewMode = 'page' | 'chrome'
+ *   → cms-active          { blockId, locked, labels }   selection + AI stream
+ *                                                lock mirror for the canvas
+ *                                                chrome (posted separately from
+ *                                                cms-preview so content re-posts
+ *                                                never disturb inline-edit focus)
+ *   → cms-scroll          { blockId }
  */
 
-const SITE_VIRTUAL_ID   = '__site__';
-const DESIGN_VIRTUAL_ID = '__design__';
+// Virtual page-list ids live in ./sentinels.js (legacy '__site__' aliases
+// to the header entry; navigator shows Design/Header/Footer/Cookie banner).
 
 // ── helpers ─────────────────────────────────────────────────────────
 
@@ -67,80 +87,22 @@ function cloneBlock(block) {
     return { ...JSON.parse(JSON.stringify(block)), id: newBlockId() };
 }
 
-function formatRelative(iso) {
-    if (!iso) return null;
-    const ts = Date.parse(iso);
-    if (Number.isNaN(ts)) return null;
-    const diffSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
-    if (diffSec < 45)    return 'just now';
-    if (diffSec < 3600)  return `${Math.round(diffSec / 60)}m ago`;
-    if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h ago`;
-    return new Date(ts).toLocaleDateString();
-}
+// Block-type → human label map for the canvas chrome. Built once from
+// BLOCK_CATALOGUE and shipped inside the cms-active message, so the
+// preview iframe (marketing bundle) never imports admin code for labels.
+const BLOCK_LABELS = Object.fromEntries(
+    Object.values(BLOCK_CATALOGUE).map(m => [m.type, m.label]));
 
-function SaveBadge({ status, onRetry }) {
-    const map = {
-        idle:   { label: '',                  color: 'var(--text-muted)' },
-        dirty:  { label: '● Unsaved',         color: '#fbbf24' },
-        saving: { label: 'Saving…',           color: 'var(--text-secondary)' },
-        saved:  { label: '✓ Saved',           color: '#34d399' },
-        error:  { label: '⚠ Save failed',     color: '#f87171' },
-    };
-    const s = map[status] || map.idle;
-    if (!s.label) return <span />;
-    return (
-        <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: s.color }}>
-            {s.label}
-            {status === 'error' && onRetry ? (
-                <button
-                    type="button"
-                    onClick={onRetry}
-                    className="ml-1 px-1.5 py-0.5 rounded border border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
-                >
-                    Retry
-                </button>
-            ) : null}
-        </span>
-    );
-}
-
-function TabBtn({ icon, label, active, onClick }) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium border-b-2 transition-colors
-                ${active
-                    ? 'border-[var(--accent-primary)] text-[var(--text-primary)]'
-                    : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                }`}
-        >
-            <AppIcon name={icon} className="w-3.5 h-3.5" />
-            {label}
-        </button>
-    );
-}
-
-// Compact text-only tab button used inside the block editor (Content / Style).
-function SubTabBtn({ label, active, onClick }) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors
-                ${active
-                    ? 'border-[var(--accent-primary)] text-[var(--text-primary)]'
-                    : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                }`}
-        >
-            {label}
-        </button>
-    );
-}
+// SaveBadge lives in ./shell/SaveBadge.jsx; the Content/Style sub-tabs in
+// ./inspector/PageInspector.jsx.
 
 // ── main component ───────────────────────────────────────────────────
 
-export default function ProductWebsitePanel() {
+// Props (both provided by AdminDashboard's full-bleed branch):
+//   onExit()          — leave the builder, back to the admin dashboard
+//   onNavigate(path)  — app-level navigation for cross-links
+//                       (e.g. 'admin/languages', 'admin/website-analytics')
+export default function ProductWebsitePanel({ onExit, onNavigate } = {}) {
     // ── multi-site state ─────────────────────────────────────────────
     const [sites, setSites]                   = useState([]);
     const [sitesLoaded, setSitesLoaded]       = useState(false);
@@ -182,6 +144,11 @@ export default function ProductWebsitePanel() {
     const [activeBlockId, setActiveBlockId]   = useState(null);
     const [blockEditorTab, setBlockEditorTab] = useState('content'); // 'content' | 'style'
     const [rightView, setRightView]           = useState('preview'); // 'preview' | 'sitemap'
+    // Add-block dialog request — null = closed. { index: null } comes from
+    // the BlockList "+" (default insert-after-active); { index: n } comes
+    // from a canvas insert-between "+" zone (cms-insert-at) and splices at
+    // that explicit position.
+    const [addBlockRequest, setAddBlockRequest] = useState(null);
     // Page templates — global list, summary shape (no blocks payload).
     // Loaded once on mount and refreshed after save/delete. `pendingTemplatePage`
     // holds the page whose context-menu opened the Save dialog (null = no
@@ -189,6 +156,113 @@ export default function ProductWebsitePanel() {
     // when the user confirms the save.
     const [templates, setTemplates]                       = useState([]);
     const [pendingTemplatePage, setPendingTemplatePage]   = useState(null);
+
+    // ── shell state ─────────────────────────────────────────────────
+    // One promise-based ConfirmDialog for every destructive action.
+    const { confirm, confirmDialog } = useConfirm();
+    // While focus mode is active the individual panel flags stay persisted
+    // untouched — they double as the restore state after a reload — so the
+    // initializers force the panels closed when the focus flag is set.
+    const [navOpen, setNavOpen]             = useState(() =>
+        scopedStorage.getItem('cmsFocusMode') !== '1' && scopedStorage.getItem('cmsNavOpen') !== '0');
+    const [inspectorOpen, setInspectorOpen] = useState(() =>
+        scopedStorage.getItem('cmsFocusMode') !== '1' && scopedStorage.getItem('cmsInspectorOpen') !== '0');
+    const toggleNav = useCallback(() => setNavOpen(v => {
+        scopedStorage.setItem('cmsNavOpen', v ? '0' : '1');
+        return !v;
+    }), []);
+    const toggleInspector = useCallback(() => setInspectorOpen(v => {
+        scopedStorage.setItem('cmsInspectorOpen', v ? '0' : '1');
+        return !v;
+    }), []);
+    // Soft "draft differs from the published snapshot" heuristic — drives the
+    // PublishMenu status pill. True after any successful draft write since the
+    // last publish; seeded on load from updatedAt vs publishedAt. Copy in the
+    // UI stays soft (no false precision).
+    const [dirtySincePublish, setDirtySincePublish] = useState(false);
+    // Preview device preset ('desktop' | 'tablet' | 'mobile') — a pure
+    // max-width on the stage's iframe wrapper.
+    const [device, setDevice] = useState(() => scopedStorage.getItem('cmsPreviewDevice') || 'desktop');
+    const changeDevice = useCallback((key) => {
+        scopedStorage.setItem('cmsPreviewDevice', key);
+        setDevice(key);
+    }, []);
+    // AI-translate model tier (AiTranslateControl vocabulary: fast/thinking/
+    // writer/pro — the same picker the Languages tab uses). Persisted per user.
+    const [translateTier, setTranslateTier] = useState(() => scopedStorage.getItem('cmsTranslateTier') || 'fast');
+    const changeTranslateTier = useCallback((t) => {
+        scopedStorage.setItem('cmsTranslateTier', t);
+        setTranslateTier(t);
+    }, []);
+    // D4 guard bookkeeping — warn once per block per session when a list is
+    // reordered in the default locale while translations exist for it.
+    const reorderWarnedRef = useRef(new Set());
+    // ── AI assistant (builder) state ────────────────────────────────
+    const [assistantOpen, setAssistantOpen] = useState(() =>
+        scopedStorage.getItem('cmsFocusMode') !== '1' && scopedStorage.getItem('cmsAssistantOpen') === '1');
+    const toggleAssistant = useCallback(() => setAssistantOpen(v => {
+        scopedStorage.setItem('cmsAssistantOpen', v ? '0' : '1');
+        return !v;
+    }), []);
+    // ── focus mode ──────────────────────────────────────────────────
+    // One switch that collapses nav + inspector + AI dock at once and
+    // restores the prior open-state on exit. Persisted via the same
+    // scopedStorage mechanism as the individual panel flags (which are
+    // left untouched while focused — see the initializers above).
+    const [focusMode, setFocusMode] = useState(() => scopedStorage.getItem('cmsFocusMode') === '1');
+    const focusRestoreRef = useRef(null);
+    const toggleFocusMode = useCallback(() => {
+        const entering = !focusMode;
+        scopedStorage.setItem('cmsFocusMode', entering ? '1' : '0');
+        if (entering) {
+            focusRestoreRef.current = { nav: navOpen, inspector: inspectorOpen, assistant: assistantOpen };
+            setNavOpen(false);
+            setInspectorOpen(false);
+            setAssistantOpen(false);
+        } else {
+            // Restore the pre-focus open-state; after a reload (ref empty)
+            // fall back to the individually persisted panel flags.
+            const r = focusRestoreRef.current || {
+                nav: scopedStorage.getItem('cmsNavOpen') !== '0',
+                inspector: scopedStorage.getItem('cmsInspectorOpen') !== '0',
+                assistant: scopedStorage.getItem('cmsAssistantOpen') === '1',
+            };
+            focusRestoreRef.current = null;
+            setNavOpen(r.nav);
+            setInspectorOpen(r.inspector);
+            setAssistantOpen(r.assistant);
+        }
+        setFocusMode(entering);
+    }, [focusMode, navOpen, inspectorOpen, assistantOpen]);
+    // Focus-mode hotkey '\' — skipped while typing (inputs, textareas,
+    // selects, contentEditable) so backslashes can still be typed.
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.key !== '\\' || e.ctrlKey || e.metaKey || e.altKey) return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+            e.preventDefault();
+            toggleFocusMode();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [toggleFocusMode]);
+    // Stream lock: while an AI turn runs, human writes are blocked so the
+    // server-persisted drafts can't be clobbered (cmsStore has no CAS).
+    const [builderRunning, setBuilderRunning] = useState(false);
+    const builderRunningRef = useRef(false);
+    // Per-turn bookkeeping for What-changed / Undo turn: pre-turn snapshot +
+    // what the drafts touched. Armed until the next turn or human edit.
+    const builderTurnRef = useRef(null); // { preSite, prePages, created:[], touched:Set, draftsSeen }
+    const [builderUndoAvailable, setBuilderUndoAvailable] = useState(false);
+    const builderUndoAvailableRef = useRef(false);
+    const disarmBuilderUndo = useCallback(() => {
+        if (builderUndoAvailableRef.current) {
+            builderUndoAvailableRef.current = false;
+            setBuilderUndoAvailable(false);
+        }
+    }, []);
+    const AI_LOCK_MSG = 'The AI assistant is editing — press Stop in the assistant to take over.';
 
     // refs for debounced saves
     const iframeRef         = useRef(null);
@@ -201,6 +275,9 @@ export default function ProductWebsitePanel() {
     // (the timer callback otherwise drops the Promise on the floor, which
     // lets a Publish click race the network round-trip).
     const inFlightSaveRef   = useRef(null);
+    // True while an AI translate POST is in flight — gates manual translation
+    // writes so they can't be clobbered by the returned whole-override.
+    const aiRunningRef      = useRef(false);
     // Holds the batch from the most recent failed flushSaves() so the user
     // can retry without losing their edits. Cleared when a flush succeeds.
     const failedSavesRef    = useRef(null);
@@ -212,10 +289,13 @@ export default function ProductWebsitePanel() {
     // ── derived ─────────────────────────────────────────────────────
 
     // Merge the PageDoc with its matching site.pages[i] index entry so the
-    // PageMetaStrip can read isHomepage/hideHeader/hideFooter/isNotFound
-    // (which live on the index, not the PageDoc).
+    // PageMetaStrip can read isHomepage/hideHeader/hideFooter/isNotFound/
+    // noAnalytics (which live on the index, not the PageDoc). Every
+    // index-only field MUST be listed here — the PageDoc sanitizer strips
+    // them, so an omitted field reads as undefined forever and its toggle
+    // can never be switched back off.
     const activePage = useMemo(() => {
-        if (activePageId === SITE_VIRTUAL_ID || activePageId === DESIGN_VIRTUAL_ID) return null;
+        if (isVirtualPageId(activePageId)) return null;
         const doc = pages.find(p => p.id === activePageId);
         if (!doc) return null;
         const idx = (site?.pages || []).find(p => p.id === activePageId);
@@ -223,7 +303,8 @@ export default function ProductWebsitePanel() {
             ? { ...doc, isHomepage: !!idx.isHomepage,
                 hideHeader: !!idx.hideHeader,
                 hideFooter: !!idx.hideFooter,
-                isNotFound: !!idx.isNotFound }
+                isNotFound: !!idx.isNotFound,
+                noAnalytics: !!idx.noAnalytics }
             : doc;
     }, [pages, activePageId, site]);
 
@@ -312,7 +393,7 @@ export default function ProductWebsitePanel() {
         // the previous site mid-fetch.
         setSiteDoc(null);
         setPages([]);
-        setActivePageId(SITE_VIRTUAL_ID);
+        setActivePageId(HEADER_VIRTUAL_ID);
         setActiveBlockId(null);
         setSaveStatus('idle');
         setPublishedAt(null);
@@ -332,9 +413,19 @@ export default function ProductWebsitePanel() {
                 setPages(data.pages || []);
                 setLocaleOverrides(data.localeOverrides || { siteByLocale: {}, pagesByLocale: {} });
                 setPublishedAt(data.publishedAt || null);
+                // Seed the soft dirty-since-publish heuristic from the site
+                // list's updatedAt (best effort — sites was set just before
+                // activeSiteId, so the closure list is current).
+                const listEntry = sites.find(s => s.id === activeSiteId);
+                setDirtySincePublish(!!(
+                    data.publishedAt
+                    && listEntry?.updatedAt
+                    && Date.parse(listEntry.updatedAt) > Date.parse(data.publishedAt)
+                ));
                 setActiveLocale(data.defaultLocale || 'en');
+                historyResetRef.current();
                 const firstPageId = data.site?.pages?.[0]?.id;
-                setActivePageId(firstPageId || SITE_VIRTUAL_ID);
+                setActivePageId(firstPageId || HEADER_VIRTUAL_ID);
                 if (firstPageId && data.pages?.length) {
                     setActiveBlockId(data.pages[0]?.blocks?.[0]?.id || null);
                 }
@@ -350,6 +441,14 @@ export default function ProductWebsitePanel() {
     // ── auto-save (debounced) ────────────────────────────────────────
 
     const scheduleSave = useCallback((key, payload) => {
+        if (builderRunningRef.current) {
+            // Stream lock: a human write raced the AI turn past the UI locks.
+            // Dropping it is deliberate — the next draft event would overwrite
+            // it anyway; the toast tells the user why nothing stuck.
+            console.warn('[cms] edit dropped — AI turn in progress', key);
+            showToast('error', 'The AI assistant is editing — press Stop in the assistant to take over.');
+            return;
+        }
         pendingSaves.current[key] = payload;
         setSaveStatus('dirty');
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -375,7 +474,7 @@ export default function ProductWebsitePanel() {
         const batch = { ...(failedSavesRef.current || {}), ...pendingSaves.current };
         if (!siteId || Object.keys(batch).length === 0) {
             inFlightSaveRef.current = null;
-            return;
+            return true; // nothing to save == success (callers gate publish on this)
         }
         pendingSaves.current = {};
         failedSavesRef.current = null;
@@ -418,21 +517,30 @@ export default function ProductWebsitePanel() {
                 });
             });
             const results = await Promise.all(tasks);
+            let droppedTotal = 0;
             for (const r of results) {
-                if (!r.ok) {
-                    const d = await r.json().catch(() => ({}));
-                    throw new Error(d.error || `Save failed (${r.status})`);
-                }
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(d.error || `Save failed (${r.status})`);
+                // The server strips unknown-type blocks on save; surface it so
+                // an edited/AI block silently vanishing doesn't look like a
+                // "my change didn't stick" bug.
+                if (Array.isArray(d?.dropped)) droppedTotal += d.dropped.length;
+            }
+            if (droppedTotal > 0) {
+                showToast('error', `${droppedTotal} block(s) weren't saved — unrecognized block type. Use a supported block or the "Download example" template.`);
             }
             setSaveStatus('saved');
+            setDirtySincePublish(true); // the draft now differs from the last publish
             if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
             saveStatusTimer.current = setTimeout(() => setSaveStatus('idle'), 1800);
+            return true;
         } catch (err) {
             // Keep the batch so the user can retry without retyping.
             failedSavesRef.current = batch;
             setError(err.message);
             setSaveStatus('error');
             showToast('error', `Save failed: ${err.message}`);
+            return false; // let callers (publish) know the drain didn't land
         } finally {
             inFlightSaveRef.current = null;
         }
@@ -441,7 +549,33 @@ export default function ProductWebsitePanel() {
     useEffect(() => () => {
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
-    }, []);
+        // Flush any queued edit on unmount (e.g. SPA-navigating away from the
+        // CMS within the 800ms debounce) so it isn't lost with the component.
+        if (Object.keys(pendingSaves.current).length > 0 || failedSavesRef.current) {
+            flushSaves();
+        }
+    }, [flushSaves]);
+
+    // Warn + best-effort flush when leaving the page with unsaved edits. The
+    // debounced PUT can be up to 800ms behind the last keystroke, so closing
+    // the tab / hard-reloading mid-debounce would otherwise lose it silently.
+    // This panel was the only autosave surface in the app without the guard.
+    useEffect(() => {
+        const hasUnsaved = () =>
+            Object.keys(pendingSaves.current).length > 0
+            || !!failedSavesRef.current
+            || !!inFlightSaveRef.current
+            || !!saveTimerRef.current;
+        const onBeforeUnload = (e) => {
+            if (!hasUnsaved()) return undefined;
+            try { flushSaves(); } catch { /* browsers keep the request alive briefly on unload */ }
+            e.preventDefault();
+            e.returnValue = ''; // triggers the native "unsaved changes" prompt
+            return '';
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, [flushSaves]);
 
     // Re-flush the failed batch held by flushSaves. Bound to the Retry
     // button in SaveBadge; no-op unless the most recent flush errored.
@@ -469,24 +603,133 @@ export default function ProductWebsitePanel() {
         }
     }, [flushSaves]);
 
+    // ── undo / redo ──────────────────────────────────────────────────
+    //
+    // History composite = { site, pages } ONLY. Locale overrides are
+    // deliberately excluded (they interact with the aiRunningRef clobber
+    // guard and the D1/D3/D4 deferred issues) — entering translate mode is
+    // a reset barrier instead. Undoing a block delete therefore restores
+    // the block but NOT its pruned translations (they fall back to source).
+    //
+    // Every content mutator routes through history.commit(next), whose
+    // `apply` performs the setState + the SAME per-key scheduleSave the
+    // mutators used to call directly — so undo/redo ride the normal 800ms
+    // autosave pipeline (drain discipline, failedSaves retry, activeSiteIdRef
+    // all unchanged). Barriers (history.reset): site load/switch, page CRUD
+    // round-trips, reloadPayload, locale switch, import.
+
+    // Synchronous mirrors so consecutive commits in one tick never read a
+    // stale snapshot (state refs update in effects, AFTER render).
+    const siteStateRef  = useRef(null);
+    const pagesStateRef = useRef([]);
+    useEffect(() => { siteStateRef.current = site; }, [site]);
+    useEffect(() => { pagesStateRef.current = pages; }, [pages]);
+
+    const docChanged = (a, b) => {
+        if (a === b) return false;
+        try { return JSON.stringify(a) !== JSON.stringify(b); } catch { return true; }
+    };
+
+    const applyHistoryDraft = useCallback((next) => {
+        if (!next) return;
+        // Never write while an AI translate folds results in — same rule as
+        // the manual override mutators. Same for AI builder turns (the UI is
+        // scrimmed; this is the belt-and-braces backstop).
+        if (aiRunningRef.current || builderRunningRef.current) return;
+        // Any human edit (or undo/redo) after an AI turn disarms "Undo turn" —
+        // the server-side revert would clobber the newer human work.
+        disarmBuilderUndo();
+        const prevPages = pagesStateRef.current || [];
+        if (next.site && docChanged(siteStateRef.current, next.site)) {
+            siteStateRef.current = next.site;
+            setSiteDoc(next.site);
+            scheduleSave('site', next.site);
+        }
+        if (Array.isArray(next.pages)) {
+            const prevById = new Map(prevPages.map(p => [p.id, p]));
+            for (const p of next.pages) {
+                const old = prevById.get(p.id);
+                if (docChanged(old, p)) scheduleSave(p.id, p);
+            }
+            pagesStateRef.current = next.pages;
+            setPages(next.pages);
+        }
+    }, [scheduleSave, disarmBuilderUndo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const historyDraft = useMemo(() => ({ site, pages }), [site, pages]);
+    const history = useDraftHistory({ currentDraft: historyDraft, apply: applyHistoryDraft });
+    // Stable ref for reset-barrier callsites with empty dep arrays.
+    const historyResetRef = useRef(history.reset);
+    useEffect(() => { historyResetRef.current = history.reset; }, [history.reset]);
+
+    // Locale switch = barrier (translate-mode edits live outside the composite).
+    useEffect(() => { historyResetRef.current(); }, [activeLocale]);
+
+    // Guarded undo/redo executor — shared by the window hotkey listener
+    // below and the iframe-forwarded 'cms-hotkey' messages (the preview
+    // iframe posts them because key events never bubble cross-document).
+    // Skipped in translate mode (history only tracks the default-locale
+    // composite) and during an AI translate. Returns whether it ran so the
+    // window listener only preventDefaults when the hotkey was consumed.
+    const runHistoryHotkey = useCallback((action) => {
+        if (translationMode || aiRunningRef.current) return false;
+        if (action === 'redo') history.redo();
+        else history.undo();
+        return true;
+    }, [history.undo, history.redo, translationMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Undo/redo hotkeys — skipped inside text inputs (native field undo
+    // wins; the iframe side does its own equivalent target check before
+    // forwarding).
+    useEffect(() => {
+        const onKey = (e) => {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            const k = (e.key || '').toLowerCase();
+            if (k !== 'z' && k !== 'y') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+            if (runHistoryHotkey((k === 'y' || (k === 'z' && e.shiftKey)) ? 'redo' : 'undo')) {
+                e.preventDefault();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [runHistoryHotkey]);
+
     // ── page mutations ───────────────────────────────────────────────
 
     const updatePage = useCallback((pageId, updater) => {
-        setPages(prev => {
-            const next = prev.map(p => p.id === pageId ? updater(p) : p);
-            const updated = next.find(p => p.id === pageId);
-            if (updated) scheduleSave(pageId, updated);
-            return next;
+        const prevPages = pagesStateRef.current || [];
+        let found = false;
+        const nextPages = prevPages.map(p => {
+            if (p.id !== pageId) return p;
+            found = true;
+            return updater(p);
         });
-    }, [scheduleSave]);
+        if (!found) return;
+        history.commit({ site: siteStateRef.current, pages: nextPages });
+    }, [history.commit]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Block content updated via panel editor
     const updateBlockContent = useCallback((pageId, blockId, nextContent) => {
+        // D4 guard: overrides address array items by INDEX, so reordering a
+        // list in the default locale silently shifts translations onto the
+        // wrong items in every other locale (schema fix deferred). Detect the
+        // reorder and warn — once per block per session, only when that block
+        // actually has array translations.
+        const prevContent = pages.find(p => p.id === pageId)?.blocks?.find(b => b.id === blockId)?.content;
+        if (prevContent
+            && !reorderWarnedRef.current.has(blockId)
+            && detectArrayReorder(prevContent, nextContent)
+            && blockHasArrayOverrides(localeOverridesRef.current, pageId, blockId)) {
+            reorderWarnedRef.current.add(blockId);
+            showToast('error', 'Reordering list items can shift their translations in other languages — review them in translate mode.');
+        }
         updatePage(pageId, p => ({
             ...p,
             blocks: p.blocks.map(b => b.id === blockId ? { ...b, content: nextContent } : b),
         }));
-    }, [updatePage]);
+    }, [updatePage, pages]);
 
     // Block style overrides — same flow as content, just lands on block.style.
     // Both run through updatePage → scheduleSave(pageId, …) → debounced PUT,
@@ -508,6 +751,11 @@ export default function ProductWebsitePanel() {
     // ['seo','metaTitle']). Empty string prunes the leaf so it re-inherits the
     // source. Saves via the namespaced 'locale:page:…' debounce key.
     const updatePageOverride = useCallback((pageId, locale, segs, value) => {
+        // Block manual translation writes while an AI translate is in flight.
+        // The AI call reads a snapshot at request start and returns the whole
+        // override; letting a manual edit land in between would be silently
+        // overwritten when that result folds into local state.
+        if (aiRunningRef.current) return;
         const prev = localeOverridesRef.current;
         const cur = prev.pagesByLocale?.[pageId]?.[locale] || { version: 1, blocks: {} };
         const next = setLocalePath(cur, segs, value);
@@ -526,6 +774,7 @@ export default function ProductWebsitePanel() {
     // Write a single sparse text leaf into the site (chrome) locale override —
     // header/footer text by storage path, or ['pageTitles', pageId].
     const updateSiteOverride = useCallback((locale, segs, value) => {
+        if (aiRunningRef.current) return; // see updatePageOverride
         const prev = localeOverridesRef.current;
         const cur = prev.siteByLocale?.[locale] || { version: 1 };
         const next = setLocalePath(cur, segs, value);
@@ -559,13 +808,14 @@ export default function ProductWebsitePanel() {
     // AI pre-fill: translate the active page ('page') or site chrome ('site')
     // to the active locale. The server preserves existing manual translations
     // and returns the merged override, which we fold into local state.
-    const handleAiTranslate = useCallback(async (scope) => {
+    const handleAiTranslate = useCallback(async (scope, tier = 'fast') => {
         const siteId = activeSiteIdRef.current;
         if (!siteId || aiStatus?.state === 'running') return;
         if (scope === 'page' && !activePage) return;
         // Flush any pending manual edits first so the server reads them and
         // doesn't translate over text the user just typed.
         await drainPendingSaves();
+        aiRunningRef.current = true;
         setAiStatus({ state: 'running', scope });
         try {
             const url = scope === 'site'
@@ -574,7 +824,7 @@ export default function ProductWebsitePanel() {
             const res = await authFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modelTier: 'fast' }),
+                body: JSON.stringify({ modelTier: tier || 'fast' }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || `Translate failed (${res.status})`);
@@ -585,11 +835,259 @@ export default function ProductWebsitePanel() {
         } catch (err) {
             setAiStatus({ state: 'error', scope });
             showToast('error', `AI translate failed: ${err.message}`);
+        } finally {
+            aiRunningRef.current = false;
         }
     }, [activeLocale, activePage, aiStatus, drainPendingSaves, replacePageOverride, replaceSiteOverride]);
 
     // Reset AI status when switching page/locale so stale "done" badges clear.
     useEffect(() => { setAiStatus(null); }, [activePageId, activeLocale]);
+
+    // D3 recovery — clear ONE block's translations for the active locale,
+    // then run the normal AI translate (the server only fills missing leaves,
+    // so manual work on other blocks is never re-sent or overwritten).
+    const handleClearAndRetranslateBlock = useCallback(async (blockId) => {
+        if (!activePage || aiRunningRef.current) return;
+        const pageId = activePage.id;
+        const prev = localeOverridesRef.current;
+        const ov = prev.pagesByLocale?.[pageId]?.[activeLocale];
+        if (ov?.blocks && Object.prototype.hasOwnProperty.call(ov.blocks, blockId)) {
+            const nextBlocks = { ...ov.blocks };
+            delete nextBlocks[blockId];
+            const nextOv = { ...ov, blocks: nextBlocks };
+            const updated = {
+                ...prev,
+                pagesByLocale: {
+                    ...prev.pagesByLocale,
+                    [pageId]: { ...(prev.pagesByLocale?.[pageId] || {}), [activeLocale]: nextOv },
+                },
+            };
+            localeOverridesRef.current = updated;
+            setLocaleOverrides(updated);
+            scheduleSave(`locale:page:${pageId}:${activeLocale}`, nextOv);
+        }
+        await handleAiTranslate('page', translateTier);
+    }, [activePage, activeLocale, scheduleSave, handleAiTranslate, translateTier]);
+
+    // Remove EVERY override of the active locale for the current scope —
+    // rides the (previously unused) DELETE locale-override endpoints. Drain
+    // first so a queued locale:* save can't resurrect the override after
+    // the DELETE lands.
+    const handleResetTranslations = useCallback(async (scope) => {
+        const siteId = activeSiteIdRef.current;
+        if (!siteId || aiRunningRef.current) return;
+        if (scope === 'page' && !activePage) return;
+        const localeLabel = locales.find(l => l.code === activeLocale)?.name || activeLocale;
+        const ok = await confirm({
+            title: `Reset ${localeLabel} translations?`,
+            description: scope === 'site'
+                ? `Removes every ${localeLabel} translation for the header, footer and page titles. Fields fall back to the source language.`
+                : `Removes every ${localeLabel} translation for this page. Fields fall back to the source language.`,
+            confirmLabel: 'Reset translations',
+            destructive: true,
+        });
+        if (!ok) return;
+        await drainPendingSaves();
+        try {
+            const url = scope === 'site'
+                ? cmsApi.siteLocaleOverride(siteId, activeLocale)
+                : cmsApi.pageLocaleOverride(siteId, activePage.id, activeLocale);
+            const res = await authFetch(url, { method: 'DELETE' });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                throw new Error(d.error || `Reset failed (${res.status})`);
+            }
+            if (scope === 'site') replaceSiteOverride(activeLocale, null);
+            else replacePageOverride(activePage.id, activeLocale, null);
+            setAiStatus(null);
+            showToast('success', `${localeLabel} translations reset`);
+        } catch (err) {
+            showToast('error', `Reset failed: ${err.message}`);
+        }
+    }, [activePage, activeLocale, locales, confirm, drainPendingSaves, replacePageOverride, replaceSiteOverride]);
+
+    // ── AI builder bridge (assistant/CmsAssistantPane) ───────────────
+    //
+    // Contract (resolves the AI-vs-autosave race): drafts the assistant
+    // streams are ALREADY server-persisted — applyExternalDraft folds them
+    // into state WITHOUT touching pendingSaves/scheduleSave. While a turn
+    // runs, the stream lock blocks every human write path; Undo turn is a
+    // server-side revert of the pre-turn snapshot (AI turns are never
+    // client-history entries).
+
+    const beginBuilderTurn = useCallback(async () => {
+        await drainPendingSaves();
+        builderTurnRef.current = {
+            preSite: JSON.parse(JSON.stringify(siteStateRef.current || null)),
+            prePages: JSON.parse(JSON.stringify(pagesStateRef.current || [])),
+            created: [],
+            touched: new Set(),
+            draftsSeen: 0,
+        };
+        historyResetRef.current();
+        disarmBuilderUndo();
+        builderRunningRef.current = true;
+        setBuilderRunning(true);
+    }, [drainPendingSaves, disarmBuilderUndo]);
+
+    const applyExternalDraft = useCallback((evt) => {
+        if (!evt || evt.siteId !== activeSiteIdRef.current) return; // stale site
+        const turn = builderTurnRef.current;
+        if (turn) turn.draftsSeen += 1;
+        if (evt.kind === 'site' && evt.site) {
+            siteStateRef.current = evt.site;
+            setSiteDoc(evt.site);
+            return;
+        }
+        if (evt.kind !== 'page' || !evt.pageId || !evt.page) return;
+        const prevPages = pagesStateRef.current || [];
+        const prev = prevPages.find(p => p.id === evt.pageId);
+        if (turn) {
+            if (!prev && !turn.created.includes(evt.pageId)) turn.created.push(evt.pageId);
+            turn.touched.add(evt.pageId);
+        }
+        // Mirror the server-side override prune for blocks the AI removed —
+        // the server already pruned its copy (pruneBlockLocaleOverrides);
+        // without this local mirror, a later manual translation edit would
+        // PUT the whole stale override and resurrect the orphans.
+        if (prev?.blocks && Array.isArray(evt.page.blocks)) {
+            const nextIds = new Set(evt.page.blocks.map(b => b.id));
+            for (const b of prev.blocks) {
+                if (nextIds.has(b.id)) continue;
+                const ovPrev = localeOverridesRef.current;
+                const perLocale = ovPrev.pagesByLocale?.[evt.pageId];
+                if (!perLocale) continue;
+                let changed = false;
+                const nextPerLocale = {};
+                for (const [loc, ov] of Object.entries(perLocale)) {
+                    if (ov?.blocks && Object.prototype.hasOwnProperty.call(ov.blocks, b.id)) {
+                        const nb = { ...ov.blocks };
+                        delete nb[b.id];
+                        nextPerLocale[loc] = { ...ov, blocks: nb };
+                        changed = true;
+                    } else {
+                        nextPerLocale[loc] = ov;
+                    }
+                }
+                if (changed) {
+                    const updated = { ...ovPrev, pagesByLocale: { ...ovPrev.pagesByLocale, [evt.pageId]: nextPerLocale } };
+                    localeOverridesRef.current = updated;
+                    setLocaleOverrides(updated);   // no save — server already pruned
+                }
+            }
+        }
+        const nextPages = prev
+            ? prevPages.map(p => (p.id === evt.pageId ? evt.page : p))
+            : [...prevPages, evt.page];
+        pagesStateRef.current = nextPages;
+        setPages(nextPages);
+    }, []);
+
+    const endBuilderTurn = useCallback((info = {}) => {
+        builderRunningRef.current = false;
+        setBuilderRunning(false);
+        const turn = builderTurnRef.current;
+        if (!turn) return;
+        if (turn.draftsSeen > 0) {
+            // Server-persisted changes → the draft differs from the snapshot.
+            setDirtySincePublish(true);
+            builderUndoAvailableRef.current = true;
+            setBuilderUndoAvailable(true);
+        }
+        const focus = (info.createdPageIds || [])[0] || (info.touchedPageIds || [])[0] || null;
+        if (focus && !info.failed) setActivePageId(focus);
+        // The pre-turn snapshot stays armed for Undo turn until the next
+        // turn or the next human edit (disarmBuilderUndo in applyHistoryDraft).
+    }, []);
+
+    const undoBuilderTurn = useCallback(async () => {
+        const turn = builderTurnRef.current;
+        const siteId = activeSiteIdRef.current;
+        if (!turn || !siteId || builderRunningRef.current) return;
+        const ok = await confirm({
+            title: 'Undo this AI turn?',
+            description: 'Reverts every change from the last assistant turn. Pages it created are deleted.',
+            confirmLabel: 'Undo turn',
+            destructive: true,
+        });
+        if (!ok) return;
+        try {
+            // 1. DELETE created pages FIRST — removePage rewrites the site
+            //    index, so restoring the pre-turn site doc afterwards leaves
+            //    the index canonical.
+            for (const id of turn.created) {
+                const res = await authFetch(cmsApi.page(siteId, id), { method: 'DELETE' });
+                if (!res.ok && res.status !== 404) {
+                    const d = await res.json().catch(() => ({}));
+                    throw new Error(d.error || `Failed to delete page (${res.status})`);
+                }
+            }
+            // 2. Restore the pre-turn site doc (index + chrome + design).
+            if (turn.preSite) {
+                const res = await authFetch(cmsApi.site(siteId), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ site: turn.preSite }),
+                });
+                if (!res.ok) {
+                    const d = await res.json().catch(() => ({}));
+                    throw new Error(d.error || 'Failed to restore site');
+                }
+            }
+            // 3. Restore each touched pre-existing page.
+            for (const id of turn.touched) {
+                if (turn.created.includes(id)) continue;
+                const pre = turn.prePages.find(p => p.id === id);
+                if (!pre) continue;
+                const res = await authFetch(cmsApi.page(siteId, id), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page: pre }),
+                });
+                if (!res.ok) {
+                    const d = await res.json().catch(() => ({}));
+                    throw new Error(d.error || 'Failed to restore page');
+                }
+            }
+            // Fold the snapshot back locally WITHOUT scheduling saves.
+            siteStateRef.current = turn.preSite;
+            pagesStateRef.current = turn.prePages;
+            setSiteDoc(turn.preSite);
+            setPages(turn.prePages);
+            if (turn.created.includes(activePageId)) setActivePageId(HEADER_VIRTUAL_ID);
+            builderTurnRef.current = null;
+            disarmBuilderUndo();
+            showToast('success', 'AI turn undone');
+        } catch (err) {
+            showToast('error', `Undo failed: ${err.message}`);
+        }
+    }, [confirm, activePageId, disarmBuilderUndo]);
+
+    // Locale switches remount the preview iframe and flip translate mode —
+    // blocked while an AI turn runs (the turn's drafts target the default
+    // locale docs).
+    const changeLocaleSafe = useCallback((code) => {
+        if (builderRunningRef.current) {
+            showToast('error', 'The AI assistant is editing — press Stop in the assistant to take over.');
+            return;
+        }
+        setActiveLocale(code);
+    }, []);
+
+    const builderContext = useCallback(() => ({
+        activePageId: isVirtualPageId(activePageId) ? null : activePageId,
+        activeBlockId,
+        activeLocale,
+    }), [activePageId, activeBlockId, activeLocale]);
+
+    const builderBridge = useMemo(() => ({
+        beginTurn: beginBuilderTurn,
+        applyExternalDraft,
+        endTurn: endBuilderTurn,
+        undoTurn: undoBuilderTurn,
+        context: builderContext,
+        selectPage: (id) => { setActivePageId(id); setRightView('preview'); },
+    }), [beginBuilderTurn, applyExternalDraft, endBuilderTurn, undoBuilderTurn, builderContext]);
 
     // Inline text edit from iframe postMessage (path = "blockType.field.subfield").
     //
@@ -602,6 +1100,18 @@ export default function ProductWebsitePanel() {
     // absent only for site chrome (header/footer), handled by the prefix
     // branch below, and for legacy messages, where we fall back to first-of-type.
     const applyIframeEdit = useCallback((path, value, blockId = null) => {
+        // Announcement bar — checked BEFORE the translation branch on
+        // purpose. Its `text` blob carries every locale inside the BASE
+        // SiteDoc (same model as cookieBanner: no locale-override layer),
+        // and the path already names the locale it belongs to
+        // (announcement.text.<lang>.message), so an inline edit always
+        // writes straight through — including while translation mode is on.
+        if (path.startsWith('announcement.') && site) {
+            const next = applyChromeEdit(site, path, value);
+            if (next) history.commit({ site: next, pages: pagesStateRef.current });
+            return;
+        }
+
         // Translation mode: the edit is a TEXT translation, not a structural
         // change — write a sparse leaf into the active locale's override
         // instead of mutating the default-locale base doc.
@@ -632,8 +1142,9 @@ export default function ProductWebsitePanel() {
         if ((path.startsWith('header.') || path.startsWith('footer.')) && site) {
             const next = applyChromeEdit(site, path, value);
             if (next) {
-                setSiteDoc(next);
-                scheduleSave('site', next);
+                // Same write path as updateSiteChrome — one history entry
+                // per inline chrome edit (EditableText commits on blur).
+                history.commit({ site: next, pages: pagesStateRef.current });
             }
             return;
         }
@@ -685,22 +1196,42 @@ export default function ProductWebsitePanel() {
                 }),
             };
         });
-    }, [activePage, updatePage, site, scheduleSave, translationMode, activeLocale, updateSiteOverride, updatePageOverride]);
+    }, [activePage, updatePage, site, history.commit, translationMode, activeLocale, updateSiteOverride, updatePageOverride]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── block CRUD ───────────────────────────────────────────────────
 
-    const addBlock = useCallback((type) => {
+    // `atIndex` (optional) = explicit splice position from the canvas
+    // insert-between "+" zones; when omitted/null the block lands AFTER the
+    // active block (fall back to append) — adding a section next to what
+    // you're looking at instead of at the page end.
+    // `contentOverrides` (optional) is spread over the type's defaults —
+    // used by the AddBlockDialog's variant strip to add a block with a
+    // specific layout variant pre-selected ({ variant: 'bento' } etc.).
+    const addBlock = useCallback((type, atIndex = null, contentOverrides = null) => {
         if (!activePage) return;
         const block = {
             id: newBlockId(),
             type,
             enabled: true,
-            content: JSON.parse(JSON.stringify(BLOCK_DEFAULTS[type] || {})),
+            content: {
+                ...JSON.parse(JSON.stringify(BLOCK_DEFAULTS[type] || {})),
+                ...(contentOverrides || {}),
+            },
             style: {},
         };
-        updatePage(activePage.id, p => ({ ...p, blocks: [...p.blocks, block] }));
+        updatePage(activePage.id, p => {
+            const blocks = [...p.blocks];
+            const idx = Number.isInteger(atIndex)
+                ? Math.max(0, Math.min(atIndex, blocks.length))
+                : (() => {
+                    const activeIdx = activeBlockId ? p.blocks.findIndex(b => b.id === activeBlockId) : -1;
+                    return activeIdx >= 0 ? activeIdx + 1 : blocks.length;
+                })();
+            blocks.splice(idx, 0, block);
+            return { ...p, blocks };
+        });
         setActiveBlockId(block.id);
-    }, [activePage, updatePage]);
+    }, [activePage, activeBlockId, updatePage]);
 
     const toggleBlock = useCallback((blockId) => {
         if (!activePage) return;
@@ -725,17 +1256,82 @@ export default function ProductWebsitePanel() {
 
     const deleteBlock = useCallback((blockId) => {
         if (!activePage) return;
-        updatePage(activePage.id, p => {
+        const pageId = activePage.id;
+        updatePage(pageId, p => {
             const blocks = p.blocks.filter(b => b.id !== blockId);
             if (activeBlockId === blockId) setActiveBlockId(blocks[0]?.id || null);
             return { ...p, blocks };
         });
-    }, [activePage, activeBlockId, updatePage]);
+        // Prune this block's per-locale translation overrides too — they're
+        // keyed by block id, so without this they linger as orphaned cruft
+        // (and resurface in exports) after the block is gone.
+        const prev = localeOverridesRef.current;
+        const perLocale = prev.pagesByLocale?.[pageId];
+        if (perLocale) {
+            let changed = false;
+            const nextPerLocale = {};
+            for (const [locale, ov] of Object.entries(perLocale)) {
+                if (ov?.blocks && Object.prototype.hasOwnProperty.call(ov.blocks, blockId)) {
+                    const nextBlocks = { ...ov.blocks };
+                    delete nextBlocks[blockId];
+                    const nextOv = { ...ov, blocks: nextBlocks };
+                    nextPerLocale[locale] = nextOv;
+                    scheduleSave(`locale:page:${pageId}:${locale}`, nextOv);
+                    changed = true;
+                } else {
+                    nextPerLocale[locale] = ov;
+                }
+            }
+            if (changed) {
+                const updated = { ...prev, pagesByLocale: { ...prev.pagesByLocale, [pageId]: nextPerLocale } };
+                localeOverridesRef.current = updated;
+                setLocaleOverrides(updated);
+            }
+        }
+    }, [activePage, activeBlockId, updatePage, scheduleSave]);
 
     const reorderBlocks = useCallback((nextBlocks) => {
         if (!activePage) return;
         updatePage(activePage.id, p => ({ ...p, blocks: nextBlocks }));
     }, [activePage, updatePage]);
+
+    // Canvas block-toolbar actions (iframe → cms-block-action). Every
+    // mutation REUSES the existing block mutators above, so history +
+    // debounced autosave semantics are byte-identical to the sidebar
+    // buttons — zero new save paths. The builderRunning stream-lock gate
+    // lives at the single onMessage choke point below, not here.
+    const handleBlockAction = useCallback((blockId, action) => {
+        if (!activePage) return;
+        const blocks = activePage.blocks || [];
+        const idx = blocks.findIndex(b => b.id === blockId);
+        if (idx < 0) return;
+        if (action === 'move-up' || action === 'move-down') {
+            const to = action === 'move-up' ? idx - 1 : idx + 1;
+            if (to < 0 || to >= blocks.length) return;
+            const next = [...blocks];
+            const [moved] = next.splice(idx, 1);
+            next.splice(to, 0, moved);
+            reorderBlocks(next);
+            return;
+        }
+        if (action === 'duplicate') { duplicateBlock(blockId); return; }
+        // Delete matches BlockList's row button: no confirm (undo covers it).
+        if (action === 'delete') { deleteBlock(blockId); return; }
+        if (action === 'settings') {
+            setActiveBlockId(blockId);
+            // Open the inspector if it's collapsed — same persistence
+            // convention as toggleInspector.
+            scopedStorage.setItem('cmsInspectorOpen', '1');
+            setInspectorOpen(true);
+        }
+    }, [activePage, reorderBlocks, duplicateBlock, deleteBlock]);
+
+    // Canvas insert-between "+" (iframe → cms-insert-at): open the
+    // Add-block dialog with a pending explicit insertion index.
+    const handleInsertAt = useCallback((index) => {
+        if (!activePage) return;
+        setAddBlockRequest({ index });
+    }, [activePage]);
 
     // ── page CRUD (round-trips — no optimistic debounce needed here) ─
 
@@ -762,7 +1358,7 @@ export default function ProductWebsitePanel() {
             if (!options.keepActive) setActivePageId(data.id);
             return { id: data.id, slug: data.slug, title: title || data.slug };
         } catch (err) {
-            setError(err.message);
+            showToast('error', `Failed to create page: ${err.message}`);
             // Rethrow so picker callers can surface the error inline
             // instead of silently swallowing it.
             throw err;
@@ -783,7 +1379,8 @@ export default function ProductWebsitePanel() {
             if (!res.ok) throw new Error(data.error || 'Failed to duplicate page');
             await reloadPayload();
             setActivePageId(data.id);
-        } catch (err) { setError(err.message); }
+            setDirtySincePublish(true);
+        } catch (err) { showToast('error', `Failed to duplicate page: ${err.message}`); }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Per-page export — bundles { meta, blocks } as a JSON download. Looks
@@ -810,34 +1407,42 @@ export default function ProductWebsitePanel() {
         }
         if (!created?.id) return;
         updatePage(created.id, p => ({ ...p, blocks: Array.isArray(payload?.blocks) ? payload.blocks : [] }));
-    }, [handleAddPage, updatePage]);
-
-    // AI page generator — saves a generated PageDoc as a NEW page. Mirrors
-    // handleImportPage: routes through handleAddPage (server resolves slug
-    // collisions) and patches blocks via updatePage. Errors propagate so
-    // AIPagePanel can surface them inline; handleAddPage also sets the
-    // panel-level error state.
-    const handleSaveGeneratedPage = useCallback(async (page) => {
-        const incomingSlug  = (page?.slug  || '').trim() || 'page';
-        const incomingTitle = (page?.title || '').trim() || incomingSlug;
-        const created = await handleAddPage({ title: incomingTitle, slug: incomingSlug });
-        if (!created?.id) throw new Error('Failed to create page');
-        updatePage(created.id, p => ({ ...p, blocks: Array.isArray(page?.blocks) ? page.blocks : [] }));
-        setRightView('preview');
+        // Surface what the importer had to normalize or drop — otherwise a
+        // partial import looks like a silent success with missing sections.
+        const droppedCount = Array.isArray(payload?.dropped) ? payload.dropped.length : 0;
+        const warnCount = Array.isArray(payload?.warnings) ? payload.warnings.length : 0;
+        if (droppedCount > 0) {
+            const types = [...new Set(payload.dropped.map(d => (d.type == null ? '(no type)' : d.type)))];
+            showToast('error', `Imported "${incomingTitle}" — ${droppedCount} block(s) skipped (unrecognized type: ${types.join(', ')}).`);
+        } else if (warnCount > 0) {
+            showToast('success', `Imported "${incomingTitle}" — ${warnCount} block(s) adjusted to the expected format.`);
+        } else {
+            showToast('success', `Imported "${incomingTitle}".`);
+        }
     }, [handleAddPage, updatePage]);
 
     const handleDeletePage = useCallback(async (pageId) => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return;
-        if (!window.confirm('Delete this page? This cannot be undone.')) return;
+        const page = pages.find(p => p.id === pageId);
+        const ok = await confirm({
+            title: `Delete "${page?.title || 'this page'}"?`,
+            description: 'The page and all of its blocks are permanently removed. This cannot be undone.',
+            confirmLabel: 'Delete page',
+            destructive: true,
+        });
+        if (!ok) return;
         await drainPendingSaves();
         try {
             const res = await authFetch(cmsApi.page(siteId, pageId), { method: 'DELETE' });
             if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
             await reloadPayload();
-            setActivePageId(SITE_VIRTUAL_ID);
-        } catch (err) { setError(err.message); }
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+            setActivePageId(HEADER_VIRTUAL_ID);
+            setDirtySincePublish(true);
+        } catch (err) {
+            showToast('error', `Failed to delete page: ${err.message}`);
+        }
+    }, [pages, confirm]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleSetHomepage = useCallback(async (pageId) => {
         const siteId = activeSiteIdRef.current;
@@ -847,12 +1452,14 @@ export default function ProductWebsitePanel() {
             const res = await authFetch(cmsApi.pageHomepage(siteId, pageId), { method: 'PUT' });
             if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
             await reloadPayload();
-        } catch (err) { setError(err.message); }
+            setDirtySincePublish(true);
+        } catch (err) { showToast('error', `Failed to set homepage: ${err.message}`); }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleReorderPages = useCallback(async (orderedIds) => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return;
+        historyResetRef.current();
         try {
             // Optimistic: update site.pages order locally.
             setSiteDoc(prev => {
@@ -866,7 +1473,8 @@ export default function ProductWebsitePanel() {
                 body: JSON.stringify({ orderedIds }),
             });
             if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
-        } catch (err) { setError(err.message); }
+            setDirtySincePublish(true);
+        } catch (err) { showToast('error', `Failed to reorder pages: ${err.message}`); }
     }, []);
 
     const reloadPayload = useCallback(async () => {
@@ -875,11 +1483,21 @@ export default function ProductWebsitePanel() {
         const res = await authFetch(cmsApi.site(siteId));
         if (!res.ok) return;
         const data = await res.json();
+        // Re-check guards AFTER the round-trip: the user may have switched
+        // sites or started a new edit while this GET was in flight. Applying a
+        // now-stale server payload here would yank state out from under a live
+        // edit (the classic "my change reverted"). The call-site guards run
+        // before the fetch, so this is the only race-free place to bail.
+        if (activeSiteIdRef.current !== siteId) return;            // site switched mid-fetch
+        if (Object.keys(pendingSaves.current).length > 0) return;   // new local edits queued
+        if (inFlightSaveRef.current) return;                        // a save is racing
+        if (builderRunningRef.current) return;                      // AI turn owns the state
         setSiteDoc(data.site || null);
         setPages(data.pages || []);
         setLocales(data.locales || locales);
         setLocaleOverrides(data.localeOverrides || { siteByLocale: {}, pagesByLocale: {} });
         if (data.publishedAt !== undefined) setPublishedAt(data.publishedAt || null);
+        historyResetRef.current(); // server-confirmed load — undo across it would clobber
     }, [locales]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Refetch latest payload when the tab regains focus, so opening the CMS
@@ -892,6 +1510,7 @@ export default function ProductWebsitePanel() {
             if (saveStatus !== 'idle' && saveStatus !== 'saved') return;
             if (Object.keys(pendingSaves.current).length > 0) return;
             if (inFlightSaveRef.current) return;
+            if (builderRunningRef.current) return;
             if (!activeSiteIdRef.current) return;
             reloadPayload();
         };
@@ -1002,23 +1621,27 @@ export default function ProductWebsitePanel() {
     // ── site chrome mutations ────────────────────────────────────────
 
     const updateSiteChrome = useCallback((nextSite) => {
-        setSiteDoc(nextSite);
-        scheduleSave('site', nextSite);
-    }, [scheduleSave]);
+        history.commit({ site: nextSite, pages: pagesStateRef.current });
+    }, [history.commit]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Design changes route through the SAME pendingSaves['site'] slot as
-    // chrome changes, so a design edit followed by a header edit (or vice
-    // versa) coalesces into ONE PUT carrying the latest snapshot of both.
-    // Last-write-wins on the entire SiteDoc — no separate /design endpoint,
-    // no race window.
+    // chrome changes (via the history apply path), so a design edit followed
+    // by a header edit (or vice versa) coalesces into ONE PUT carrying the
+    // latest snapshot of both. Last-write-wins on the entire SiteDoc — no
+    // separate /design endpoint, no race window.
     const updateDesign = useCallback((nextDesign) => {
-        setSiteDoc(prev => {
-            if (!prev) return prev;
-            const merged = { ...prev, design: nextDesign };
-            scheduleSave('site', merged);
-            return merged;
-        });
-    }, [scheduleSave]);
+        const prev = siteStateRef.current;
+        if (!prev) return;
+        history.commit({ site: { ...prev, design: nextDesign }, pages: pagesStateRef.current });
+    }, [history.commit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Analytics settings live on the site doc too — same coalesced
+    // pendingSaves['site'] slot, same undo/redo history as chrome/design.
+    const updateSiteAnalytics = useCallback((nextAnalytics) => {
+        const prev = siteStateRef.current;
+        if (!prev) return;
+        history.commit({ site: { ...prev, analytics: nextAnalytics }, pages: pagesStateRef.current });
+    }, [history.commit]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── top-level toggles ────────────────────────────────────────────
 
@@ -1027,14 +1650,17 @@ export default function ProductWebsitePanel() {
     // the user must confirm taking it offline before this one goes live.
     const persistLive = async (next) => {
         if (!activeSiteId) return;
+        if (builderRunningRef.current) { showToast('error', AI_LOCK_MSG); return; }
         if (next) {
             const otherLive = liveSiteId && liveSiteId !== activeSiteId
                 ? sites.find(s => s.id === liveSiteId)
                 : null;
             if (otherLive) {
-                const ok = window.confirm(
-                    `"${otherLive.name}" is currently live. Setting this site live will take "${otherLive.name}" offline. Continue?`
-                );
+                const ok = await confirm({
+                    title: 'Move the live site?',
+                    description: `"${otherLive.name}" is currently live. Setting this site live will take "${otherLive.name}" offline.`,
+                    confirmLabel: 'Set live',
+                });
                 if (!ok) return;
             }
             setLiveSiteId(activeSiteId);
@@ -1046,7 +1672,7 @@ export default function ProductWebsitePanel() {
                 });
                 if (!res.ok) throw new Error(`Failed to set live (${res.status})`);
             } catch (err) {
-                setError(err.message);
+                showToast('error', err.message);
                 setLiveSiteId(liveSiteId);   // roll back optimistic update
             }
         } else {
@@ -1059,7 +1685,7 @@ export default function ProductWebsitePanel() {
                 });
                 if (!res.ok) throw new Error(`Failed to take site offline (${res.status})`);
             } catch (err) {
-                setError(err.message);
+                showToast('error', err.message);
                 setLiveSiteId(liveSiteId);
             }
         }
@@ -1072,6 +1698,7 @@ export default function ProductWebsitePanel() {
     const handlePublish = useCallback(async () => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return;
+        if (builderRunningRef.current) { showToast('error', AI_LOCK_MSG); return; }
         // Drain any pending save in three steps:
         //   1. Cancel an unfired debounce timer (would re-queue work).
         //   2. Await any save the timer already started (in-flight PUTs).
@@ -1084,19 +1711,40 @@ export default function ProductWebsitePanel() {
             try { await inFlightSaveRef.current; } catch { /* error already surfaced */ }
             inFlightSaveRef.current = null;
         }
-        await flushSaves();
+        const drainedOk = await flushSaves();
+        // Never snapshot a site that still has unsaved edits — publishing here
+        // would push stale content live while the UI shows "just published".
+        // flushSaves already surfaced the save error and kept the retry batch.
+        if (!drainedOk || failedSavesRef.current) {
+            showToast('error', 'Not published — some changes failed to save. Fix the error and retry.');
+            return;
+        }
         setPublishing(true);
         try {
             const res = await authFetch(cmsApi.sitePublish(siteId), { method: 'POST' });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || `Publish failed (${res.status})`);
             setPublishedAt(data.publishedAt || new Date().toISOString());
+            setDirtySincePublish(false);
         } catch (err) {
             setError(err.message);
         } finally {
             setPublishing(false);
         }
     }, [flushSaves]);
+
+    // "Set as default locale" — an org-wide switch of the site's source
+    // language; consequential enough to confirm (it flips translate mode).
+    const handleSetDefaultLocale = async (code) => {
+        const name = locales.find(l => l.code === code)?.name || code;
+        const ok = await confirm({
+            title: `Make ${name} the default locale?`,
+            description: 'The default locale is the source language: pages are authored in it, and other languages translate from it.',
+            confirmLabel: 'Set default',
+        });
+        if (!ok) return;
+        await persistDefaultLocale(code);
+    };
 
     const persistDefaultLocale = async (next) => {
         setDefaultLocale(next);
@@ -1106,7 +1754,7 @@ export default function ProductWebsitePanel() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ locale: next }),
             });
-        } catch (err) { setError(err.message); }
+        } catch (err) { showToast('error', `Failed to set default locale: ${err.message}`); }
     };
 
     // ── iframe postMessage ───────────────────────────────────────────
@@ -1119,7 +1767,9 @@ export default function ProductWebsitePanel() {
         // blocks-less page so buildPreviewContent doesn't carry homepage
         // blocks through, and tag the message with previewMode='chrome'
         // so the iframe shows the explainer instead of an empty body.
-        const isChromeView = activePageId === SITE_VIRTUAL_ID;
+        // Any chrome entry (header / footer / cookie banner) previews the
+        // chrome in isolation — blockless page + previewMode='chrome'.
+        const isChromeView = isChromeEntryId(activePageId);
         const pageForPreview = isChromeView ? { blocks: [] } : previewPage;
         // In translation mode, pre-merge the active locale's overrides so the
         // preview renders translated text (with source fallback), matching
@@ -1139,28 +1789,65 @@ export default function ProductWebsitePanel() {
         // apply CSS variables independently of content updates.
         const design = site?.design || null;
         const previewMode = isChromeView ? 'chrome' : 'page';
-        win.postMessage({ type: 'cms-preview', content, design, previewMode }, '*');
+        // Target our own origin (the preview route is same-origin) so draft
+        // content/design can't leak to a cross-origin frame in the preview slot.
+        win.postMessage({ type: 'cms-preview', content, design, previewMode }, window.location.origin);
     }, [site, previewPage, activePageId, translationMode, activeLocale, localeOverrides]);
+
+    // Selection + AI-stream-lock mirror → iframe (cms-active). Deliberately
+    // a dedicated message posted from its own effect, NOT folded into
+    // postPreview: content re-posts disturb inline-edit focus (see the
+    // cms-select comment in onMessage below), and selection changes must
+    // never re-send content. `labels` rides along so the iframe can title
+    // its block chrome without importing admin code.
+    const postActiveToPreview = useCallback(() => {
+        const win = iframeRef.current?.contentWindow;
+        if (!win || !previewReadyRef.current) return;
+        win.postMessage({
+            type: 'cms-active',
+            blockId: activeBlockId || null,
+            locked: builderRunning,
+            labels: BLOCK_LABELS,
+        }, window.location.origin);
+    }, [activeBlockId, builderRunning]);
+
+    // Re-post whenever the selection or the lock changes (the callback
+    // identity tracks exactly those two). The cms-preview-ready branch
+    // below covers the initial post after an iframe (re)mount.
+    useEffect(() => { postActiveToPreview(); }, [postActiveToPreview]);
 
     // Select a block AND scroll the preview to it — bound to translation-row
     // clicks so the admin sees which block a string belongs to.
     const selectAndScrollToBlock = useCallback((blockId) => {
         setActiveBlockId(prev => (prev === blockId ? prev : blockId));
         const win = iframeRef.current?.contentWindow;
-        if (win && previewReadyRef.current) win.postMessage({ type: 'cms-scroll', blockId }, '*');
+        if (win && previewReadyRef.current) win.postMessage({ type: 'cms-scroll', blockId }, window.location.origin);
     }, []);
 
     useEffect(() => {
         const onMessage = (e) => {
+            // Only trust our own same-origin preview iframe. Without this, any
+            // page framing the admin (or another window) could post a
+            // `cms-edit` and corrupt content, or read what we post back. The
+            // renderer side already guards its inbound messages symmetrically.
+            if (e.origin !== window.location.origin) return;
+            if (e.source !== iframeRef.current?.contentWindow) return;
             const msg = e.data;
             if (!msg || typeof msg !== 'object') return;
 
             if (msg.type === 'cms-preview-ready') {
                 previewReadyRef.current = true;
                 postPreview();
+                postActiveToPreview();
                 return;
             }
             if (msg.type === 'cms-edit' && typeof msg.path === 'string') {
+                if (builderRunningRef.current) {
+                    // Stream lock: an inline preview edit mid-AI-turn would be
+                    // silently overwritten by the next draft — refuse loudly.
+                    showToast('error', AI_LOCK_MSG);
+                    return;
+                }
                 applyIframeEdit(msg.path, msg.value, msg.blockId);
                 return;
             }
@@ -1173,10 +1860,40 @@ export default function ProductWebsitePanel() {
                 setActiveBlockId(prev => (prev === msg.blockId ? prev : msg.blockId));
                 return;
             }
+            // Canvas block-toolbar action. A mutation — gated on the AI
+            // stream lock at this single choke point, mirroring the
+            // cms-edit refusal above (same toast).
+            if (msg.type === 'cms-block-action'
+                && typeof msg.blockId === 'string' && typeof msg.action === 'string') {
+                if (builderRunningRef.current) {
+                    showToast('error', AI_LOCK_MSG);
+                    return;
+                }
+                handleBlockAction(msg.blockId, msg.action);
+                return;
+            }
+            // Canvas insert-between "+" → Add-block dialog with an explicit
+            // index. Gated too: the add it leads to would mutate the page
+            // mid-AI-turn.
+            if (msg.type === 'cms-insert-at' && Number.isInteger(msg.index) && msg.index >= 0) {
+                if (builderRunningRef.current) {
+                    showToast('error', AI_LOCK_MSG);
+                    return;
+                }
+                handleInsertAt(msg.index);
+                return;
+            }
+            // Undo/redo forwarded from the preview iframe (Ctrl/Cmd+Z is
+            // otherwise dead while focus sits in the canvas). Same guards
+            // as the window hotkey listener via runHistoryHotkey.
+            if (msg.type === 'cms-hotkey' && (msg.action === 'undo' || msg.action === 'redo')) {
+                runHistoryHotkey(msg.action);
+                return;
+            }
         };
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);
-    }, [postPreview, applyIframeEdit]);
+    }, [postPreview, postActiveToPreview, applyIframeEdit, runHistoryHotkey, handleBlockAction, handleInsertAt]);
 
     // Push to iframe when active page or site chrome changes.
     useEffect(() => {
@@ -1211,6 +1928,7 @@ export default function ProductWebsitePanel() {
     const savePageMeta = useCallback(async (pageId, patch) => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return;
+        if (builderRunningRef.current) { showToast('error', 'The AI assistant is editing — press Stop in the assistant to take over.'); return; }
         // Drain debounced edits first — otherwise the reloadPayload() below
         // would overwrite local state with stale DB content while the
         // user's pending block edit is still on its way out.
@@ -1227,6 +1945,7 @@ export default function ProductWebsitePanel() {
                 throw new Error(d.error || `Save failed (${res.status})`);
             }
             setSaveStatus('saved');
+            setDirtySincePublish(true);
             if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
             saveStatusTimer.current = setTimeout(() => setSaveStatus('idle'), 1800);
             await reloadPayload();
@@ -1246,6 +1965,7 @@ export default function ProductWebsitePanel() {
 
     const handleSwitchSite = useCallback(async (newSiteId) => {
         if (!newSiteId || newSiteId === activeSiteIdRef.current) return;
+        if (builderRunningRef.current) { showToast('error', 'The AI assistant is editing — press Stop in the assistant to take over.'); return; }
         // Drain any pending debounced saves so the edits land on the
         // CURRENT site before we point future saves at the new one.
         if (saveTimerRef.current) {
@@ -1284,7 +2004,7 @@ export default function ProductWebsitePanel() {
             await handleSwitchSite(data.id);
             return data;
         } catch (err) {
-            setError(err.message);
+            showToast('error', `Failed to create site: ${err.message}`);
             return null;
         }
     }, [handleSwitchSite, refreshSites]);
@@ -1304,7 +2024,7 @@ export default function ProductWebsitePanel() {
             // If we renamed the active site, refresh its payload so the
             // header/displays pick up the new name.
             if (siteId === activeSiteIdRef.current) await reloadPayload();
-        } catch (err) { setError(err.message); }
+        } catch (err) { showToast('error', `Rename failed: ${err.message}`); }
     }, [refreshSites, reloadPayload]);
 
     // ── Site export / import ────────────────────────────────────────
@@ -1313,14 +2033,13 @@ export default function ProductWebsitePanel() {
     // on the Content-Disposition filename the server sets — falling
     // back to a generic name if the browser strips it.
     const [siteIoStatus, setSiteIoStatus] = useState(null);   // { kind: 'success'|'error'|'busy', text }
-    const importInputRef = useRef(null);
 
-    const handleExportSite = useCallback(async () => {
+    const handleExportSite = useCallback(async (format = 'zip') => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return;
         setSiteIoStatus({ kind: 'busy', text: 'Exporting…' });
         try {
-            const res = await authFetch(cmsApi.siteExport(siteId));
+            const res = await authFetch(cmsApi.siteExport(siteId, format));
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
                 throw new Error(body.error || `Export failed (${res.status})`);
@@ -1329,7 +2048,7 @@ export default function ProductWebsitePanel() {
             // Prefer the server-provided filename from Content-Disposition.
             const disposition = res.headers.get('Content-Disposition') || '';
             const match = disposition.match(/filename="?([^";]+)"?/i);
-            const filename = match?.[1] || `site-export-${Date.now()}.json`;
+            const filename = match?.[1] || `site-export-${Date.now()}.${format === 'json' ? 'json' : 'zip'}`;
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -1347,40 +2066,87 @@ export default function ProductWebsitePanel() {
         }
     }, []);
 
+    // Two wire formats share one picker:
+    //   .zip   the complete backup — bundle + image bytes. Posted as
+    //          multipart; the server unpacks and validates it (we can't
+    //          usefully pre-check a zip in the browser, and doing so would
+    //          just duplicate the server's guards).
+    //   .json  the bundle alone. Kept because every export downloaded
+    //          before the zip existed is one of these — and the cheap
+    //          client-side marker check gives a far better error than a
+    //          round-trip for the common "wrong file" mistake.
     const handleImportFileChosen = useCallback(async (file) => {
         if (!file) return;
+        if (builderRunningRef.current) { showToast('error', 'The AI assistant is editing — press Stop in the assistant to take over.'); return; }
+        const isZip = /\.zip$/i.test(file.name || '') || file.type === 'application/zip';
         setSiteIoStatus({ kind: 'busy', text: 'Importing…' });
-        let payload;
-        try {
-            const text = await file.text();
-            payload = JSON.parse(text);
-        } catch {
-            setSiteIoStatus({ kind: 'error', text: 'Selected file is not valid JSON' });
-            return;
-        }
-        if (!payload || payload._beeflow_export !== true) {
-            setSiteIoStatus({ kind: 'error', text: 'Not a Bee Flow site export file' });
-            return;
-        }
-        try {
-            const res = await authFetch(cmsApi.importSite(), {
+
+        let request;
+        if (isZip) {
+            const form = new FormData();
+            form.append('file', file, file.name || 'site.zip');
+            request = { method: 'POST', body: form };   // no Content-Type — the browser sets the boundary
+        } else {
+            let payload;
+            try {
+                payload = JSON.parse(await file.text());
+            } catch {
+                setSiteIoStatus({ kind: 'error', text: 'Selected file is not a .zip or valid JSON' });
+                return;
+            }
+            if (!payload || payload._beeflow_export !== true) {
+                setSiteIoStatus({ kind: 'error', text: 'Not a Bee Flow site export file' });
+                return;
+            }
+            request = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
-            });
+            };
+        }
+
+        try {
+            const res = await authFetch(cmsApi.importSite(), request);
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
             // Refresh the sidebar list and switch to the newly-created site.
             await refreshSites();
             if (data.siteId) await handleSwitchSite(data.siteId);
-            setSiteIoStatus({ kind: 'success', text: `Imported "${data.name || 'site'}"` });
-            setTimeout(() => setSiteIoStatus(null), 2400);
+
+            // Report what actually came across. A silent "Imported" hides the
+            // two things an operator most needs to know: which languages
+            // arrived, and whether any images did not.
+            const parts = [];
+            if (data.locales?.length) parts.push(`${data.locales.length + 1} language(s)`);
+            if (data.assetsWritten) parts.push(`${data.assetsWritten} file(s)`);
+            if (data.dropped > 0) parts.push(`${data.dropped} block(s) skipped (unrecognized type)`);
+            const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+            const detail = parts.length ? ` — ${parts.join(', ')}` : '';
+            const bad = data.dropped > 0 || warnings.length > 0;
+            setSiteIoStatus({
+                kind: bad ? 'error' : 'success',
+                text: `Imported "${data.name || 'site'}"${detail}`,
+            });
+            for (const w of warnings.slice(0, 3)) showToast('error', w);
+            setTimeout(() => setSiteIoStatus(null), bad ? 6000 : 2400);
         } catch (err) {
             setSiteIoStatus({ kind: 'error', text: err.message || 'Import failed' });
         }
     }, [handleSwitchSite, refreshSites]);
 
-    const handleDeleteSite = useCallback(async (siteId) => {
+    // Receives the full site object from SiteSwitcher (which no longer
+    // confirms itself) — the shared ConfirmDialog names what's deleted.
+    const handleDeleteSite = useCallback(async (siteOrId) => {
+        const siteId = typeof siteOrId === 'string' ? siteOrId : siteOrId?.id;
+        if (!siteId) return;
+        const name = typeof siteOrId === 'object' ? siteOrId?.name : sites.find(s => s.id === siteId)?.name;
+        const ok = await confirm({
+            title: `Delete site "${name || 'this site'}"?`,
+            description: 'This permanently removes all of its pages, blocks, and content.',
+            confirmLabel: 'Delete site',
+            destructive: true,
+        });
+        if (!ok) return;
         try {
             const res = await authFetch(cmsApi.site(siteId), { method: 'DELETE' });
             if (!res.ok) {
@@ -1400,8 +2166,8 @@ export default function ProductWebsitePanel() {
                     try { localStorage.removeItem(ACTIVE_SITE_LS_KEY); } catch { /* ignore */ }
                 }
             }
-        } catch (err) { setError(err.message); }
-    }, [handleSwitchSite, refreshSites]);
+        } catch (err) { showToast('error', `Failed to delete site: ${err.message}`); }
+    }, [handleSwitchSite, refreshSites, sites, confirm]);
 
     // ── version management (multi-version per site) ──────────────────
     //
@@ -1431,7 +2197,7 @@ export default function ProductWebsitePanel() {
             if (!res.ok) throw new Error(data.error || `Duplicate failed (${res.status})`);
             await refreshSites();
             if (data.id) await handleSwitchSite(data.id);
-        } catch (err) { setError(err.message); }
+        } catch (err) { showToast('error', `Failed to duplicate version: ${err.message}`); }
     }, [flushSaves, refreshSites, handleSwitchSite]);
 
     // Make a specific version live. Only one site is live at a time
@@ -1439,6 +2205,18 @@ export default function ProductWebsitePanel() {
     // or otherwise — offline. Optimistic with rollback on failure.
     const handleSetLiveVersion = useCallback(async (siteId) => {
         if (!siteId || siteId === liveSiteId) return;
+        // Same consequence as the Live toggle: making a version live takes
+        // the currently-live site/version offline — confirm when one exists.
+        if (liveSiteId) {
+            const current = sites.find(s => s.id === liveSiteId);
+            const next = sites.find(s => s.id === siteId);
+            const ok = await confirm({
+                title: 'Switch the live version?',
+                description: `"${current?.versionName || current?.name || 'The current version'}" is live right now. Visitors will see "${next?.versionName || next?.name || 'the selected version'}" instead.`,
+                confirmLabel: 'Set live',
+            });
+            if (!ok) return;
+        }
         const prevLive = liveSiteId;
         setLiveSiteId(siteId);
         try {
@@ -1449,10 +2227,10 @@ export default function ProductWebsitePanel() {
             });
             if (!res.ok) throw new Error(`Failed to set version live (${res.status})`);
         } catch (err) {
-            setError(err.message);
+            showToast('error', err.message);
             setLiveSiteId(prevLive);
         }
-    }, [liveSiteId]);
+    }, [liveSiteId, sites, confirm]);
 
     // Context value for the LinkField "+ Create new page…" picker. Wraps
     // handleAddPage with keepActive=true so the user stays on whatever
@@ -1484,20 +2262,15 @@ export default function ProductWebsitePanel() {
         return <EmptyState onCreate={handleCreateSite} />;
     }
 
-    const isSiteView   = activePageId === SITE_VIRTUAL_ID;
-    const isDesignView = activePageId === DESIGN_VIRTUAL_ID;
-    const BlockEditor = activeBlock ? BLOCK_EDITORS[activeBlock.type]?.component : null;
+    const entryId = normalizeVirtualId(activePageId);
+    const isChromeView = isChromeEntryId(activePageId);
+    const isDesignView = entryId === DESIGN_VIRTUAL_ID;
+    const isAnalyticsView = entryId === ANALYTICS_VIRTUAL_ID;
 
     // Dedicated CMS preview route — isolated from the public site / auth /
     // redirect logic. Page switches do NOT reload the iframe; they're pushed
-    // via postMessage in postPreview() below.
+    // via postMessage in postPreview(). Locale switches remount (key).
     const iframeSrc = `/__cms_preview__?preview=1&locale=${encodeURIComponent(activeLocale)}`;
-
-    // Pages shown in the page list (site chrome as virtual top entry).
-    const virtualPages = [
-        { id: SITE_VIRTUAL_ID, slug: '', title: 'Site (Header & Footer)', isHomepage: false, _virtual: true },
-        ...(site?.pages || []),
-    ];
 
     // Versions of the active site = every site sharing its versionGroupId.
     // listSites() carries versionGroupId/versionName on each entry; the
@@ -1508,400 +2281,298 @@ export default function ProductWebsitePanel() {
         || activeSiteId;
     const versions = sites.filter(s => (s.versionGroupId || s.id) === activeGroupId);
 
-    return (
-      <CreatePageContext.Provider value={createPageFromPicker}>
-        <div className="h-full flex flex-row" style={{ background: 'var(--bg-primary)' }}>
+    const activeLocaleName = locales.find(l => l.code === activeLocale)?.name || activeLocale;
+    const isLive = liveSiteId === activeSiteId;
 
-            {/* ── PANE A: page list (160px) ── */}
-            <div className="w-[240px] shrink-0 flex flex-col border-r border-[var(--border-subtle)] h-full">
-                {/* site switcher */}
-                <div className="p-3 border-b border-[var(--border-subtle)] shrink-0">
-                    <SiteSwitcher
-                        sites={sites}
-                        activeSiteId={activeSiteId}
-                        liveSiteId={liveSiteId}
-                        onSelect={handleSwitchSite}
-                        onCreate={handleCreateSite}
-                        onRename={handleRenameSite}
-                        onDelete={handleDeleteSite}
-                    />
-                    {/* Version switcher — lists every version of the
-                        active site, set-live per version, duplicate. */}
-                    <VersionSwitcher
-                        versions={versions}
-                        activeSiteId={activeSiteId}
-                        liveSiteId={liveSiteId}
-                        onSelect={handleSwitchSite}
-                        onSetLive={handleSetLiveVersion}
-                        onDuplicate={handleDuplicateSite}
-                    />
-                    {/* Site export / import — secondary visual weight so
-                        the main "Create / Delete site" affordance in the
-                        switcher above stays primary. */}
-                    <div className="flex items-center gap-1.5 mt-2">
-                        <button
-                            type="button"
-                            onClick={handleExportSite}
-                            disabled={!activeSiteId || siteIoStatus?.kind === 'busy'}
-                            className="flex-1 px-2 py-1 text-[11px] rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent-primary)]/60 hover:text-[var(--accent-primary)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
-                            title="Download this site as a JSON file"
-                        >
-                            <AppIcon name="Download" className="w-3 h-3" />
-                            Export site
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => importInputRef.current?.click()}
-                            disabled={siteIoStatus?.kind === 'busy'}
-                            className="flex-1 px-2 py-1 text-[11px] rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent-primary)]/60 hover:text-[var(--accent-primary)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
-                            title="Restore a site from a previously-exported JSON file"
-                        >
-                            <AppIcon name="Upload" className="w-3 h-3" />
-                            Import site
-                        </button>
-                        {/* Hidden input — opened programmatically by the
-                            Import button. Reset value on every selection
-                            so the same file can be re-picked back-to-back. */}
-                        <input
-                            ref={importInputRef}
-                            type="file"
-                            accept="application/json,.json"
-                            className="hidden"
-                            onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                e.target.value = '';
-                                if (file) handleImportFileChosen(file);
-                            }}
-                        />
-                    </div>
-                    {/* Inline status line — success / error / busy. */}
-                    {siteIoStatus ? (
-                        <p
-                            className={`mt-1.5 text-[10px] leading-tight ${
-                                siteIoStatus.kind === 'error'
-                                    ? 'text-red-400'
-                                    : siteIoStatus.kind === 'success'
-                                        ? 'text-emerald-500'
-                                        : 'text-[var(--text-muted)]'
-                            }`}
-                        >
-                            {siteIoStatus.kind === 'busy' ? '… ' : ''}{siteIoStatus.text}
-                        </p>
-                    ) : null}
-                </div>
-                {/* global controls */}
-                <div className="p-3 border-b border-[var(--border-subtle)] shrink-0">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-[var(--text-primary)]">Website</span>
-                        <SaveBadge status={saveStatus} onRetry={retrySave} />
-                    </div>
-                    <Toggle label="Live" value={liveSiteId === activeSiteId} onChange={persistLive} />
+    // Per-locale translation coverage for the locale menu ("n/m fields").
+    // Cheap walk over client-side state; soft numbers by design (D3).
+    const coverageByLocale = {};
+    for (const l of locales) {
+        if (l.code === defaultLocale || !site) continue;
+        coverageByLocale[l.code] = coverageForLocale(site, pages, localeOverrides, l.code);
+    }
+    const otherLiveSite = liveSiteId && liveSiteId !== activeSiteId
+        ? sites.find(s => s.id === liveSiteId)
+        : null;
+
+    const statusText = rightView === 'preview'
+        ? `${isChromeView ? 'site chrome' : isDesignView ? 'design' : isAnalyticsView ? 'analytics' : (activePage?.slug || 'home')} · ${activeLocale}${!isLive ? ' · editor only' : ''} · Click text to edit`
+        : null;
+
+    // Stage empty-state overlays — the preview always stays center-stage, so
+    // "nothing here yet" guidance lives ON the stage instead of a bare pane.
+    const noPages = (site?.pages || []).length === 0;
+    const activePageEmpty = !!activePage && (activePage.blocks || []).length === 0 && !translationMode;
+    const stageOverlay = rightView === 'preview' && (noPages || activePageEmpty) ? (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="pointer-events-auto max-w-xs w-full mx-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/95 shadow-xl p-5 text-center">
+                <AppIcon
+                    name={noPages ? 'FileText' : 'LayoutGrid'}
+                    className="w-8 h-8 mx-auto mb-3 text-[var(--text-muted)]"
+                />
+                <h4 className="text-sm font-semibold text-[var(--text-primary)] mb-1">
+                    {noPages ? 'This site has no pages yet' : 'Empty page'}
+                </h4>
+                <p className="text-xs text-[var(--text-muted)] mb-3">
+                    {noPages
+                        ? 'Every website starts with a page.'
+                        : 'Add your first block from the Blocks list on the left (+).'}
+                </p>
+                {noPages && (
                     <button
                         type="button"
-                        onClick={handlePublish}
-                        disabled={publishing || saveStatus === 'saving'}
-                        className="mt-2 w-full px-2 py-1.5 rounded-md text-xs font-medium bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary)]/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() => handleAddPage({ title: 'Home' })}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent-primary)] text-white text-xs font-medium hover:bg-[var(--accent-primary)]/90"
                     >
-                        {publishing ? 'Publishing…' : 'Publish'}
+                        <AppIcon name="Plus" className="w-3.5 h-3.5" />
+                        Create your first page
                     </button>
-                    <p className="text-[10px] text-[var(--text-muted)] mt-1 text-center">
-                        {publishedAt
-                            ? `Last published ${formatRelative(publishedAt)}`
-                            : 'Not published yet — drafts only visible in editor'}
-                    </p>
-                    <select
-                        className="w-full mt-1 px-2 py-1.5 rounded-md text-xs border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)]"
-                        value={activeLocale}
-                        onChange={e => setActiveLocale(e.target.value)}
-                    >
-                        {locales.map(l => (
-                            <option key={l.code} value={l.code}>
-                                {l.name} ({l.code}){l.code === defaultLocale ? ' ★' : ''}
-                            </option>
-                        ))}
-                    </select>
-                    {activeLocale !== defaultLocale && (
-                        <button
-                            type="button"
-                            onClick={() => persistDefaultLocale(activeLocale)}
-                            className="mt-1 w-full text-xs text-[var(--text-muted)] hover:text-[var(--accent-primary)] text-center"
-                        >
-                            Set as default locale
-                        </button>
-                    )}
-                </div>
-
-                {/* virtual site entry */}
-                <button
-                    type="button"
-                    onClick={() => setActivePageId(SITE_VIRTUAL_ID)}
-                    className={`flex items-center gap-2 px-3 py-2 text-sm shrink-0 w-full text-left
-                        ${activePageId === SITE_VIRTUAL_ID
-                            ? 'bg-[var(--accent-primary)]/10 text-[var(--text-primary)]'
-                            : 'text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)]'
-                        }`}
-                >
-                    <AppIcon name="LayoutTemplate" className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">Site chrome</span>
-                </button>
-
-                {/* virtual design entry */}
-                <button
-                    type="button"
-                    onClick={() => setActivePageId(DESIGN_VIRTUAL_ID)}
-                    className={`flex items-center gap-2 px-3 py-2 text-sm border-b border-[var(--border-subtle)] shrink-0 w-full text-left
-                        ${activePageId === DESIGN_VIRTUAL_ID
-                            ? 'bg-[var(--accent-primary)]/10 text-[var(--text-primary)]'
-                            : 'text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)]'
-                        }`}
-                >
-                    <AppIcon name="Palette" className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">Design</span>
-                </button>
-
-                {/* page list */}
-                <div className="flex-1 overflow-hidden">
-                    <PageList
-                        pages={site?.pages || []}
-                        activePageId={activePageId}
-                        onSelect={setActivePageId}
-                        onAdd={handleAddPage}
-                        onDuplicate={handleDuplicatePage}
-                        onDelete={handleDeletePage}
-                        onSetHomepage={handleSetHomepage}
-                        onRename={(pageId, title) => savePageMeta(pageId, { title })}
-                        onEditSlug={(pageId, slug) => savePageMeta(pageId, { slug })}
-                        onReorder={handleReorderPages}
-                        templates={templates}
-                        onSaveAsTemplate={handleSaveAsTemplate}
-                        onDeleteTemplate={handleDeleteTemplate}
-                        onExportPage={handleExportPage}
-                        onImportPage={handleImportPage}
-                    />
-                </div>
-
-                {/* bottom: error + open live */}
-                <div className="p-2 border-t border-[var(--border-subtle)] shrink-0">
-                    {error
-                        ? <p className="text-xs text-red-400 truncate" title={error}>{error}</p>
-                        : (liveSiteId === activeSiteId
-                            ? <a href="/" target="_blank" rel="noreferrer"
-                                  className="text-xs text-[var(--text-muted)] hover:text-[var(--accent-primary)]">
-                                  Open live site ↗
-                              </a>
-                            : <span className="text-xs text-[var(--text-muted)] italic">
-                                  Toggle Live to bring this site online
-                              </span>
-                        )
-                    }
-                </div>
-            </div>
-
-            {/* ── PANE B: block list + editor (280px) ── */}
-            <div className="w-[300px] shrink-0 flex flex-col border-r border-[var(--border-subtle)] h-full">
-                {translationMode ? (
-                    isDesignView ? (
-                        <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-xs p-4 text-center">
-                            Design is shared across all languages. Switch to the
-                            default language to edit it.
-                        </div>
-                    ) : (isSiteView || activePage) ? (
-                        <TranslationPanel
-                            scope={isSiteView ? 'site' : 'page'}
-                            site={site}
-                            page={activePage}
-                            localeName={locales.find(l => l.code === activeLocale)?.name || activeLocale}
-                            defaultLocaleName={locales.find(l => l.code === defaultLocale)?.name || defaultLocale}
-                            pageOverride={activePageOverride}
-                            siteOverride={activeSiteOverride}
-                            aiStatus={aiStatus}
-                            onPageLeaf={(blockId, fieldPath, value) =>
-                                activePage && updatePageOverride(activePage.id, activeLocale, ['blocks', blockId, 'content', ...fieldPath], value)}
-                            onPageSeo={(field, value) =>
-                                activePage && updatePageOverride(activePage.id, activeLocale, ['seo', field], value)}
-                            onChromeLeaf={(storagePath, value) =>
-                                updateSiteOverride(activeLocale, storagePath, value)}
-                            onSelectBlock={selectAndScrollToBlock}
-                            onAiTranslate={() => handleAiTranslate(isSiteView ? 'site' : 'page')}
-                        />
-                    ) : (
-                        <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm p-4 text-center">
-                            Select a page to translate.
-                        </div>
-                    )
-                ) : isSiteView ? (
-                    <SiteChromeEditor site={site} onChange={updateSiteChrome} pages={pageIndex} />
-                ) : isDesignView ? (
-                    <DesignEditor design={site?.design} onChange={updateDesign} />
-                ) : activePage ? (
-                    <>
-                        {/* page meta strip */}
-                        <PageMetaStrip
-                            page={activePage}
-                            onMetaChange={updatePageMeta}
-                            onSeoChange={updatePageSeo}
-                        />
-
-                        {/* block list */}
-                        <div className="border-b border-[var(--border-subtle)]" style={{ maxHeight: '35%', minHeight: '120px', overflowY: 'auto' }}>
-                            <BlockList
-                                blocks={activePage.blocks || []}
-                                activeBlockId={activeBlockId}
-                                onSelect={setActiveBlockId}
-                                onAdd={addBlock}
-                                onToggle={toggleBlock}
-                                onDuplicate={duplicateBlock}
-                                onDelete={deleteBlock}
-                                onReorder={reorderBlocks}
-                            />
-                        </div>
-
-                        {/* block editor */}
-                        <div className="flex-1 overflow-y-auto">
-                            {activeBlock && BlockEditor ? (
-                                <>
-                                    <div className="px-4 pt-4 flex items-center gap-2">
-                                        <AppIcon name={BLOCK_EDITORS[activeBlock.type]?.icon || 'Square'} className="w-4 h-4 text-[var(--accent-primary)]" />
-                                        <span className="text-sm font-semibold text-[var(--text-primary)]">
-                                            {BLOCK_EDITORS[activeBlock.type]?.label}
-                                        </span>
-                                        <div className="ml-auto">
-                                            <Toggle
-                                                label=""
-                                                value={!!activeBlock.enabled}
-                                                onChange={() => toggleBlock(activeBlock.id)}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Content / Style sub-tabs */}
-                                    <div className="px-4 mt-3 flex items-center border-b border-[var(--border-subtle)]">
-                                        <SubTabBtn
-                                            label="Content"
-                                            active={blockEditorTab === 'content'}
-                                            onClick={() => setBlockEditorTab('content')}
-                                        />
-                                        <SubTabBtn
-                                            label="Style"
-                                            active={blockEditorTab === 'style'}
-                                            onClick={() => setBlockEditorTab('style')}
-                                        />
-                                    </div>
-
-                                    {blockEditorTab === 'content' ? (
-                                        <div className="px-4 pt-4 pb-6">
-                                            <BlockEditor
-                                                data={activeBlock.content}
-                                                pages={pageIndex}
-                                                onChange={next => updateBlockContent(activePage.id, activeBlock.id, next)}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <BlockStyleEditor
-                                            style={activeBlock.style}
-                                            enabled={activeBlock.enabled !== false}
-                                            design={site?.design}
-                                            onChange={next => updateBlockStyle(activePage.id, activeBlock.id, next)}
-                                            onToggleEnabled={() => toggleBlock(activeBlock.id)}
-                                        />
-                                    )}
-                                </>
-                            ) : (
-                                <p className="text-xs text-[var(--text-muted)] text-center py-8 px-4">
-                                    {activePage.blocks?.length
-                                        ? 'Select a block to edit its settings, or click text in the preview.'
-                                        : 'Add a block to get started.'}
-                                </p>
-                            )}
-                        </div>
-
-                        {/* hint */}
-                        <div className="px-4 py-2 border-t border-[var(--border-subtle)] shrink-0">
-                            <p className="text-xs text-[var(--text-muted)]">
-                                Click any text in the preview to edit inline.
-                            </p>
-                        </div>
-                    </>
-                ) : (
-                    <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm p-4 text-center">
-                        Select a page from the list.
-                    </div>
                 )}
             </div>
+        </div>
+    ) : null;
 
-            {/* ── PANE C: preview / sitemap (flex-1) ── */}
-            <div className="flex-1 hidden lg:flex flex-col min-w-0">
-                {/* tab bar */}
-                <div className="flex items-center border-b border-[var(--border-subtle)] shrink-0">
-                    <TabBtn
-                        icon="Monitor"
-                        label="Preview"
-                        active={rightView === 'preview'}
-                        onClick={() => setRightView('preview')}
-                    />
-                    <TabBtn
-                        icon="GitFork"
-                        label="Sitemap"
-                        active={rightView === 'sitemap'}
-                        onClick={() => setRightView('sitemap')}
-                    />
-                    <TabBtn
-                        icon="Sparkles"
-                        label="AI"
-                        active={rightView === 'ai'}
-                        onClick={() => setRightView('ai')}
-                    />
-                    <div className="flex-1" />
-                    {rightView === 'preview' && (
-                        <span className="text-[10px] text-[var(--text-muted)] pr-4">
-                            {isSiteView ? 'site chrome' : isDesignView ? 'design' : (activePage?.slug || 'home')} · {activeLocale}
-                            {liveSiteId !== activeSiteId ? ' · editor only' : ''}
-                            {' · '}Click text to edit
-                        </span>
-                    )}
-                </div>
+    // The iframe node is built HERE so the container keeps owning iframeRef
+    // and the key={activeLocale} remount semantics (cms-preview-ready
+    // re-handshake); PreviewStage only decides visibility.
+    const iframe = (
+        <iframe
+            ref={iframeRef}
+            title="Product website preview"
+            src={iframeSrc}
+            className="flex-1 w-full bg-white"
+            key={activeLocale}
+        />
+    );
 
-                {/* preview pane — kept mounted so iframe state survives tab switch */}
-                <div className={`flex-1 flex flex-col min-h-0 ${rightView === 'preview' ? '' : 'hidden'}`}>
-                    <iframe
-                        ref={iframeRef}
-                        title="Product website preview"
-                        src={iframeSrc}
-                        className="flex-1 w-full bg-white"
-                        key={activeLocale}
-                    />
-                </div>
-
-                {/* sitemap pane */}
-                {rightView === 'sitemap' && (
-                    <SitemapView
-                        siteId={activeSiteId}
-                        activePageId={activePageId === SITE_VIRTUAL_ID ? null : activePageId}
-                        onSelectPage={(id) => {
-                            setActivePageId(id);
-                            setRightView('preview');
-                        }}
-                    />
-                )}
-
-                {/* AI pane */}
-                {rightView === 'ai' && (
-                    <AIPagePanel
-                        activeSiteId={activeSiteId}
-                        activeLocale={activeLocale}
-                        onSaveAsNewPage={handleSaveGeneratedPage}
-                    />
-                )}
-            </div>
-            {pendingTemplatePage ? (
-                <SaveTemplateDialog
-                    page={pendingTemplatePage}
-                    onCancel={() => setPendingTemplatePage(null)}
-                    onConfirm={submitTemplate}
+    return (
+      <CreatePageContext.Provider value={createPageFromPicker}>
+        <CmsBuilderShell
+            navOpen={navOpen}
+            inspectorOpen={inspectorOpen}
+            onCloseNav={() => setNavOpen(false)}
+            onCloseInspector={() => setInspectorOpen(false)}
+            onCloseAiDock={() => setAssistantOpen(false)}
+            locked={builderRunning}
+            aiDock={assistantOpen ? (
+                <CmsAssistantPane
+                    siteId={activeSiteId}
+                    bridge={builderBridge}
+                    pages={pageIndex}
+                    translationMode={translationMode}
+                    defaultLocaleName={locales.find(l => l.code === defaultLocale)?.name || defaultLocale}
+                    canUndoTurn={builderUndoAvailable}
+                    onClose={toggleAssistant}
                 />
             ) : null}
-            <ToastHost />
-        </div>
+            dialogs={
+                <>
+                    {pendingTemplatePage ? (
+                        <SaveTemplateDialog
+                            page={pendingTemplatePage}
+                            onCancel={() => setPendingTemplatePage(null)}
+                            onConfirm={submitTemplate}
+                        />
+                    ) : null}
+                    {addBlockRequest ? (
+                        <AddBlockDialog
+                            design={site?.design || null}
+                            onAdd={(type, variant) => {
+                                addBlock(type, addBlockRequest.index, variant ? { variant } : null);
+                                setAddBlockRequest(null);
+                            }}
+                            onCancel={() => setAddBlockRequest(null)}
+                        />
+                    ) : null}
+                    {confirmDialog}
+                    <ToastHost />
+                </>
+            }
+            topBar={
+                <TopBar
+                    onExit={onExit}
+                    siteMenuProps={{
+                        sites,
+                        versions,
+                        activeSiteId,
+                        liveSiteId,
+                        onSelectSite: handleSwitchSite,
+                        onCreateSite: handleCreateSite,
+                        onRenameSite: handleRenameSite,
+                        onDeleteSite: handleDeleteSite,
+                        onSetLiveVersion: handleSetLiveVersion,
+                        onDuplicateVersion: handleDuplicateSite,
+                        onExportSite: handleExportSite,
+                        onImportFile: handleImportFileChosen,
+                        ioStatus: siteIoStatus,
+                    }}
+                    localeMenuProps={{
+                        locales,
+                        activeLocale,
+                        defaultLocale,
+                        coverageByLocale,
+                        onSelect: changeLocaleSafe,
+                        onSetDefault: handleSetDefaultLocale,
+                        onManageLanguages: onNavigate ? () => onNavigate('admin/languages') : undefined,
+                    }}
+                    publishProps={{
+                        publishing,
+                        publishedAt,
+                        dirtySincePublish,
+                        isLive,
+                        liveSiteName: otherLiveSite?.name || null,
+                        onPublish: handlePublish,
+                        onSetLive: persistLive,
+                    }}
+                    saveStatus={saveStatus}
+                    onRetrySave={retrySave}
+                    view={rightView}
+                    onViewChange={setRightView}
+                    device={device}
+                    onDeviceChange={changeDevice}
+                    assistantOpen={assistantOpen}
+                    onToggleAssistant={toggleAssistant}
+                    assistantRunning={builderRunning}
+                    history={{
+                        canUndo: history.canUndo,
+                        canRedo: history.canRedo,
+                        onUndo: history.undo,
+                        onRedo: history.redo,
+                    }}
+                    translationMode={translationMode}
+                    translatingLocaleName={activeLocaleName}
+                    onExitTranslationMode={() => changeLocaleSafe(defaultLocale)}
+                    navOpen={navOpen}
+                    onToggleNav={toggleNav}
+                    inspectorOpen={inspectorOpen}
+                    onToggleInspector={toggleInspector}
+                    focusMode={focusMode}
+                    onToggleFocusMode={toggleFocusMode}
+                    onOpenAnalytics={onNavigate ? () => onNavigate('admin/website-analytics') : undefined}
+                    onManageLanguages={onNavigate ? () => onNavigate('admin/languages') : undefined}
+                    isLive={isLive}
+                />
+            }
+            navigator={
+                <NavigatorPanel
+                    activeEntryId={entryId}
+                    onSelectEntry={setActivePageId}
+                    pageListProps={{
+                        pages: site?.pages || [],
+                        activePageId,
+                        onSelect: setActivePageId,
+                        onAdd: handleAddPage,
+                        onDuplicate: handleDuplicatePage,
+                        onDelete: handleDeletePage,
+                        onSetHomepage: handleSetHomepage,
+                        onRename: (pageId, title) => savePageMeta(pageId, { title }),
+                        onEditSlug: (pageId, slug) => savePageMeta(pageId, { slug }),
+                        onReorder: handleReorderPages,
+                        templates,
+                        onSaveAsTemplate: handleSaveAsTemplate,
+                        onDeleteTemplate: handleDeleteTemplate,
+                        onExportPage: handleExportPage,
+                        onImportPage: handleImportPage,
+                    }}
+                    blockListProps={(activePage && !translationMode) ? {
+                        blocks: activePage.blocks || [],
+                        activeBlockId,
+                        onSelect: setActiveBlockId,
+                        // index:null = default insert-after-active behaviour
+                        // (the canvas "+" zones request an explicit index).
+                        onRequestAdd: () => setAddBlockRequest({ index: null }),
+                        onToggle: toggleBlock,
+                        onDuplicate: duplicateBlock,
+                        onDelete: deleteBlock,
+                        onReorder: reorderBlocks,
+                    } : null}
+                />
+            }
+            stage={
+                <PreviewStage
+                    view={rightView}
+                    statusText={statusText}
+                    errorText={error}
+                    onDismissError={() => setError(null)}
+                    deviceWidth={device === 'tablet' ? 768 : device === 'mobile' ? 390 : null}
+                    overlay={stageOverlay}
+                    iframe={iframe}
+                    sitemap={rightView === 'sitemap' ? (
+                        <SitemapView
+                            siteId={activeSiteId}
+                            activePageId={isVirtualPageId(activePageId) ? null : activePageId}
+                            onSelectPage={(id) => {
+                                setActivePageId(id);
+                                setRightView('preview');
+                            }}
+                            onMutated={async () => {
+                                // Pull the flyout's server-side changes into panel
+                                // state before a stale 'site' save can clobber them.
+                                await drainPendingSaves();
+                                await reloadPayload();
+                            }}
+                        />
+                    ) : null}
+                />
+            }
+            inspector={
+                <InspectorHost
+                    activePageId={activePageId}
+                    activePage={activePage}
+                    translationMode={translationMode}
+                    translateProps={{
+                        site,
+                        page: activePage,
+                        localeName: activeLocaleName,
+                        defaultLocaleName: locales.find(l => l.code === defaultLocale)?.name || defaultLocale,
+                        pageOverride: activePageOverride,
+                        siteOverride: activeSiteOverride,
+                        aiStatus,
+                        onPageLeaf: (blockId, fieldPath, value) =>
+                            activePage && updatePageOverride(activePage.id, activeLocale, ['blocks', blockId, 'content', ...fieldPath], value),
+                        onPageSeo: (field, value) =>
+                            activePage && updatePageOverride(activePage.id, activeLocale, ['seo', field], value),
+                        onChromeLeaf: (storagePath, value) =>
+                            updateSiteOverride(activeLocale, storagePath, value),
+                        onSelectBlock: selectAndScrollToBlock,
+                        tier: translateTier,
+                        onTierChange: changeTranslateTier,
+                        onAiTranslate: () => handleAiTranslate(isChromeView ? 'site' : 'page', translateTier),
+                        onClearAndRetranslateBlock: isChromeView ? undefined : handleClearAndRetranslateBlock,
+                        onResetTranslations: () => handleResetTranslations(isChromeView ? 'site' : 'page'),
+                    }}
+                    chromeProps={{
+                        site,
+                        pages: pageIndex,
+                        locales,
+                        defaultLocale,
+                        onChangeSite: updateSiteChrome,
+                    }}
+                    designProps={{
+                        design: site?.design,
+                        onChange: updateDesign,
+                    }}
+                    analyticsProps={{
+                        site,
+                        onChange: updateSiteAnalytics,
+                        onOpenCookieSettings: () => setActivePageId(COOKIE_VIRTUAL_ID),
+                        onOpenAnalytics: onNavigate ? () => onNavigate('admin/website-analytics') : undefined,
+                    }}
+                    pageProps={{
+                        pageIndex,
+                        activeBlock,
+                        blockEditorTab,
+                        onBlockEditorTab: setBlockEditorTab,
+                        siteDesign: site?.design,
+                        onMetaChange: updatePageMeta,
+                        onSeoChange: updatePageSeo,
+                        onBlockContentChange: (next) => activePage && activeBlock && updateBlockContent(activePage.id, activeBlock.id, next),
+                        onBlockStyleChange: (next) => activePage && activeBlock && updateBlockStyle(activePage.id, activeBlock.id, next),
+                        onToggleBlock: toggleBlock,
+                    }}
+                />
+            }
+        />
       </CreatePageContext.Provider>
     );
 }
@@ -1924,8 +2595,6 @@ function EmptyState({ onCreate }) {
     const submit = async () => {
         const fromRef = inputRef.current?.value ?? '';
         const value = (fromRef || name).trim();
-        // eslint-disable-next-line no-console
-        console.log('[EmptyState] Create website clicked — value =', JSON.stringify(value));
         if (!value) return;
         await onCreate(value);
     };
@@ -1989,364 +2658,6 @@ function EmptyState({ onCreate }) {
     );
 }
 
-// ── Site chrome editor (header + footer in pane B when site is selected) ─
-
-function SiteChromeEditor({ site, onChange, pages }) {
-    if (!site) return null;
-    const setHeader = (h) => onChange({ ...site, header: h });
-    const setFooter = (f) => onChange({ ...site, footer: f });
-    const setCookieBanner = (c) => onChange({ ...site, cookieBanner: c });
-
-    return (
-        <div className="flex-1 overflow-y-auto">
-            <div className="px-4 pt-4 pb-2">
-                <div className="flex items-center gap-2 mb-1">
-                    <AppIcon name="LayoutTemplate" className="w-4 h-4 text-[var(--accent-primary)]" />
-                    <span className="text-sm font-semibold text-[var(--text-primary)]">Site chrome</span>
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mb-4">
-                    Header, footer, and cookie banner are shared across all pages.
-                </p>
-                <SectionDivider label="Header" />
-                <HeaderEditor data={site.header} pages={pages} onChange={setHeader} />
-                <SectionDivider label="Footer" />
-                <FooterEditor data={site.footer} pages={pages} onChange={setFooter} />
-                <SectionDivider label="Cookie banner" />
-                <CookieBannerEditor data={site.cookieBanner} onChange={setCookieBanner} />
-            </div>
-        </div>
-    );
-}
-
-function SectionDivider({ label }) {
-    return (
-        <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
-            <div className="flex-1 h-px bg-[var(--border-subtle)]" />
-        </div>
-    );
-}
-
-// ── Page meta strip (slug, title, SEO, hideHeader/Footer toggles) ────
-
-function PageMetaStrip({ page, onMetaChange, onSeoChange }) {
-    const [open, setOpen] = useState(false);
-
-    return (
-        <div className="border-b border-[var(--border-subtle)] shrink-0">
-            <button
-                type="button"
-                onClick={() => setOpen(v => !v)}
-                className="w-full flex items-center justify-between px-4 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
-            >
-                <span className="flex items-center gap-2">
-                    <AppIcon name={page.isHomepage ? 'Home' : 'FileText'} className="w-3.5 h-3.5" />
-                    <span className="font-medium">{page.title || '(untitled)'}</span>
-                    <span className="text-[var(--text-muted)]">/{page.slug}</span>
-                </span>
-                <AppIcon name={open ? 'ChevronUp' : 'ChevronDown'} className="w-3.5 h-3.5" />
-            </button>
-            {open && (
-                <div className="px-4 pb-3 space-y-2">
-                    <MetaInput label="Page title" value={page.title} onChange={v => onMetaChange('title', v)} />
-                    <MetaInput label="URL slug" value={page.slug} onChange={v => onMetaChange('slug', v)} mono />
-                    <MetaInput label="Meta title" value={page.seo?.metaTitle} onChange={v => onSeoChange('metaTitle', v)} />
-                    <MetaInput label="Meta description" value={page.seo?.metaDescription} onChange={v => onSeoChange('metaDescription', v)} />
-                    <div className="flex gap-4 pt-1">
-                        <MetaToggle label="Hide header" value={page.hideHeader} onChange={v => onMetaChange('hideHeader', v)} />
-                        <MetaToggle label="Hide footer" value={page.hideFooter} onChange={v => onMetaChange('hideFooter', v)} />
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
-function MetaInput({ label, value, onChange, mono }) {
-    return (
-        <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-[var(--text-muted)]">{label}</span>
-            <input
-                type="text"
-                value={value || ''}
-                onChange={e => onChange(e.target.value)}
-                className={`w-full px-2 py-1 rounded text-xs border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] ${mono ? 'font-mono' : ''}`}
-            />
-        </div>
-    );
-}
-
-function MetaToggle({ label, value, onChange }) {
-    return (
-        <label className="flex items-center gap-1.5 cursor-pointer text-xs text-[var(--text-secondary)]">
-            <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} className="accent-[var(--accent-primary)]" />
-            {label}
-        </label>
-    );
-}
-
-// ── Preview content builder ──────────────────────────────────────────
-//
-// Converts the new doc shape into the content object the existing
-// marketing site sections expect (they read content.header, content.hero, etc.)
-
-function buildPreviewContent(site, activePage) {
-    const out = {};
-
-    // Header from site chrome. The header carries:
-    //   navLinks  — user-customized nav from site.header.nav (the ONLY
-    //               source of nav items now; pages no longer auto-merge)
-    //   activeSlug — the page being previewed, so Header.jsx can mark
-    //                its matching nav entry active. Empty string = home.
-    if (site?.header) {
-        out.header = {
-            enabled: site.header.enabled !== false,
-            // Logo & brand — `logo` is the new shape; `logoText` is kept
-            // alongside as a fallback for the public renderer's legacy
-            // path (Header.jsx prefers logo.text when present).
-            logoText: site.header.logoText,
-            logo: site.header.logo || undefined,
-            loginLabel: site.header.loginLabel,
-            // Header buttons (multi-CTA). Each entry carries label, href
-            // (resolved), style, and per-button label typography (font /
-            // size / color) for the renderer to apply via inline style.
-            ctas: (site.header.ctas || []).map(cta => ({
-                id: cta.id,
-                label: cta.label,
-                href: resolvePreviewHref(cta.link, site?.pages),
-                style: cta.style || 'primary',
-                labelFont:  cta.labelFont  || '',
-                labelSize:  Number.isFinite(cta.labelSize) ? cta.labelSize : 0,
-                labelColor: cta.labelColor || '',
-            })),
-            // Master nav-link style (font / size / color) — applied to
-            // every nav link + dropdown child by Header.jsx. Sits as a
-            // sibling to navLinks because the items array can't carry
-            // string keys.
-            navStyle: site.header.navStyle || undefined,
-            navLinks: (site.header.nav || []).map(n => {
-                const out = {
-                    label: n.label,
-                    href: resolvePreviewHref(n.link, site?.pages),
-                    // Flat children (legacy list-mode dropdown). Always
-                    // emitted so the existing renderer path still works.
-                    children: (n.children || []).map(c => ({
-                        label: c.label,
-                        href: resolvePreviewHref(c.link, site?.pages),
-                    })),
-                };
-                // Mega-menu (columns) shape — additive. Only emitted when
-                // the user explicitly switched the dropdown to "columns".
-                if (n.dropdown?.layout === 'columns') {
-                    out.dropdown = {
-                        layout: 'columns',
-                        columns: (n.dropdown.columns || []).map(col => ({
-                            heading: col.heading || '',
-                            items: (col.items || []).map(mi => ({
-                                label:       mi.label || '',
-                                href:        resolvePreviewHref(mi.link, site?.pages),
-                                description: mi.description || '',
-                                icon:        mi.icon || '',
-                                target:      mi.openInNewTab ? '_blank' : undefined,
-                                rel:         mi.openInNewTab ? 'noopener noreferrer' : undefined,
-                            })),
-                        })),
-                    };
-                }
-                return out;
-            }),
-            activeSlug: activePage?.isHomepage ? '' : (activePage?.slug || ''),
-        };
-    }
-    if (site?.footer) {
-        out.footer = {
-            enabled: site.footer.enabled !== false,
-            // Opt-in 3-button (system / light / dark) switcher rendered
-            // by the public Footer. Off by default — only emitted when
-            // the user toggles it on in the Site chrome editor.
-            themeSwitcher: site.footer.themeSwitcher?.enabled
-                ? { enabled: true }
-                : undefined,
-            brand: { logoText: site.footer.brandText, blurb: site.footer.blurb },
-            // Master footer-link style (font + color), applied to every
-            // column link AND every social link by Footer.jsx.
-            linkStyle: site.footer.linkStyle || undefined,
-            columns: (site.footer.columns || []).map(c => ({
-                heading: c.heading,
-                links: (c.links || []).map(l => ({
-                    label: l.label,
-                    href: resolvePreviewHref(l.link, site?.pages),
-                })),
-            })),
-            socials: (site.footer.socials || []).map(s => ({
-                platform: s.platform,
-                href: resolvePreviewHref(s.link, site?.pages),
-            })),
-            copyright: site.footer.copyright,
-        };
-    }
-    // Cookie banner — site-wide chrome, passed through verbatim so the
-    // preview iframe renders/edits it the same way the published site will.
-    if (site?.cookieBanner) out.cookieBanner = site.cookieBanner;
-
-    // Blocks for the active page. We emit BOTH:
-    //   - the legacy keyed shape (out.hero, out.features, …) so the public
-    //     site renderer at "/" keeps working until it migrates,
-    //   - blocks[] in panel order so the preview can render them in the
-    //     order the editor sees (multi-page WordPress-style).
-    // Per-page chrome visibility — sourced from the site-index entry
-    // (kept in sync with the page doc by savePageMeta). The renderer
-    // hides Header/Footer when these are true; preview shows the editor
-    // the same outcome the published site will produce.
-    out.hideHeader = !!activePage?.hideHeader;
-    out.hideFooter = !!activePage?.hideFooter;
-
-    if (activePage?.blocks) {
-        const blocksOut = [];
-        for (const block of activePage.blocks) {
-            // legacyifyLinks mutates `node.link` → `node.href` in place,
-            // so we MUST deep-clone before calling it. A shallow spread
-            // would share nested objects (block.content.cta, every nav
-            // item, every Content-block element) with panel state — and
-            // the next preview push would silently delete `link` off the
-            // user's source-of-truth shape, snapping LinkField back to
-            // its default kind on the next render and persisting the
-            // corruption on the next auto-save.
-            const legacy = JSON.parse(JSON.stringify({
-                enabled: block.enabled !== false,
-                ...(block.content || {}),
-            }));
-            legacyifyLinks(legacy, site?.pages);
-            out[block.type] = legacy;
-            blocksOut.push({
-                id: block.id,
-                type: block.type,
-                enabled: block.enabled !== false,
-                content: legacy,
-                // style is opaque to the preview content builder — pass it
-                // through verbatim so the iframe wrapper can apply it.
-                style: block.style || {},
-            });
-        }
-        out.blocks = blocksOut;
-    }
-
-    return out;
-}
-
-function resolvePreviewHref(link, pages) {
-    if (!link) return '#';
-    if (link.kind === 'anchor')   return `#${link.anchor || ''}`;
-    if (link.kind === 'app')      return link.path || '/';
-    if (link.kind === 'external') return link.url || '#';
-    if (link.kind === 'page') {
-        const page = (pages || []).find(p => p.id === link.pageId);
-        if (!page) return '#';                          // broken — page deleted
-        // Public site is served at `/` (RootPathGate). Non-homepage pages
-        // route via `/?slug=<slug>` so the browser keeps pathname='/' and
-        // the BeeFlow app router doesn't intercept.
-        const base = page.isHomepage ? '/' : `/?slug=${encodeURIComponent(page.slug)}`;
-        return link.anchor ? `${base}#${link.anchor}` : base;
-    }
-    return '#';
-}
-
-// Link union: only these four kinds describe a Link object. Other blocks
-// (e.g. Media + Text) use `kind` for unrelated discriminators (image vs
-// video), so we MUST whitelist before treating an object as a Link.
-const LINK_KINDS = ['page', 'external', 'anchor', 'app'];
-
-function legacyifyLinks(node, pages) {
-    if (!node || typeof node !== 'object') return;
-    if (Array.isArray(node)) { node.forEach(n => legacyifyLinks(n, pages)); return; }
-    for (const [k, v] of Object.entries(node)) {
-        if (v && typeof v === 'object' && !Array.isArray(v)
-            && typeof v.kind === 'string' && LINK_KINDS.includes(v.kind)) {
-            if (k === 'link') {
-                node.href = resolvePreviewHref(v, pages);
-                delete node.link;
-            } else if (k === 'ctaLink') {
-                node.ctaHref = resolvePreviewHref(v, pages);
-                delete node.ctaLink;
-            } else {
-                node[k] = resolvePreviewHref(v, pages);
-            }
-        } else {
-            legacyifyLinks(v, pages);
-        }
-    }
-}
-
-// ── Chrome-path inverse mapper ───────────────────────────────────────
-//
-// buildPreviewContent re-shapes the SiteDoc for the iframe, so EditableText
-// emits paths in display-shape (e.g. footer.brand.blurb), while the SiteDoc
-// stores them in storage-shape (footer.blurb). applyChromeEdit walks the
-// path, translates the few non-passthrough keys, and returns a new SiteDoc
-// with the value applied. Returns null if the path doesn't map to anything
-// the SiteDoc owns (so the caller can ignore the edit safely).
-// Maps an iframe display-shape chrome path (e.g. footer.brand.blurb,
-// header.navLinks.0.label) to the storage-shape path array the SiteDoc /
-// site-locale override uses (footer.blurb, header.nav.0.label). Returns null
-// if the path isn't a chrome path. Shared by applyChromeEdit (base doc) and
-// the translation-mode override writer.
-function chromeStoragePath(path) {
-    const parts = path.split('.');
-    const root = parts[0];
-    if (root !== 'header' && root !== 'footer') return null;
-
-    if (root === 'footer' && parts[1] === 'brand' && parts[2] === 'logoText' && parts.length === 3) {
-        return ['footer', 'brandText'];
-    } else if (root === 'footer' && parts[1] === 'brand' && parts[2] === 'blurb' && parts.length === 3) {
-        return ['footer', 'blurb'];
-    } else if (root === 'header' && parts[1] === 'navLinks') {
-        // header.navLinks.{i}.label                       → header.nav[i].label
-        // header.navLinks.{i}.children.{j}.label          → header.nav[i].children[j].label
-        // Convert numeric segments in the tail to actual numbers so setIn
-        // recognises array indices (otherwise children would silently be
-        // converted to a plain object keyed by numeric strings).
-        return [
-            'header',
-            'nav',
-            Number(parts[2]),
-            ...parts.slice(3).map(seg => /^\d+$/.test(seg) ? Number(seg) : seg),
-        ];
-    } else if (root === 'header' && parts[1] === 'ctas') {
-        // header.ctas.{i}.label → header.ctas[i].label (storage shape
-        // matches display shape here, but we still need to convert the
-        // index to a number for setIn).
-        return [
-            'header',
-            'ctas',
-            Number(parts[2]),
-            ...parts.slice(3).map(seg => /^\d+$/.test(seg) ? Number(seg) : seg),
-        ];
-    }
-    // Pass-through: header.logoText / header.logo.text / header.loginLabel /
-    // footer.copyright / footer.columns.{i}.heading /
-    // footer.columns.{i}.links.{j}.label
-    return parts.map(seg => /^\d+$/.test(seg) ? Number(seg) : seg);
-}
-
-function applyChromeEdit(site, path, value) {
-    const storagePath = chromeStoragePath(path);
-    if (!storagePath) return null;
-    return setIn(site, storagePath, value);
-}
-
-// Immutable nested setter. Numeric path segments produce arrays; string
-// segments produce objects. Missing intermediate nodes are created so the
-// edit can land even when the user is filling in a freshly-empty field.
-function setIn(obj, path, value) {
-    if (path.length === 0) return value;
-    const [head, ...tail] = path;
-    const childIsArray = tail.length > 0 && typeof tail[0] === 'number';
-    const headIsArray = typeof head === 'number';
-    const base = headIsArray ? (Array.isArray(obj) ? [...obj] : []) : { ...(obj || {}) };
-    const childExisting = base[head];
-    const childInit = childIsArray
-        ? (Array.isArray(childExisting) ? childExisting : [])
-        : (childExisting && typeof childExisting === 'object' ? childExisting : {});
-    base[head] = setIn(tail.length ? childInit : undefined, tail, value);
-    return base;
-}
+// Preview content shaping (buildPreviewContent / chromeStoragePath /
+// applyChromeEdit / setIn) lives in ./preview/previewContent.js — a pure,
+// unit-tested module. Imported at the top of this file.

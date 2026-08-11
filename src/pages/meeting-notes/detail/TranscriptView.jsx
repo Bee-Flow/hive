@@ -1,12 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { SPEAKER_COLORS } from '../../../config/meetingNotesConfig';
 import SpeakerLegend from './SpeakerLegend';
-import { formatDuration, formatSpeakerLabel, getSpeakerColor } from '../lib/format';
+import { formatDuration, formatSpeakerLabel } from '../lib/format';
+import { buildSpeakerColorMap, segmentSpeakerId, speakerColor } from '../lib/playerData';
 
-export default function TranscriptView({ segments = [], speakers = [], fullText = '', onSeek }) {
+export default function TranscriptView({ segments = [], speakers = [], fullText = '', onSeek, onEditSpeakers }) {
     const [query, setQuery] = useState('');
     const [speakerFilter, setSpeakerFilter] = useState(null);
+    // Same rank-based assignment the timeline rows and legend use — one color
+    // per person across every surface.
+    const colorMap = useMemo(() => buildSpeakerColorMap(speakers), [speakers]);
 
     const filtered = useMemo(() => {
         let arr = segments;
@@ -39,7 +42,7 @@ export default function TranscriptView({ segments = [], speakers = [], fullText 
                         style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                     />
                 </div>
-                <SpeakerLegend speakers={speakers} activeId={speakerFilter} onSelect={setSpeakerFilter} />
+                <SpeakerLegend speakers={speakers} colorMap={colorMap} activeId={speakerFilter} onSelect={setSpeakerFilter} onEdit={onEditSpeakers} />
             </div>
             <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
                 <ul className="divide-y max-h-[600px] overflow-auto" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -49,8 +52,8 @@ export default function TranscriptView({ segments = [], speakers = [], fullText 
                         </li>
                     )}
                     {filtered.map((seg, idx) => {
-                        const speakerId = seg.speaker || seg.speakerId || 'unknown';
-                        const color = getSpeakerColor(speakerId, SPEAKER_COLORS);
+                        const speakerId = segmentSpeakerId(seg);
+                        const color = speakerColor(colorMap, speakerId);
                         return (
                             <li key={idx} className="grid grid-cols-[110px_1fr] gap-3 px-4 py-2.5">
                                 <div className="flex flex-col text-[11px]" style={{ color: 'var(--text-muted)' }}>

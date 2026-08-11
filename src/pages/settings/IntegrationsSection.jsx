@@ -1,13 +1,16 @@
 import React, { useMemo, useState } from 'react';
-import { API_BASE, authFetch } from '../../utils/helpers';
-import { useTranslation } from '../../hooks/useTranslation';
-import { useEntitlements } from '../../components/EntitlementsContext';
-import N8nSection from './N8nSection';
 import ConnectionsManager from './ConnectionsManager';
+import N8nSection from './N8nSection';
+import SimpleApiKeyIntegration from './SimpleApiKeyIntegration';
+import { useEntitlements } from '../../components/EntitlementsContext';
+import { useTranslation } from '../../hooks/useTranslation';
+import useUserSettingSave from '../../hooks/useUserSettingSave';
+import { openGoogleOAuthPopup } from '../../lib/googleOAuthPopup';
+import { API_BASE, authFetch } from '../../utils/helpers';
 
-// Named connections + lending UI — hidden for now (feature paused, may return).
-// Flip to true to restore the Connections panel at the top of this section.
-const SHOW_NAMED_CONNECTIONS = false;
+// Named connections + lending UI — re-enabled for reusable HTTP credentials
+// (the http_request step's Authentication settings reference these).
+const SHOW_NAMED_CONNECTIONS = true;
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
 // Pull translations from the hook directly so parents don't have to thread `t`
@@ -30,7 +33,9 @@ const GroupLabel = ({ children }) => (
 );
 
 // ── Integration row (expands inline) ─────────────────────────────────────────
-const IntegrationRow = ({ icon, name, description, connected, badge, children, last = false }) => {
+// Exported so SimpleApiKeyIntegration can reuse the same primitives (circular
+// import — safe because they're only read at render time).
+export const IntegrationRow = ({ icon, name, description, connected, badge, children, last = false }) => {
     const [expanded, setExpanded] = useState(false);
 
     return (
@@ -50,7 +55,9 @@ const IntegrationRow = ({ icon, name, description, connected, badge, children, l
                     <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{description}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    {connected ? <ConnectedBadge /> : badge || null}
+                    {/* An explicit badge renders alongside Connected (e.g. "Update
+                        needed" when a connected integration needs re-consent). */}
+                    {connected ? <>{badge || null}<ConnectedBadge /></> : badge || null}
                     <svg
                         className="transition-transform"
                         style={{ color: 'var(--text-muted)', width: '13px', height: '13px', transform: expanded ? 'rotate(90deg)' : 'none' }}
@@ -71,7 +78,7 @@ const IntegrationRow = ({ icon, name, description, connected, badge, children, l
 };
 
 // ── Field helpers ─────────────────────────────────────────────────────────────
-const ApiKeyField = ({ placeholder, value, onChange, onSave, saving, hint, t, canSave }) => (
+export const ApiKeyField = ({ placeholder, value, onChange, onSave, saving, hint, t, canSave }) => (
     <div>
         <div className="flex gap-2">
             <input
@@ -79,6 +86,12 @@ const ApiKeyField = ({ placeholder, value, onChange, onSave, saving, hint, t, ca
                 value={value}
                 onChange={onChange}
                 placeholder={placeholder}
+                aria-label={placeholder}
+                // These are API tokens, not account passwords — without this the
+                // browser's password manager offers to save them.
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
                 className="flex-1 px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                 onKeyDown={e => e.key === 'Enter' && (canSave ?? value.trim()) && onSave()}
@@ -96,7 +109,7 @@ const ApiKeyField = ({ placeholder, value, onChange, onSave, saving, hint, t, ca
     </div>
 );
 
-const DisconnectButton = ({ onDisconnect, disconnecting, t }) => (
+export const DisconnectButton = ({ onDisconnect, disconnecting, t }) => (
     <button
         onClick={onDisconnect}
         disabled={disconnecting}
@@ -108,49 +121,23 @@ const DisconnectButton = ({ onDisconnect, disconnecting, t }) => (
 );
 
 // ── Fireflies ─────────────────────────────────────────────────────────────────
+// Single-key integration — all save/disconnect/error logic lives in
+// SimpleApiKeyIntegration + useUserSettingSave; this is just declarative config.
 const FirefliesIntegration = ({ hasFirefliesKey, onSaved, last }) => {
     const { t } = useTranslation();
-    const [key, setKey] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [disconnecting, setDisconnecting] = useState(false);
-    const save = async () => {
-        if (!key.trim()) return;
-        setSaving(true);
-        try {
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ firefliesApiKey: key }),
-            });
-            if (res.ok) { onSaved(); setKey(''); }
-        } catch (e) { console.error(e); }
-        setSaving(false);
-    };
-    const handleDisconnect = async () => {
-        setDisconnecting(true);
-        try {
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ firefliesApiKey: '' }),
-            });
-            if (res.ok) onSaved();
-        } catch (e) { console.error(e); }
-        setDisconnecting(false);
-    };
     return (
-        <IntegrationRow
+        <SimpleApiKeyIntegration
             last={last}
             connected={hasFirefliesKey}
             name="Fireflies.ai"
-            description={hasFirefliesKey ? t('integ.fireflies_connected') : t('integ.fireflies_desc')}
+            payloadKey="firefliesApiKey"
+            description={t('integ.fireflies_desc')}
+            connectedDescription={t('integ.fireflies_connected')}
+            placeholder="Enter your Fireflies.ai API key"
+            onSaved={onSaved}
             icon={<svg viewBox="22 20 24 24" fill="none" style={{ width: '18px', height: '18px' }}><path d="M30.5749 22H24V28.5267H30.5749V22Z" fill="url(#ffs_g1)" /><path d="M38.3633 29.8789H31.7883V36.4056H38.3633V29.8789Z" fill="url(#ffs_g2)" /><path d="M38.3633 22H31.7883V28.5267H43.9998V27.594C43.9997 26.1104 43.4058 24.6875 42.3489 23.6384C41.2919 22.5894 39.8585 22 38.3638 22H38.3633Z" fill="url(#ffs_g3)" /><path d="M24 29.8789V36.4056C24.0002 37.8892 24.594 39.3121 25.6509 40.3612C26.7079 41.4103 28.1413 41.9996 29.636 41.9996H30.5749V29.8789H24Z" fill="url(#ffs_g4)" /><defs><linearGradient id="ffs_g1" x1="40.08" y1="38.51" x2="12.44" y2="9.47" gradientUnits="userSpaceOnUse"><stop stopColor="#E82A73" /><stop offset="0.54" stopColor="#9B4AB0" /><stop offset="1" stopColor="#3B73FF" /></linearGradient><linearGradient id="ffs_g2" x1="40.18" y1="38.42" x2="12.54" y2="9.38" gradientUnits="userSpaceOnUse"><stop stopColor="#FF3C82" /><stop offset="0.49" stopColor="#B251B2" /><stop offset="1" stopColor="#3B73FF" /></linearGradient><linearGradient id="ffs_g3" x1="44.77" y1="34.05" x2="35.4" y2="0.12" gradientUnits="userSpaceOnUse"><stop stopColor="#E82A73" /><stop offset="0.54" stopColor="#9B4AB0" /><stop offset="1" stopColor="#3B73FF" /></linearGradient><linearGradient id="ffs_g4" x1="35.55" y1="42.82" x2="2.03" y2="32.61" gradientUnits="userSpaceOnUse"><stop stopColor="#E82A73" /><stop offset="0.54" stopColor="#9B4AB0" /><stop offset="1" stopColor="#3B73FF" /></linearGradient></defs></svg>}
-        >
-            <ApiKeyField
-                placeholder={hasFirefliesKey ? '••••••••••••••••' : 'Enter your Fireflies.ai API key'}
-                value={key} onChange={e => setKey(e.target.value)} onSave={save} saving={saving}
-                hint={<>Get your key from <a href="https://app.fireflies.ai/integrations/custom/fireflies" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">app.fireflies.ai</a></>}
-            />
-            {hasFirefliesKey && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
-        </IntegrationRow>
+            hint={<>Get your key from <a href="https://app.fireflies.ai/integrations/custom/fireflies" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">app.fireflies.ai</a></>}
+        />
     );
 };
 
@@ -159,34 +146,16 @@ const YouTrackIntegration = ({ hasYouTrackConfig, onSaved, last }) => {
     const { t } = useTranslation();
     const [url, setUrl] = useState('');
     const [token, setToken] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [disconnecting, setDisconnecting] = useState(false);
-    const save = async () => {
+    const { saving, disconnecting, error, save, disconnect } = useUserSettingSave(onSaved);
+    const clearFields = () => { setUrl(''); setToken(''); };
+    const handleSave = () => {
         if (!url.trim() && !token.trim()) return;
-        setSaving(true);
-        try {
-            const body = {};
-            if (url.trim()) body.youtrackUrl = url.replace(/\/+$/, '');
-            if (token.trim()) body.youtrackToken = token;
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (res.ok) { onSaved(); setUrl(''); setToken(''); }
-        } catch (e) { console.error(e); }
-        setSaving(false);
+        const body = {};
+        if (url.trim()) body.youtrackUrl = url.replace(/\/+$/, '');
+        if (token.trim()) body.youtrackToken = token;
+        save(body, { onSuccess: clearFields });
     };
-    const handleDisconnect = async () => {
-        setDisconnecting(true);
-        try {
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ youtrackUrl: '', youtrackToken: '' }),
-            });
-            if (res.ok) { onSaved(); setUrl(''); setToken(''); }
-        } catch (e) { console.error(e); }
-        setDisconnecting(false);
-    };
+    const handleDisconnect = () => disconnect({ youtrackUrl: '', youtrackToken: '' }, { onSuccess: clearFields });
     return (
         <IntegrationRow
             last={last}
@@ -202,9 +171,10 @@ const YouTrackIntegration = ({ hasYouTrackConfig, onSaved, last }) => {
                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} />
                 <ApiKeyField
                     placeholder={hasYouTrackConfig ? '••••••••••••••••' : 'Permanent token'}
-                    value={token} onChange={e => setToken(e.target.value)} onSave={save} saving={saving}
+                    value={token} onChange={e => setToken(e.target.value)} onSave={handleSave} saving={saving}
                     hint={<>Token from <a href="https://www.jetbrains.com/help/youtrack/server/manage-permanent-token.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">YouTrack → Profile → Authentication</a></>}
                 />
+                {error && <p className="text-[11px]" style={{ color: '#dc2626' }}>{error}</p>}
                 {hasYouTrackConfig && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
             </div>
         </IntegrationRow>
@@ -216,34 +186,16 @@ const SignRequestIntegration = ({ hasSignRequestConfig, onSaved, last }) => {
     const { t } = useTranslation();
     const [subdomain, setSubdomain] = useState('');
     const [token, setToken] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [disconnecting, setDisconnecting] = useState(false);
-    const save = async () => {
+    const { saving, disconnecting, error, save, disconnect } = useUserSettingSave(onSaved);
+    const clearFields = () => { setSubdomain(''); setToken(''); };
+    const handleSave = () => {
         if (!subdomain.trim() && !token.trim()) return;
-        setSaving(true);
-        try {
-            const body = {};
-            if (subdomain.trim()) body.signrequestSubdomain = subdomain.trim();
-            if (token.trim()) body.signrequestToken = token;
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (res.ok) { onSaved(); setSubdomain(''); setToken(''); }
-        } catch (e) { console.error(e); }
-        setSaving(false);
+        const body = {};
+        if (subdomain.trim()) body.signrequestSubdomain = subdomain.trim();
+        if (token.trim()) body.signrequestToken = token;
+        save(body, { onSuccess: clearFields });
     };
-    const handleDisconnect = async () => {
-        setDisconnecting(true);
-        try {
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ signrequestSubdomain: '', signrequestToken: '' }),
-            });
-            if (res.ok) { onSaved(); setSubdomain(''); setToken(''); }
-        } catch (e) { console.error(e); }
-        setDisconnecting(false);
-    };
+    const handleDisconnect = () => disconnect({ signrequestSubdomain: '', signrequestToken: '' }, { onSuccess: clearFields });
     return (
         <IntegrationRow
             last={last}
@@ -259,9 +211,10 @@ const SignRequestIntegration = ({ hasSignRequestConfig, onSaved, last }) => {
                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} />
                 <ApiKeyField
                     placeholder={hasSignRequestConfig ? '••••••••••••••••' : 'API Token'}
-                    value={token} onChange={e => setToken(e.target.value)} onSave={save} saving={saving}
+                    value={token} onChange={e => setToken(e.target.value)} onSave={handleSave} saving={saving}
                     hint={<>Get your token from <a href="https://signrequest.com/api/v1/api-docs/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">SignRequest → API Settings</a>. Use your sandbox team subdomain for testing.</>}
                 />
+                {error && <p className="text-[11px]" style={{ color: '#dc2626' }}>{error}</p>}
                 {hasSignRequestConfig && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
             </div>
         </IntegrationRow>
@@ -271,47 +224,19 @@ const SignRequestIntegration = ({ hasSignRequestConfig, onSaved, last }) => {
 // ── Gamma ─────────────────────────────────────────────────────────────────────
 const GammaIntegration = ({ hasGammaKey, onSaved, last }) => {
     const { t } = useTranslation();
-    const [key, setKey] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [disconnecting, setDisconnecting] = useState(false);
-    const save = async () => {
-        if (!key.trim()) return;
-        setSaving(true);
-        try {
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ gammaApiKey: key }),
-            });
-            if (res.ok) { onSaved(); setKey(''); }
-        } catch (e) { console.error(e); }
-        setSaving(false);
-    };
-    const handleDisconnect = async () => {
-        setDisconnecting(true);
-        try {
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ gammaApiKey: '' }),
-            });
-            if (res.ok) onSaved();
-        } catch (e) { console.error(e); }
-        setDisconnecting(false);
-    };
     return (
-        <IntegrationRow
+        <SimpleApiKeyIntegration
             last={last}
             connected={hasGammaKey}
             name="Gamma"
-            description={hasGammaKey ? t('integ.gamma_connected') : t('integ.gamma_desc')}
+            payloadKey="gammaApiKey"
+            description={t('integ.gamma_desc')}
+            connectedDescription={t('integ.gamma_connected')}
+            placeholder="Enter your Gamma API key"
+            onSaved={onSaved}
             icon={<svg viewBox="0 0 24 24" fill="none" style={{ width: '20px', height: '20px' }}><rect x="2" y="2" width="20" height="20" rx="4" fill="url(#gamma_g)" /><path d="M7 8h10v1.5H7zM7 12h8v1.5H7zM7 16h5v1.5H7z" fill="white" fillOpacity="0.9" /><defs><linearGradient id="gamma_g" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse"><stop stopColor="#6366F1" /><stop offset="1" stopColor="#A855F7" /></linearGradient></defs></svg>}
-        >
-            <ApiKeyField
-                placeholder={hasGammaKey ? '••••••••••••••••' : 'Enter your Gamma API key'}
-                value={key} onChange={e => setKey(e.target.value)} onSave={save} saving={saving}
-                hint={<>Get key from <a href="https://gamma.app/settings" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">gamma.app/settings</a> → API Tokens</>}
-            />
-            {hasGammaKey && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
-        </IntegrationRow>
+            hint={<>Get key from <a href="https://gamma.app/settings" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">gamma.app/settings</a> → API Tokens</>}
+        />
     );
 };
 
@@ -324,10 +249,8 @@ const AFASIntegration = ({ hasAfasConfig, onSaved, last }) => {
     const [token, setToken] = useState('');
     const [envType, setEnvType] = useState('production');
     const [envTouched, setEnvTouched] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [disconnecting, setDisconnecting] = useState(false);
-    const [error, setError] = useState(null);
-    const save = async () => {
+    const { saving, disconnecting, error, setError, save, disconnect } = useUserSettingSave(onSaved);
+    const handleSave = () => {
         if (!memberNumber.trim() && !token.trim() && !envTouched) return;
         // First connect needs both secrets — a token-only save would store a
         // half-configured integration that still shows as disconnected.
@@ -335,35 +258,19 @@ const AFASIntegration = ({ hasAfasConfig, onSaved, last }) => {
             setError(t('integ.afas_need_both'));
             return;
         }
-        setSaving(true); setError(null);
-        try {
-            const body = {};
-            if (memberNumber.trim()) body.afasMemberNumber = memberNumber.trim();
-            if (token.trim()) body.afasToken = token.trim();
-            // Only send the environment when first connecting or explicitly
-            // changed — otherwise a token-only update would silently reset a
-            // saved test/accept environment back to the select's default.
-            if (!hasAfasConfig || envTouched) body.afasEnvType = envType;
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (res.ok) { onSaved(); setMemberNumber(''); setToken(''); setEnvTouched(false); }
-            else { const err = await res.json().catch(() => ({})); setError(err.error || 'Failed to save'); }
-        } catch (e) { console.error(e); setError(e.message); }
-        setSaving(false);
+        const body = {};
+        if (memberNumber.trim()) body.afasMemberNumber = memberNumber.trim();
+        if (token.trim()) body.afasToken = token.trim();
+        // Only send the environment when first connecting or explicitly
+        // changed — otherwise a token-only update would silently reset a
+        // saved test/accept environment back to the select's default.
+        if (!hasAfasConfig || envTouched) body.afasEnvType = envType;
+        save(body, { onSuccess: () => { setMemberNumber(''); setToken(''); setEnvTouched(false); } });
     };
-    const handleDisconnect = async () => {
-        setDisconnecting(true); setError(null);
-        try {
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ afasMemberNumber: '', afasToken: '', afasEnvType: '' }),
-            });
-            if (res.ok) { onSaved(); setMemberNumber(''); setToken(''); setEnvType('production'); setEnvTouched(false); }
-        } catch (e) { console.error(e); }
-        setDisconnecting(false);
-    };
+    const handleDisconnect = () => disconnect(
+        { afasMemberNumber: '', afasToken: '', afasEnvType: '' },
+        { onSuccess: () => { setMemberNumber(''); setToken(''); setEnvType('production'); setEnvTouched(false); } },
+    );
     return (
         <IntegrationRow
             last={last}
@@ -397,12 +304,68 @@ const AFASIntegration = ({ hasAfasConfig, onSaved, last }) => {
                 </div>
                 <ApiKeyField
                     placeholder={hasAfasConfig ? '••••••••••••••••' : t('integ.afas_token_placeholder')}
-                    value={token} onChange={e => setToken(e.target.value)} onSave={save} saving={saving}
+                    value={token} onChange={e => setToken(e.target.value)} onSave={handleSave} saving={saving}
                     canSave={!!(token.trim() || memberNumber.trim() || envTouched)}
                     hint={<>AFAS Help: <a href="https://help.afas.nl/help/NL/SE/App_Cnr_Rest_Token.htm" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">App connector &amp; token aanmaken</a></>}
                 />
                 {error && <p className="text-[11px]" style={{ color: '#dc2626' }}>{error}</p>}
                 {hasAfasConfig && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
+            </div>
+        </IntegrationRow>
+    );
+};
+
+// ── vPlan ─────────────────────────────────────────────────────────────────────
+// Read-only planning access. vPlan issues an API key AND an API env together
+// (Settings → Developers); both travel in request headers, so both are
+// shape-checked server-side before they are stored.
+const VplanIntegration = ({ hasVplanConfig, onSaved, last }) => {
+    const { t } = useTranslation();
+    const [apiEnv, setApiEnv] = useState('');
+    const [apiKey, setApiKey] = useState('');
+    const { saving, disconnecting, error, setError, save, disconnect } = useUserSettingSave(onSaved);
+    const clearFields = () => { setApiEnv(''); setApiKey(''); };
+    const handleSave = () => {
+        if (!apiEnv.trim() && !apiKey.trim()) return;
+        // First connect needs both — a key-only save would store a half-configured
+        // integration that still shows as disconnected.
+        if (!hasVplanConfig && (!apiEnv.trim() || !apiKey.trim())) {
+            setError(t('integ.vplan_need_both'));
+            return;
+        }
+        const body = {};
+        if (apiEnv.trim()) body.vplanApiEnv = apiEnv.trim();
+        if (apiKey.trim()) body.vplanApiKey = apiKey.trim();
+        save(body, { onSuccess: clearFields });
+    };
+    const handleDisconnect = () => disconnect({ vplanApiKey: '', vplanApiEnv: '' }, { onSuccess: clearFields });
+    return (
+        <IntegrationRow
+            last={last}
+            connected={hasVplanConfig}
+            name="vPlan"
+            description={hasVplanConfig ? t('integ.vplan_connected') : t('integ.vplan_desc')}
+            icon={<svg viewBox="0 0 24 24" fill="none" style={{ width: '20px', height: '20px' }}><rect x="2" y="2" width="20" height="20" rx="4" fill="#1D4ED8" /><rect x="6" y="7" width="11" height="2.4" rx="1.2" fill="white" /><rect x="8.5" y="10.8" width="9.5" height="2.4" rx="1.2" fill="white" fillOpacity="0.85" /><rect x="6" y="14.6" width="7" height="2.4" rx="1.2" fill="white" fillOpacity="0.7" /></svg>}
+        >
+            <div className="space-y-2">
+                <ol className="list-decimal pl-4 space-y-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    <li>{t('integ.vplan_step1')}</li>
+                    <li>{t('integ.vplan_step2')}</li>
+                    <li>{t('integ.vplan_step3')}</li>
+                </ol>
+                <input type="text" value={apiEnv} onChange={e => setApiEnv(e.target.value)}
+                    placeholder={hasVplanConfig ? '••••••••' : t('integ.vplan_env_placeholder')}
+                    aria-label={t('integ.vplan_env_label')}
+                    className="w-full px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} />
+                <ApiKeyField
+                    placeholder={hasVplanConfig ? '••••••••••••••••' : t('integ.vplan_key_placeholder')}
+                    value={apiKey} onChange={e => setApiKey(e.target.value)} onSave={handleSave} saving={saving}
+                    canSave={!!(apiKey.trim() || apiEnv.trim())}
+                    hint={<>vPlan Help: <a href="https://support.vplan.com/en/articles/158922-api" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">create an API key</a> (available from the Basic plan)</>}
+                />
+                {error && <p className="text-[11px]" style={{ color: '#dc2626' }}>{error}</p>}
+                {hasVplanConfig && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
             </div>
         </IntegrationRow>
     );
@@ -419,42 +382,24 @@ const NMBRSIntegration = ({ hasNmbrsConfig, apiMode: initialMode, subdomain: ini
     const [email, setEmail] = useState(initialEmail || '');
     const [token, setToken] = useState('');
     const [env, setEnv] = useState(initialEnv || 'production');
-    const [saving, setSaving] = useState(false);
-    const [disconnecting, setDisconnecting] = useState(false);
-    const [error, setError] = useState(null);
-    const save = async () => {
+    const { saving, disconnecting, error, setError, save, disconnect } = useUserSettingSave(onSaved);
+    const handleSave = () => {
         // First connect needs subdomain + token (+ login email for the SOAP API);
         // a partial save would store a half-configured integration.
         if (!hasNmbrsConfig && (!subdomain.trim() || !token.trim() || (apiMode === 'soap' && !email.trim()))) {
             setError(t('integ.nmbrs_need_fields'));
             return;
         }
-        setSaving(true); setError(null);
-        try {
-            const body = { nmbrsApiMode: apiMode, nmbrsEnv: env };
-            if (subdomain.trim()) body.nmbrsSubdomain = subdomain.trim();
-            if (email.trim()) body.nmbrsEmail = email.trim();
-            if (token.trim()) body.nmbrsToken = token.trim();
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (res.ok) { onSaved(); setToken(''); }
-            else { const err = await res.json().catch(() => ({})); setError(err.error || 'Failed to save'); }
-        } catch (e) { console.error(e); setError(e.message); }
-        setSaving(false);
+        const body = { nmbrsApiMode: apiMode, nmbrsEnv: env };
+        if (subdomain.trim()) body.nmbrsSubdomain = subdomain.trim();
+        if (email.trim()) body.nmbrsEmail = email.trim();
+        if (token.trim()) body.nmbrsToken = token.trim();
+        save(body, { onSuccess: () => setToken('') });
     };
-    const handleDisconnect = async () => {
-        setDisconnecting(true); setError(null);
-        try {
-            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nmbrsApiMode: '', nmbrsSubdomain: '', nmbrsEmail: '', nmbrsToken: '', nmbrsEnv: '' }),
-            });
-            if (res.ok) { onSaved(); setSubdomain(''); setEmail(''); setToken(''); setApiMode('soap'); setEnv('production'); }
-        } catch (e) { console.error(e); }
-        setDisconnecting(false);
-    };
+    const handleDisconnect = () => disconnect(
+        { nmbrsApiMode: '', nmbrsSubdomain: '', nmbrsEmail: '', nmbrsToken: '', nmbrsEnv: '' },
+        { onSuccess: () => { setSubdomain(''); setEmail(''); setToken(''); setApiMode('soap'); setEnv('production'); } },
+    );
     const inputCls = "flex-1 px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors";
     const inputStyle = { background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' };
     return (
@@ -497,13 +442,130 @@ const NMBRSIntegration = ({ hasNmbrsConfig, apiMode: initialMode, subdomain: ini
                 )}
                 <ApiKeyField
                     placeholder={hasNmbrsConfig ? '••••••••••••••••' : t('integ.nmbrs_token_placeholder')}
-                    value={token} onChange={e => setToken(e.target.value)} onSave={save} saving={saving}
+                    value={token} onChange={e => setToken(e.target.value)} onSave={handleSave} saving={saving}
                     canSave={!!(token.trim() || subdomain.trim() || email.trim())}
                     hint={<>NMBRS Help: <a href="https://support.nmbrs.nl/hc/nl/articles/360010686800-Connect-Nmbrs-with-an-API-token" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">API-token aanmaken</a></>}
                 />
                 {error && <p className="text-[11px]" style={{ color: '#dc2626' }}>{error}</p>}
                 {hasNmbrsConfig && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
             </div>
+        </IntegrationRow>
+    );
+};
+
+// ── Google Workspace ──────────────────────────────────────────────────────────
+// BFSF-255: manual connect for Gmail/Calendar/Drive & co. Email/password
+// accounts never go through Google-SSO login, so without this tile the whole
+// Google toolset was silently dead for them; SSO users also had no way to see
+// or revoke their authorisation. The popup + postMessage flow lives in
+// lib/googleOAuthPopup (shared with the Meeting Notes surfaces); lazy status
+// fetch (GitHub).
+const GoogleWorkspaceIntegration = ({ onSaved, last }) => {
+    const { t } = useTranslation();
+    const [status, setStatus] = useState(null); // null = loading skeleton
+    const [connecting, setConnecting] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
+    const [error, setError] = useState('');
+
+    const checkStatus = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/integrations/google/status`);
+            setStatus(res.ok ? await res.json() : { configured: false, connected: false });
+        } catch { setStatus({ configured: false, connected: false }); }
+    };
+    React.useEffect(() => { checkStatus(); }, []);
+
+    const handleConnect = async () => {
+        setConnecting(true); setError('');
+        try {
+            await openGoogleOAuthPopup({
+                authFetch,
+                apiBase: API_BASE,
+                onOpened: () => setConnecting(false),
+                onDone: ({ success, closed }) => {
+                    if (closed) return;
+                    checkStatus();
+                    if (success) onSaved();
+                },
+            });
+        } catch (e) {
+            setError(e?.message || t('integ.google_error', 'Could not start the Google connection. Try again.'));
+            setConnecting(false);
+        }
+    };
+    const handleDisconnect = async () => {
+        setDisconnecting(true); setError('');
+        try {
+            await authFetch(`${API_BASE}/api/integrations/google/disconnect`, { method: 'POST' });
+            await checkStatus();
+            onSaved();
+        } catch (e) { console.error(e); }
+        setDisconnecting(false);
+    };
+
+    const loading = status === null;
+    const connected = !!status?.connected;
+    const needsReauth = !loading && !connected && !!status?.needsReauth;
+    // Connected before the Meet scopes were added to the connector — the token
+    // works for Gmail/Calendar/Drive but Meeting Notes can't read Meet
+    // recordings until the user re-consents (incremental: existing grants stay).
+    const needsMeetReconsent = connected && status?.meetScopesGranted === false;
+    return (
+        <IntegrationRow
+            last={last}
+            connected={connected}
+            badge={needsMeetReconsent ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0" style={{ background: 'rgba(217,119,6,0.12)', color: '#d97706' }}>
+                    {t('integ.google_update_needed', 'Update needed')}
+                </span>
+            ) : null}
+            name="Google Workspace"
+            description={loading
+                ? '…'
+                : connected
+                    ? (status.email ? t('integ.google_connected_as', { email: status.email }) : t('integ.google_connected'))
+                    : needsReauth
+                        ? t('integ.google_needs_reauth')
+                        : t('integ.google_desc')}
+            icon={<svg viewBox="0 0 24 24" style={{ width: '20px', height: '20px' }} aria-hidden="true"><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z" /><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z" /><path fill="#FBBC05" d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z" /><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z" /></svg>}
+        >
+            {loading ? (
+                <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>…</p>
+            ) : !status.configured ? (
+                <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{t('integ.google_not_configured')}</p>
+            ) : connected ? (
+                <div className="space-y-2">
+                    {needsMeetReconsent && (
+                        <div className="rounded-lg px-3 py-2.5" style={{ background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.35)' }}>
+                            <p className="text-[11px]" style={{ color: '#b45309' }}>
+                                {t('integ.google_meet_scope_missing', 'Meeting Notes needs extra Google Meet permissions to import your meeting recordings — re-authorize to grant them. Your existing Gmail, Calendar and Drive access is kept.')}
+                            </p>
+                            <button
+                                onClick={handleConnect}
+                                disabled={connecting}
+                                className="mt-2 px-4 py-2 rounded-lg text-[13px] font-medium text-white disabled:opacity-50"
+                                style={{ background: '#d97706' }}
+                            >
+                                {connecting ? t('integ.google_opening', 'Opening Google…') : t('integ.google_reauthorize', 'Re-authorize Google')}
+                            </button>
+                        </div>
+                    )}
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{t('integ.google_disconnect_note')}</p>
+                    <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />
+                </div>
+            ) : (
+                <button
+                    onClick={handleConnect}
+                    disabled={connecting}
+                    className="px-4 py-2 rounded-lg text-[13px] font-medium text-white disabled:opacity-50"
+                    style={{ background: needsReauth ? '#d97706' : '#4285F4' }}
+                >
+                    {connecting
+                        ? t('integ.google_opening', 'Opening Google…')
+                        : needsReauth ? t('integ.google_reconnect') : t('integ.google_connect')}
+                </button>
+            )}
+            {error && <p className="text-[11px] mt-2" style={{ color: '#dc2626' }}>{error}</p>}
         </IntegrationRow>
     );
 };
@@ -559,10 +621,13 @@ const LinkedInIntegration = ({ connected, linkedInName, hasLinkedInConfig, onSav
 const GitHubIntegration = ({ onSaved, last }) => {
     const { t } = useTranslation();
     const [token, setToken] = useState('');
-    const [saving, setSaving] = useState(false);
     const [connected, setConnected] = useState(false);
     const [username, setUsername] = useState(null);
-    const [disconnecting, setDisconnecting] = useState(false);
+    // GitHub connect/disconnect hit dedicated endpoints (not /ai/user-settings)
+    // and read the response (username), so they pass endpoint + onSuccess to the
+    // shared hook. Error handling is unified to the visible `error` state (this
+    // used to be an alert()).
+    const { saving, disconnecting, error, save, disconnect } = useUserSettingSave(onSaved);
     React.useEffect(() => { checkStatus(); }, []);
     const checkStatus = async () => {
         try {
@@ -570,25 +635,18 @@ const GitHubIntegration = ({ onSaved, last }) => {
             if (res.ok) { const data = await res.json(); setConnected(data.connected); setUsername(data.username); }
         } catch { /* ignore */ }
     };
-    const save = async () => {
+    const handleSave = () => {
         if (!token.trim()) return;
-        setSaving(true);
-        try {
-            const res = await authFetch(`${API_BASE}/api/integrations/github/connect`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: token.trim() }),
-            });
-            if (res.ok) { const data = await res.json(); setConnected(true); setUsername(data.username); setToken(''); onSaved?.(); }
-            else { const err = await res.json().catch(() => ({})); alert(err.error || 'Failed to connect'); }
-        } catch (e) { console.error(e); }
-        setSaving(false);
+        save({ token: token.trim() }, {
+            endpoint: `${API_BASE}/api/integrations/github/connect`,
+            fallback: 'Failed to connect',
+            onSuccess: (data) => { setConnected(true); setUsername(data.username); setToken(''); },
+        });
     };
-    const handleDisconnect = async () => {
-        setDisconnecting(true);
-        try { await authFetch(`${API_BASE}/api/integrations/github/disconnect`, { method: 'POST' }); setConnected(false); setUsername(null); onSaved?.(); }
-        catch (e) { console.error(e); }
-        setDisconnecting(false);
-    };
+    const handleDisconnect = () => disconnect(null, {
+        endpoint: `${API_BASE}/api/integrations/github/disconnect`,
+        onSuccess: () => { setConnected(false); setUsername(null); },
+    });
     return (
         <IntegrationRow
             last={last}
@@ -600,12 +658,13 @@ const GitHubIntegration = ({ onSaved, last }) => {
             {!connected ? (
                 <ApiKeyField
                     placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                    value={token} onChange={e => setToken(e.target.value)} onSave={save} saving={saving}
+                    value={token} onChange={e => setToken(e.target.value)} onSave={handleSave} saving={saving}
                     hint={<>Create token at <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">github.com/settings/tokens</a> with <strong>repo</strong> scope</>}
                 />
             ) : (
                 <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />
             )}
+            {error && <p className="text-[11px]" style={{ color: '#dc2626' }}>{error}</p>}
         </IntegrationRow>
     );
 };
@@ -620,10 +679,12 @@ const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConn
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [url, setUrl] = useState(savedNextcloudUrl || '');
-    const [saving, setSaving] = useState(false);
-    const [disconnecting, setDisconnecting] = useState(false);
     const [autoCreating, setAutoCreating] = useState(false);
     const [notice, setNotice] = useState(null);
+    // Nextcloud uses dedicated /auth/* endpoints, so save/disconnect pass a
+    // custom endpoint (+ DELETE method) to the shared hook. `notice` stays local
+    // for the auto-create (OAuth) flow, which surfaces info/warnings too.
+    const { saving, disconnecting, error, setError, save, disconnect } = useUserSettingSave(onSaved);
 
     // Keep the URL field in sync once the saved value arrives (status loads after mount)
     // and after a save re-fetches it. Username/password stay blank — they're write-only.
@@ -639,28 +700,26 @@ const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConn
                 last={last}
                 connected
                 name="Nextcloud"
-                description="Connected via Bee Flow Nextcloud connector — files, calendar, mail and more are available to agents automatically. No app password needed."
+                description={t('integ.nextcloud_connector', 'Connected via Bee Flow Nextcloud connector — files, calendar, mail and more work in chat without extra setup.')}
                 icon={<svg viewBox="0 0 32 32" fill="none" style={{ width: '20px', height: '20px' }}><circle cx="16" cy="16" r="16" fill="#0082C9" /><path d="M11.5 11.2c-2 0-3.7 1.4-4.2 3.3a3.5 3.5 0 1 0 0 3 4.4 4.4 0 0 0 7 1.7l1.5-1.4 1.6 1.4a4.4 4.4 0 0 0 7-1.7 3.5 3.5 0 1 0 0-3 4.4 4.4 0 0 0-7-1.7l-1.6 1.4-1.5-1.4a4.4 4.4 0 0 0-2.8-1.6zm0 2.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8zm9 0a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z" fill="white" /></svg>}
             />
         );
     }
 
-    const save = async () => {
+    const handleSave = () => {
         if (!username.trim() || !password.trim()) return;
-        setSaving(true); setNotice(null);
-        try {
-            const res = await authFetch(`${API_BASE}/auth/save-app-password`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: username.trim(), password: password.trim(), url: url.trim() }),
-            });
-            if (res.ok) { onSaved(); setUsername(''); setPassword(''); }
-            else { const err = await res.json().catch(() => ({})); setNotice(err.error || 'Failed to save'); }
-        } catch (e) { console.error(e); setNotice(e.message); }
-        setSaving(false);
+        setNotice(null);
+        save(
+            { username: username.trim(), password: password.trim(), url: url.trim() },
+            {
+                endpoint: `${API_BASE}/auth/save-app-password`,
+                onSuccess: () => { setUsername(''); setPassword(''); },
+            },
+        );
     };
 
     const autoCreate = async () => {
-        setAutoCreating(true); setNotice(null);
+        setAutoCreating(true); setNotice(null); setError(null);
         try {
             const res = await authFetch(`${API_BASE}/auth/create-app-password`, { method: 'POST' });
             const data = await res.json().catch(() => ({}));
@@ -668,27 +727,22 @@ const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConn
                 onSaved();
                 if (data.warning) setNotice(data.warning);
             } else {
-                setNotice(data.error || 'Failed to create app password');
+                setNotice(data.error || t('integ.nextcloud_autocreate_failed', 'Failed to create app password'));
             }
         } catch (e) { console.error(e); setNotice(e.message); }
         setAutoCreating(false);
     };
 
-    const handleDisconnect = async () => {
-        setDisconnecting(true);
-        try {
-            const res = await authFetch(`${API_BASE}/auth/app-password`, { method: 'DELETE' });
-            if (res.ok) onSaved();
-        } catch (e) { console.error(e); }
-        setDisconnecting(false);
-    };
+    const handleDisconnect = () => disconnect(null, { endpoint: `${API_BASE}/auth/app-password`, method: 'DELETE' });
 
     return (
         <IntegrationRow
             last={last}
             connected={hasNextcloudAppPassword}
             name="Nextcloud"
-            description={hasNextcloudAppPassword ? 'App password saved — files & WebDAV available to agents' : 'Connect Nextcloud for file/WebDAV access in chat'}
+            description={hasNextcloudAppPassword
+                ? t('integ.nextcloud_connected', 'App password saved — files & WebDAV available to agents')
+                : t('integ.nextcloud_desc', 'Connect Nextcloud for file/WebDAV access in chat')}
             icon={<svg viewBox="0 0 32 32" fill="none" style={{ width: '20px', height: '20px' }}><circle cx="16" cy="16" r="16" fill="#0082C9" /><path d="M11.5 11.2c-2 0-3.7 1.4-4.2 3.3a3.5 3.5 0 1 0 0 3 4.4 4.4 0 0 0 7 1.7l1.5-1.4 1.6 1.4a4.4 4.4 0 0 0 7-1.7 3.5 3.5 0 1 0 0-3 4.4 4.4 0 0 0-7-1.7l-1.6 1.4-1.5-1.4a4.4 4.4 0 0 0-2.8-1.6zm0 2.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8zm9 0a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z" fill="white" /></svg>}
         >
             <div className="space-y-2">
@@ -696,7 +750,9 @@ const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConn
                     type="url"
                     value={url}
                     onChange={e => setUrl(e.target.value)}
-                    placeholder="Nextcloud URL (e.g. https://cloud.example.com)"
+                    placeholder={t('integ.nextcloud_url_placeholder', 'Nextcloud URL (e.g. https://cloud.example.com)')}
+                    aria-label={t('integ.nextcloud_url_placeholder', 'Nextcloud URL (e.g. https://cloud.example.com)')}
+                    autoComplete="off"
                     className="w-full px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                 />
@@ -704,17 +760,19 @@ const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConn
                     type="text"
                     value={username}
                     onChange={e => setUsername(e.target.value)}
-                    placeholder={hasNextcloudAppPassword ? '••••••••' : 'Nextcloud username (uid)'}
+                    placeholder={hasNextcloudAppPassword ? '••••••••' : t('integ.nextcloud_username_placeholder', 'Nextcloud username')}
+                    aria-label={t('integ.nextcloud_username_placeholder', 'Nextcloud username')}
+                    autoComplete="off"
                     className="w-full px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                 />
                 <ApiKeyField
-                    placeholder={hasNextcloudAppPassword ? '••••••••••••••••' : 'App password'}
+                    placeholder={hasNextcloudAppPassword ? '••••••••••••••••' : t('integ.nextcloud_password_placeholder', 'App password')}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    onSave={save}
+                    onSave={handleSave}
                     saving={saving}
-                    hint={<>Generate at <strong>Nextcloud → Settings → Security → Devices &amp; sessions</strong>. App passwords created here last indefinitely; auto-creation via OAuth is short-lived.</>}
+                    hint={t('integ.nextcloud_hint', 'Generate at Nextcloud → Settings → Security → Devices & sessions.')}
                     t={t}
                 />
                 {isNextcloudUser && (
@@ -724,9 +782,10 @@ const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConn
                         className="px-4 py-2 rounded-lg text-[13px] font-medium transition-opacity disabled:opacity-50"
                         style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}
                     >
-                        {autoCreating ? '…' : 'Auto-create from OAuth session (short-lived)'}
+                        {autoCreating ? '…' : t('integ.nextcloud_autocreate', 'Auto-create from OAuth session (short-lived)')}
                     </button>
                 )}
+                {error && <p className="text-[11px]" style={{ color: '#dc2626' }}>{error}</p>}
                 {notice && (
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{notice}</p>
                 )}
@@ -783,13 +842,14 @@ const McpCredentialsSection = ({ onSaved }) => {
                             return (
                                 <div key={cred.key}>
                                     <ApiKeyField
-                                        placeholder={cred.configured ? '••••••••••••••••' : `Enter ${cred.label || cred.key}`}
+                                        placeholder={cred.configured ? '••••••••••••••••' : t('integ.mcp_enter_credential', 'Enter {label}', { label: cred.label || cred.key })}
                                         value={credValues[stateKey] || ''}
                                         onChange={e => setCredValues(prev => ({ ...prev, [stateKey]: e.target.value }))}
                                         onSave={() => saveCred(server.id, cred.key)}
                                         saving={saving === stateKey}
+                                        t={t}
                                     />
-                                    {cred.configured && <p className="text-[10px] mt-0.5" style={{ color: '#4ade80' }}>✓ Configured{cred.description ? ` — ${cred.description}` : ''}</p>}
+                                    {cred.configured && <p className="text-[10px] mt-0.5" style={{ color: '#4ade80' }}>{t('integ.mcp_configured', '✓ Configured')}{cred.description ? ` — ${cred.description}` : ''}</p>}
                                 </div>
                             );
                         })}
@@ -812,11 +872,15 @@ const IntegrationsSection = ({ statuses, onSaved, isOrgAdmin, user, showOrgInteg
     const effectiveIntegrations = useMemo(() => new Set(effective?.integration || []), [effective]);
     const isEnabled = (id) => loading || error || effectiveIntegrations.has(id);
 
+    // BFSF-255: show the Google Workspace connect tile whenever at least one
+    // Google integration is in the org's effective entitlement set.
+    const showGoogle = ['gmail', 'google-calendar', 'google-drive'].some(isEnabled);
     const showFireflies = isEnabled('fireflies');
     const showYouTrack = isEnabled('youtrack');
     const showSignRequest = isEnabled('signrequest');
     const showGamma = isEnabled('gamma');
     const showAfas = isEnabled('afas-profit');
+    const showVplan = isEnabled('vplan');
     const showNmbrs = isEnabled('nmbrs');
     const showLinkedIn = isEnabled('linkedin');
     const showGitHub = isEnabled('github');
@@ -839,7 +903,7 @@ const IntegrationsSection = ({ statuses, onSaved, isOrgAdmin, user, showOrgInteg
     // only when the effective set includes at least one installed server.
     const showMcp = loading || error || (effective?.integration || []).some(id => id.startsWith('mcp:'));
 
-    const productivityItems = [showFireflies, showYouTrack, showSignRequest, showGamma, showAfas, showNmbrs, showNextcloud].filter(Boolean).length;
+    const productivityItems = [showFireflies, showYouTrack, showSignRequest, showGamma, showAfas, showVplan, showNmbrs, showNextcloud].filter(Boolean).length;
     const socialItems = [showLinkedIn].filter(Boolean).length;
     const devItems = [showGitHub].filter(Boolean).length;
 
@@ -848,16 +912,27 @@ const IntegrationsSection = ({ statuses, onSaved, isOrgAdmin, user, showOrgInteg
             {/* Named connections + sharing (bring-your-own vs lend) — hidden for now */}
             {SHOW_NAMED_CONNECTIONS && <ConnectionsManager />}
 
+            {/* Google Workspace (BFSF-255) */}
+            {showGoogle && (
+                <div className="space-y-1.5">
+                    <GroupLabel>{t('settings.integrations_google_workspace', 'Google Workspace')}</GroupLabel>
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                        <GoogleWorkspaceIntegration onSaved={() => onSaved('google')} last />
+                    </div>
+                </div>
+            )}
+
             {/* Productivity */}
             {productivityItems > 0 && (
                 <div className="space-y-1.5">
                     <GroupLabel>{t('settings.integrations_productivity')}</GroupLabel>
                     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
-                        {showFireflies && <FirefliesIntegration hasFirefliesKey={statuses.hasFirefliesKey} onSaved={() => onSaved('fireflies')} last={!showYouTrack && !showSignRequest && !showGamma && !showAfas && !showNmbrs && !showNextcloud} />}
-                        {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showSignRequest && !showGamma && !showAfas && !showNmbrs && !showNextcloud} />}
-                        {showSignRequest && <SignRequestIntegration hasSignRequestConfig={statuses.hasSignRequestConfig} onSaved={() => onSaved('signrequest')} last={!showGamma && !showAfas && !showNmbrs && !showNextcloud} />}
-                        {showGamma && <GammaIntegration hasGammaKey={statuses.hasGammaKey} onSaved={() => onSaved('gamma')} last={!showAfas && !showNmbrs && !showNextcloud} />}
-                        {showAfas && <AFASIntegration hasAfasConfig={statuses.hasAfasConfig} onSaved={() => onSaved('afas-profit')} last={!showNmbrs && !showNextcloud} />}
+                        {showFireflies && <FirefliesIntegration hasFirefliesKey={statuses.hasFirefliesKey} onSaved={() => onSaved('fireflies')} last={!showYouTrack && !showSignRequest && !showGamma && !showAfas && !showVplan && !showNmbrs && !showNextcloud} />}
+                        {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showSignRequest && !showGamma && !showAfas && !showVplan && !showNmbrs && !showNextcloud} />}
+                        {showSignRequest && <SignRequestIntegration hasSignRequestConfig={statuses.hasSignRequestConfig} onSaved={() => onSaved('signrequest')} last={!showGamma && !showAfas && !showVplan && !showNmbrs && !showNextcloud} />}
+                        {showGamma && <GammaIntegration hasGammaKey={statuses.hasGammaKey} onSaved={() => onSaved('gamma')} last={!showAfas && !showVplan && !showNmbrs && !showNextcloud} />}
+                        {showAfas && <AFASIntegration hasAfasConfig={statuses.hasAfasConfig} onSaved={() => onSaved('afas-profit')} last={!showVplan && !showNmbrs && !showNextcloud} />}
+                        {showVplan && <VplanIntegration hasVplanConfig={statuses.hasVplanConfig} onSaved={() => onSaved('vplan')} last={!showNmbrs && !showNextcloud} />}
                         {showNmbrs && <NMBRSIntegration hasNmbrsConfig={statuses.hasNmbrsConfig} apiMode={statuses.nmbrsApiMode} subdomain={statuses.nmbrsSubdomain} email={statuses.nmbrsEmail} env={statuses.nmbrsEnv} onSaved={() => onSaved('nmbrs')} last={!showNextcloud} />}
                         {showNextcloud && <NextcloudIntegration hasNextcloudAppPassword={statuses.hasNextcloudAppPassword} isNextcloudUser={statuses.isNextcloudUser} isConnectorUser={user?.provider === 'nextcloud_connector'} nextcloudUrl={statuses.nextcloudUrl} onSaved={() => onSaved('nextcloud')} last />}
                     </div>

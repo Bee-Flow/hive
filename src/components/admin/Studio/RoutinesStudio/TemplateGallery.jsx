@@ -1,19 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import * as Lucide from 'lucide-react';
+import { Sparkles } from 'lucide-react';
+import AppIcon from '../../../AppIcon';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 
-// Cache of icon names we've already warned about so an unknown name doesn't
-// fire a warning on every render of the same template.
-const _warnedIconNames = new Set();
+// Template icon names route through AppIcon, which resolves registry icons
+// synchronously and lazy-loads the full Lucide set for the rest. This file's
+// old `import * as Lucide` + property lookup was one of the two wildcard
+// imports that welded all ~1,900 icons into whichever chunk imported it —
+// AppIcon.jsx was the other; see components/iconRegistry.js for the story.
+// Cached per name: a fresh wrapper per render would be a new component type
+// every time, so React would remount the icon (and restart AppIcon's lazy
+// fetch subscription) on each gallery render.
+const _iconComponents = new Map();
 function pickIcon(name) {
-    if (!name) return Lucide.Sparkles;
-    const found = Lucide[name];
-    if (found) return found;
-    if (typeof console !== 'undefined' && !_warnedIconNames.has(name)) {
-        _warnedIconNames.add(name);
-        console.warn(`[TemplateGallery] Unknown lucide icon "${name}" — falling back to Sparkles. Fix the template's icon field.`);
+    if (!name) return Sparkles;
+    if (!_iconComponents.has(name)) {
+        const Wrapped = (props) => <AppIcon name={name} fallback={Sparkles} {...props} />;
+        Wrapped.displayName = `TemplateIcon(${name})`;
+        _iconComponents.set(name, Wrapped);
     }
-    return Lucide.Sparkles;
+    return _iconComponents.get(name);
 }
 
 /**

@@ -1,10 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ArrowLeft, Plus, Trash2, Users, UserPlus, FolderOpen, Share2, Database, ChevronDown, ChevronRight,
-    FileText, Globe, Paperclip, Brain, Activity, AlertTriangle, Save, Pencil,
+    FileText, Globe, Paperclip, Brain, Activity, AlertTriangle, Save, Pencil, MessageSquare, Boxes,
 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import useKnowledgeBases from '../hooks/useKnowledgeBases';
+import useProjectStream from '../hooks/useProjectStream';
 import { API_BASE, authFetch } from '../utils/helpers';
+import CreateKBModal from './knowledge/CreateKBModal';
 import MemoryPanel from './MemoryPanel';
+import ProjectResourcesTab from './projects/ProjectResourcesTab';
+import ProjectThreadsTab from './projects/ProjectThreadsTab';
 
 // Pairs of (hex, screen-reader name) so the colour picker announces a real
 // colour instead of the literal hex digits.
@@ -47,6 +52,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const TABS = [
     { id: 'general', label: 'General', icon: FolderOpen },
+    // Threads and Resources come first after General: they are what a project
+    // IS once it holds shared work, whereas the rest is configuration.
+    { id: 'threads', label: 'Chats', icon: MessageSquare },
+    { id: 'resources', label: 'Content', icon: Boxes },
     { id: 'knowledge', label: 'Knowledge', icon: Database },
     { id: 'members', label: 'Members', icon: Share2 },
     { id: 'activity', label: 'Activity', icon: Activity },
@@ -75,12 +84,23 @@ function formatRelative(iso) {
     return d.toLocaleDateString();
 }
 
-export default function ProjectDetailPage({ projectId, user, onClose, onSaved, onDeleted }) {
+export default function ProjectDetailPage({ projectId, initialTab, onTabChange, user, onClose, onSaved, onDeleted, onOpenThread, onOpenResource }) {
     const isCreate = !projectId;
     const [project, setProject] = useState(null);
     const [role, setRole] = useState('owner'); // for new projects, current user is the owner
     const [loading, setLoading] = useState(!isCreate);
-    const [tab, setTab] = useState('general');
+    // The tab is part of the URL (/app/projects/:id/:tab), so "send them the
+    // Members tab" is a link rather than a set of instructions.
+    const [tab, setTabState] = useState(initialTab && TABS.some(t => t.id === initialTab) ? initialTab : 'general');
+    const setTab = useCallback((next) => {
+        setTabState(next);
+        onTabChange?.(next);
+    }, [onTabChange]);
+
+    // Follow the URL when the user navigates with back/forward.
+    useEffect(() => {
+        if (initialTab && TABS.some(t => t.id === initialTab)) setTabState(initialTab);
+    }, [initialTab]);
 
     // ── form state ────────────────────────────────────────────
     const [name, setName] = useState('');
@@ -106,25 +126,25 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
     const [memberError, setMemberError] = useState('');
     const [inviting, setInviting] = useState(false);
 
-    // ── KBs ───────────────────────────────────────────────────
-    const [availableKBs, setAvailableKBs] = useState([]);
-    const [showCreateKB, setShowCreateKB] = useState(false);
-    const [newKBName, setNewKBName] = useState('');
-    const [newKBDesc, setNewKBDesc] = useState('');
-    const [creatingKB, setCreatingKB] = useState(false);
-    const [selectedKB, setSelectedKB] = useState(null);
-    const [kbDocs, setKbDocs] = useState([]);
-    const [kbInputMode, setKbInputMode] = useState('text');
-    const [kbTextContent, setKbTextContent] = useState('');
-    const [kbTextTitle, setKbTextTitle] = useState('');
-    const [kbUrlInput, setKbUrlInput] = useState('');
-    const [kbIngesting, setKbIngesting] = useState(false);
-    const [kbIngestStatus, setKbIngestStatus] = useState('');
+    // ── KBs (shared hook) ─────────────────────────────────────
+    // Project context: attach a freshly created KB to this project (auto-link).
+    const kb = useKnowledgeBases({
+        onKBCreated: (created) => setKnowledgeBaseIds(prev => [...prev, created.id]),
+    });
 
     // ── activity ──────────────────────────────────────────────
     const [activity, setActivity] = useState([]);
     const [activityHasMore, setActivityHasMore] = useState(false);
     const [activityLoadingMore, setActivityLoadingMore] = useState(false);
+
+    // ── shared threads + project content ──────────────────────
+    const [threads, setThreads] = useState([]);
+    const [threadsLoading, setThreadsLoading] = useState(false);
+    const [resources, setResources] = useState(null);
+    const [resourcesLoading, setResourcesLoading] = useState(false);
+    // conversationId -> true while a member's run is in flight, driven by the
+    // run.started / run.finished events on the project stream.
+    const [activeRuns, setActiveRuns] = useState({});
 
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
@@ -180,16 +200,6 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
         return () => { cancelled = true; };
     }, [projectId, isCreate]);
 
-    // ── load KBs ──────────────────────────────────────────────
-    useEffect(() => {
-        (async () => {
-            try {
-                const res = await authFetch(`${API_BASE}/api/kb`);
-                if (res.ok) setAvailableKBs(await res.json());
-            } catch (e) { /* ignore */ }
-        })();
-    }, []);
-
     // ── load users & groups for invite dropdowns (best-effort) ─
     const loadUsersAndGroups = async () => {
         try {
@@ -221,32 +231,102 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
     };
     useEffect(() => { refreshMembers(); }, [projectId]);
 
-    // ── activity polling (only when tab is active) ────────────
+    // ── activity: one load, then live ─────────────────────────
+    //
+    // This used to poll every 15 seconds while the tab was open, which meant a
+    // colleague's change took up to 15 seconds to appear and the request ran
+    // forever whether or not anything had happened. The server now pushes, so
+    // this fetches once for the initial page and the stream below keeps it
+    // current. (useProjectStream falls back to polling by itself if the stream
+    // cannot be established, so degraded networks are no worse than before.)
+    const fetchActivity = useCallback(async () => {
+        if (isCreate || !projectId) return;
+        try {
+            const res = await authFetch(`${API_BASE}/api/projects/${projectId}/activity?limit=${ACTIVITY_PAGE_SIZE}&offset=0`);
+            if (!res.ok) return;
+            const data = await res.json();
+            // Tolerate older deployments that still return a bare array.
+            if (Array.isArray(data)) {
+                setActivity(data);
+                setActivityHasMore(data.length >= ACTIVITY_PAGE_SIZE);
+            } else {
+                setActivity(data.items || []);
+                setActivityHasMore(!!data.hasMore);
+            }
+        } catch (e) { /* ignore */ }
+    }, [projectId, isCreate]);
+
     useEffect(() => {
-        if (isCreate || tab !== 'activity' || !projectId) return;
-        let cancelled = false;
-        const fetchActivity = async () => {
-            if (document.visibilityState !== 'visible') return;
-            try {
-                const res = await authFetch(`${API_BASE}/api/projects/${projectId}/activity?limit=${ACTIVITY_PAGE_SIZE}&offset=0`);
-                if (res.ok && !cancelled) {
-                    const data = await res.json();
-                    // Backend returns { items, hasMore } now, but tolerate older
-                    // deployments that still return a bare array.
-                    if (Array.isArray(data)) {
-                        setActivity(data);
-                        setActivityHasMore(data.length >= ACTIVITY_PAGE_SIZE);
-                    } else {
-                        setActivity(data.items || []);
-                        setActivityHasMore(!!data.hasMore);
-                    }
-                }
-            } catch (e) { /* ignore */ }
-        };
-        fetchActivity();
-        const id = setInterval(fetchActivity, 15000);
-        return () => { cancelled = true; clearInterval(id); };
-    }, [tab, projectId, isCreate]);
+        if (tab === 'activity') fetchActivity();
+    }, [tab, fetchActivity]);
+
+    const fetchThreads = useCallback(async () => {
+        if (isCreate || !projectId) return;
+        setThreadsLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/projects/${projectId}/threads`);
+            if (res.ok) setThreads((await res.json()).threads || []);
+        } catch (e) { /* the stream will re-trigger this */ } finally {
+            setThreadsLoading(false);
+        }
+    }, [projectId, isCreate]);
+
+    const fetchResources = useCallback(async () => {
+        if (isCreate || !projectId) return;
+        setResourcesLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/projects/${projectId}/resources`);
+            // The response distinguishes null (a store could not be reached)
+            // from [] (nothing filed here) per section — the tab renders the two
+            // differently, so it is passed through untouched.
+            if (res.ok) setResources(await res.json());
+        } catch (e) { /* leave the previous view rather than blanking it */ } finally {
+            setResourcesLoading(false);
+        }
+    }, [projectId, isCreate]);
+
+    useEffect(() => {
+        if (tab === 'threads') fetchThreads();
+        if (tab === 'resources') fetchResources();
+    }, [tab, fetchThreads, fetchResources]);
+
+    // Live project feed. Runs for the whole page, not just the Activity tab —
+    // a member being removed or the settings changing under you matters
+    // wherever you are.
+    useProjectStream({
+        projectId: isCreate ? null : projectId,
+        enabled: !isCreate && !!projectId,
+        onEvent: useCallback((kind, event) => {
+            // Every durable event is an activity entry, so refresh the feed when
+            // it is on screen. Membership changes additionally invalidate the
+            // member list, which would otherwise show someone who has just left.
+            if (tab === 'activity') fetchActivity();
+            if (kind === 'member_added' || kind === 'member_removed' || kind === 'member_role_changed') {
+                refreshMembers();
+            }
+
+            // A colleague sharing or unsharing a conversation changes what this
+            // list should contain — this is the "it appears without a refresh"
+            // behaviour the whole feature is for.
+            if (kind === 'thread_shared' || kind === 'thread_unshared') fetchThreads();
+            if (kind === 'resource_added' || kind === 'resource_removed') fetchResources();
+
+            // Run lifecycle drives the per-thread "answering…" indicator, so a
+            // member can see that someone else is mid-question rather than
+            // sending into a thread that is already busy.
+            const convId = event?.targetId;
+            if (convId && (kind === 'run.started' || kind === 'run.finished')) {
+                setActiveRuns(prev => {
+                    const next = { ...prev };
+                    if (kind === 'run.started') next[convId] = true;
+                    else delete next[convId];
+                    return next;
+                });
+                // A finished run means new messages landed in that thread.
+                if (kind === 'run.finished' && tab === 'threads') fetchThreads();
+            }
+        }, [tab, fetchActivity, fetchThreads, fetchResources]),
+    });
 
     const loadMoreActivity = async () => {
         if (activityLoadingMore || !activityHasMore) return;
@@ -263,19 +343,6 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
         } catch (e) { /* ignore */ }
         finally { setActivityLoadingMore(false); }
     };
-
-    // ── KB doc fetch when expanding ──────────────────────────
-    useEffect(() => {
-        if (!selectedKB) { setKbDocs([]); return; }
-        let cancelled = false;
-        (async () => {
-            try {
-                const res = await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/documents`);
-                if (res.ok && !cancelled) setKbDocs(await res.json());
-            } catch (e) { /* ignore */ }
-        })();
-        return () => { cancelled = true; };
-    }, [selectedKB?.id]);
 
     // ── dirty state ──────────────────────────────────────────
     const isDirty = useMemo(() => {
@@ -307,6 +374,11 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                 color, icon,
                 knowledgeBaseIds,
                 extractMemories,
+                // Echo the version we loaded. The whole form is sent on every
+                // save — including knowledgeBaseIds as a whole-array replace —
+                // so without this, two editors each adding a different KB meant
+                // the second save silently deleted the first's.
+                ...(isCreate || project?.version === undefined ? {} : { version: project.version }),
             };
             const url = isCreate ? `${API_BASE}/api/projects` : `${API_BASE}/api/projects/${projectId}`;
             const method = isCreate ? 'POST' : 'PUT';
@@ -315,6 +387,16 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
+            if (res.status === 409) {
+                // Someone saved first. Say so plainly and offer their version,
+                // rather than silently discarding one of the two edits.
+                const err = await res.json().catch(() => ({}));
+                setSaveError(
+                    `${err.error || 'This project was changed by someone else.'} `
+                    + 'Reload to see their changes — your edits are still in the form.'
+                );
+                return;
+            }
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 setSaveError(err.error || 'Save failed');
@@ -330,12 +412,9 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                 icon: data.icon || '📁',
                 knowledgeBaseIds: data.knowledgeBaseIds || [],
             };
+            // One call, for both create and update: the parent reloads its list
+            // and, after a create, switches to the new project's edit page.
             onSaved?.(data);
-            if (isCreate && data.id) {
-                // Tell the parent to switch to the new project's edit page.
-                // Parent decides whether to update activeProjectId state.
-                onSaved?.(data);
-            }
         } catch (e) {
             setSaveError(e.message || 'Save failed');
         } finally {
@@ -425,115 +504,11 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
         return g ? g.name : m.sharedWithId;
     };
 
-    // ── KB helpers ───────────────────────────────────────────
+    // ── KB link toggle (project link state; KB CRUD lives in the hook) ─
     const toggleKBLink = (kbId) => {
         setKnowledgeBaseIds(prev =>
             prev.includes(kbId) ? prev.filter(id => id !== kbId) : [...prev, kbId]
         );
-    };
-
-    const reloadKBs = async () => {
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb`);
-            if (res.ok) setAvailableKBs(await res.json());
-        } catch (e) { /* ignore */ }
-    };
-
-    const createKB = async () => {
-        if (!newKBName.trim()) return;
-        setCreatingKB(true);
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newKBName, description: newKBDesc }),
-            });
-            if (res.ok) {
-                const kb = await res.json();
-                setNewKBName(''); setNewKBDesc(''); setShowCreateKB(false);
-                await reloadKBs();
-                setSelectedKB(kb);
-                setKnowledgeBaseIds(prev => [...prev, kb.id]);
-            }
-        } catch (e) { console.error('Failed to create KB:', e); }
-        finally { setCreatingKB(false); }
-    };
-
-    const reloadDocs = async () => {
-        if (!selectedKB) return;
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/documents`);
-            if (res.ok) setKbDocs(await res.json());
-        } catch (e) { /* ignore */ }
-    };
-
-    const ingestText = async () => {
-        if (!selectedKB || !kbTextContent.trim()) return;
-        setKbIngesting(true); setKbIngestStatus('Processing...');
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/ingest/text`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: kbTextContent, title: kbTextTitle || 'Text' }),
-            });
-            if (res.ok) {
-                setKbTextContent(''); setKbTextTitle(''); setKbIngestStatus('');
-                await reloadDocs(); await reloadKBs();
-            } else {
-                const err = await res.json().catch(() => ({}));
-                setKbIngestStatus('Error: ' + (err.error || 'failed'));
-            }
-        } catch (e) { setKbIngestStatus('Failed: ' + e.message); }
-        finally { setKbIngesting(false); }
-    };
-
-    const ingestUrl = async () => {
-        if (!selectedKB || !kbUrlInput.trim()) return;
-        setKbIngesting(true); setKbIngestStatus('Fetching URL...');
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/ingest/url`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: kbUrlInput.trim() }),
-            });
-            if (res.ok) {
-                setKbUrlInput(''); setKbIngestStatus('');
-                await reloadDocs(); await reloadKBs();
-            } else {
-                const err = await res.json().catch(() => ({}));
-                setKbIngestStatus('Error: ' + (err.error || 'failed'));
-            }
-        } catch (e) { setKbIngestStatus('Failed: ' + e.message); }
-        finally { setKbIngesting(false); }
-    };
-
-    const ingestFile = async (e) => {
-        const file = e.target.files[0];
-        if (!file || !selectedKB) return;
-        setKbIngesting(true); setKbIngestStatus('Uploading...');
-        const fd = new FormData();
-        fd.append('file', file);
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/ingest/file`, {
-                method: 'POST', body: fd,
-            });
-            if (res.ok) {
-                setKbIngestStatus('');
-                await reloadDocs(); await reloadKBs();
-            } else {
-                const err = await res.json().catch(() => ({}));
-                setKbIngestStatus('Error: ' + (err.error || 'failed'));
-            }
-        } catch (e2) { setKbIngestStatus('Failed: ' + e2.message); }
-        finally { setKbIngesting(false); e.target.value = ''; }
-    };
-
-    const deleteDoc = async (docId) => {
-        if (!selectedKB || !window.confirm('Delete this document?')) return;
-        try {
-            await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/documents/${docId}`, { method: 'DELETE' });
-            await reloadDocs(); await reloadKBs();
-        } catch (e) { /* ignore */ }
     };
 
     // ── activity row formatter ────────────────────────────────
@@ -554,8 +529,8 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                 return g ? g.name : tId?.slice(0, 8) || '';
             }
             if (tType === 'kb') {
-                const kb = availableKBs.find(k => k.id === tId);
-                return kb ? kb.name : 'a knowledge base';
+                const matched = kb.kbs.find(k => k.id === tId);
+                return matched ? matched.name : 'a knowledge base';
             }
             return tId?.slice(0, 8) || '';
         };
@@ -803,7 +778,7 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                             </label>
                             {canEdit && (
                                 <button
-                                    onClick={() => setShowCreateKB(!showCreateKB)}
+                                    onClick={kb.openCreateKB}
                                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-white transition-all hover:brightness-110"
                                     style={{ background: 'var(--accent-primary)' }}
                                 >
@@ -812,42 +787,31 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                             )}
                         </div>
 
-                        {showCreateKB && (
-                            <div className="p-3 rounded-xl border space-y-2" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
-                                <input value={newKBName} onChange={e => setNewKBName(e.target.value)} placeholder="KB Name" autoFocus
-                                    className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} />
-                                <input value={newKBDesc} onChange={e => setNewKBDesc(e.target.value)} placeholder="Description (optional)"
-                                    className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} />
-                                <div className="flex gap-2 justify-end">
-                                    <button onClick={() => { setShowCreateKB(false); setNewKBName(''); setNewKBDesc(''); }}
-                                        className="px-3 py-1.5 rounded-lg text-xs font-medium border"
-                                        style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>Cancel</button>
-                                    <button onClick={createKB} disabled={creatingKB || !newKBName.trim()}
-                                        className="px-4 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50"
-                                        style={{ background: 'var(--accent-primary)' }}>
-                                        {creatingKB ? 'Creating...' : 'Create'}
-                                    </button>
-                                </div>
-                            </div>
+                        {kb.showCreateKB && (
+                            <CreateKBModal
+                                name={kb.newKBName} onNameChange={kb.setNewKBName}
+                                description={kb.newKBDesc} onDescChange={kb.setNewKBDesc}
+                                creating={kb.creatingKB} onCreate={kb.createKB} onCancel={kb.cancelCreateKB}
+                                namePlaceholder="KB Name"
+                                className="p-3 rounded-xl border bg-[var(--bg-tertiary)] border-[var(--border-default)] space-y-2"
+                            />
                         )}
 
-                        {availableKBs.length === 0 ? (
+                        {kb.kbs.length === 0 ? (
                             <div className="text-center py-4 text-xs rounded-xl border border-dashed" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)' }}>
                                 No knowledge bases yet. Create one to attach it to this project.
                             </div>
                         ) : (
                             <div className="space-y-1.5">
-                                {availableKBs.map(kb => {
-                                    const isLinked = knowledgeBaseIds.includes(kb.id);
-                                    const isExpanded = selectedKB?.id === kb.id;
+                                {kb.kbs.map(item => {
+                                    const isLinked = knowledgeBaseIds.includes(item.id);
+                                    const isExpanded = kb.selectedKB?.id === item.id;
                                     return (
-                                        <div key={kb.id}>
+                                        <div key={item.id}>
                                             <div
                                                 className={`flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-all group ${isExpanded ? 'ring-2 ring-[var(--accent-primary)]/40' : 'hover:bg-[var(--bg-tertiary)]'}`}
                                                 style={{ background: isExpanded ? 'var(--bg-tertiary)' : (isLinked ? 'var(--bg-tertiary)' : 'transparent') }}
-                                                onClick={() => setSelectedKB(isExpanded ? null : kb)}
+                                                onClick={() => kb.setSelectedKB(isExpanded ? null : item)}
                                             >
                                                 {isExpanded
                                                     ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
@@ -855,14 +819,14 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                                                 }
                                                 <input type="checkbox" checked={isLinked}
                                                     disabled={!canEdit}
-                                                    onChange={(e) => { e.stopPropagation(); toggleKBLink(kb.id); }}
+                                                    onChange={(e) => { e.stopPropagation(); toggleKBLink(item.id); }}
                                                     onClick={e => e.stopPropagation()} />
                                                 <div className="min-w-0 flex-1">
                                                     <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                                                        📚 {kb.name}
+                                                        📚 {item.name}
                                                     </div>
                                                     <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                                                        {kb.document_count || 0} docs · {kb.total_chunks || 0} chunks
+                                                        {item.document_count || 0} docs · {item.total_chunks || 0} chunks
                                                     </div>
                                                 </div>
                                             </div>
@@ -875,70 +839,70 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                                                         {[{ id: 'text', label: '📝 Text' }, { id: 'url', label: '🌐 URL' }].map(t => (
                                                             <button
                                                                 key={t.id}
-                                                                onClick={() => setKbInputMode(t.id)}
-                                                                className={`px-3 py-1 rounded-md text-[11px] font-medium ${kbInputMode === t.id ? 'bg-[var(--accent-primary)] text-white' : ''}`}
-                                                                style={kbInputMode === t.id ? {} : { color: 'var(--text-secondary)' }}
+                                                                onClick={() => kb.setKbInputMode(t.id)}
+                                                                className={`px-3 py-1 rounded-md text-[11px] font-medium ${kb.kbInputMode === t.id ? 'bg-[var(--accent-primary)] text-white' : ''}`}
+                                                                style={kb.kbInputMode === t.id ? {} : { color: 'var(--text-secondary)' }}
                                                             >
                                                                 {t.label}
                                                             </button>
                                                         ))}
                                                     </div>
 
-                                                    {kbInputMode === 'text' && (
+                                                    {kb.kbInputMode === 'text' && (
                                                         <div className="space-y-2">
-                                                            <input value={kbTextTitle} onChange={e => setKbTextTitle(e.target.value)} placeholder="Title (optional)"
+                                                            <input value={kb.kbTextTitle} onChange={e => kb.setKbTextTitle(e.target.value)} placeholder="Title (optional)"
                                                                 className="w-full px-3 py-1.5 rounded-lg border text-xs"
                                                                 style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} />
-                                                            <textarea value={kbTextContent} onChange={e => setKbTextContent(e.target.value)}
+                                                            <textarea value={kb.kbTextContent} onChange={e => kb.setKbTextContent(e.target.value)}
                                                                 placeholder="Paste text content here..." rows={3}
                                                                 className="w-full px-3 py-1.5 rounded-lg border text-xs resize-none"
                                                                 style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} />
                                                         </div>
                                                     )}
 
-                                                    {kbInputMode === 'url' && (
-                                                        <input type="url" value={kbUrlInput} onChange={e => setKbUrlInput(e.target.value)}
+                                                    {kb.kbInputMode === 'url' && (
+                                                        <input type="url" value={kb.kbUrlInput} onChange={e => kb.setKbUrlInput(e.target.value)}
                                                             placeholder="https://example.com/page"
                                                             className="w-full px-3 py-1.5 rounded-lg border text-xs"
                                                             style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                                                            onKeyDown={e => { if (e.key === 'Enter' && !kbIngesting) ingestUrl(); }} />
+                                                            onKeyDown={e => { if (e.key === 'Enter' && !kb.kbIngesting) kb.ingestUrl(); }} />
                                                     )}
 
                                                     <div className="flex gap-2 justify-end items-center">
-                                                        {kbIngestStatus && (
+                                                        {kb.kbIngestStatus && (
                                                             <span
                                                                 className="text-[11px]"
                                                                 style={{ color: 'var(--accent-primary)' }}
                                                                 role="status"
                                                                 aria-live="polite"
                                                             >
-                                                                {kbIngestStatus}
+                                                                {kb.kbIngestStatus}
                                                             </span>
                                                         )}
                                                         <label className="cursor-pointer px-2.5 py-1 rounded-lg text-[11px] font-medium border flex items-center gap-1"
                                                             style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
-                                                            <input type="file" accept=".pdf,.txt,.md,.docx,.csv" className="hidden" onChange={ingestFile} disabled={kbIngesting} />
+                                                            <input type="file" accept=".pdf,.txt,.md,.docx,.csv" className="hidden" onChange={kb.ingestFile} disabled={kb.kbIngesting} />
                                                             <Paperclip className="w-3 h-3" /> File
                                                         </label>
-                                                        <button onClick={kbInputMode === 'url' ? ingestUrl : ingestText}
-                                                            disabled={kbIngesting || (kbInputMode === 'text' ? !kbTextContent.trim() : !kbUrlInput.trim())}
+                                                        <button onClick={kb.kbInputMode === 'url' ? kb.ingestUrl : kb.ingestText}
+                                                            disabled={kb.kbIngesting || (kb.kbInputMode === 'text' ? !kb.kbTextContent.trim() : !kb.kbUrlInput.trim())}
                                                             className="px-3 py-1 rounded-lg text-[11px] font-medium text-white disabled:opacity-50"
                                                             style={{ background: 'var(--accent-primary)' }}>
-                                                            {kbIngesting ? 'Processing...' : 'Ingest'}
+                                                            {kb.kbIngesting ? 'Processing...' : 'Ingest'}
                                                         </button>
                                                     </div>
 
                                                     <div>
                                                         <h5 className="text-[10px] font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                                                            Documents ({kbDocs.length})
+                                                            Documents ({kb.kbDocs.length})
                                                         </h5>
-                                                        {kbDocs.length === 0 ? (
+                                                        {kb.kbDocs.length === 0 ? (
                                                             <div className="text-center py-3 text-[11px] rounded-lg border border-dashed" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)' }}>
                                                                 No documents yet.
                                                             </div>
                                                         ) : (
                                                             <div className="space-y-1 max-h-40 overflow-y-auto">
-                                                                {kbDocs.map(doc => (
+                                                                {kb.kbDocs.map(doc => (
                                                                     <div key={doc.id} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg group" style={{ background: 'var(--bg-tertiary)' }}>
                                                                         <div className="flex items-center gap-2 min-w-0">
                                                                             <span className="text-xs flex-shrink-0">
@@ -951,7 +915,7 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                                                                                 </div>
                                                                             </div>
                                                                         </div>
-                                                                        <button onClick={() => deleteDoc(doc.id)}
+                                                                        <button onClick={() => kb.deleteDoc(doc.id)}
                                                                             className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 flex-shrink-0">
                                                                             <Trash2 className="w-3 h-3 text-red-500" />
                                                                         </button>
@@ -1151,9 +1115,74 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                     </div>
                 )}
 
+                {!isCreate && tab === 'threads' && (
+                    <ProjectThreadsTab
+                        threads={threads}
+                        loading={threadsLoading}
+                        role={role}
+                        currentUserId={user?.id}
+                        activeRuns={activeRuns}
+                        onOpenThread={(thread) => onOpenThread?.(thread)}
+                        onUnshare={async (thread) => {
+                            try {
+                                const res = await authFetch(
+                                    `${API_BASE}/api/projects/${projectId}/threads/${thread.id}?type=${thread.type || 'direct'}`,
+                                    { method: 'DELETE' }
+                                );
+                                if (!res.ok) {
+                                    // 409 = the owner is not signed in with the key
+                                    // needed to re-encrypt back to themselves.
+                                    const err = await res.json().catch(() => ({}));
+                                    setSaveError(err.error || 'Could not stop sharing this conversation.');
+                                    return;
+                                }
+                                fetchThreads();
+                            } catch (e) {
+                                setSaveError('Could not stop sharing this conversation.');
+                            }
+                        }}
+                    />
+                )}
+
+                {!isCreate && tab === 'resources' && (
+                    <ProjectResourcesTab
+                        resources={resources}
+                        loading={resourcesLoading}
+                        role={role}
+                        currentUserId={user?.id}
+                        onOpen={(kind, item) => onOpenResource?.(kind, item)}
+                        onRemove={async (kind, item) => {
+                            try {
+                                const res = await authFetch(`${API_BASE}/api/projects/${projectId}/resources`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ kind, id: item.id, attach: false }),
+                                });
+                                if (!res.ok) {
+                                    const err = await res.json().catch(() => ({}));
+                                    setSaveError(err.error || 'Could not remove this from the project.');
+                                    return;
+                                }
+                                fetchResources();
+                            } catch (e) {
+                                setSaveError('Could not remove this from the project.');
+                            }
+                        }}
+                    />
+                )}
+
                 {!isCreate && tab === 'memory' && (
                     <div className="w-full h-full min-h-[500px]">
-                        <MemoryPanel projectId={projectId} />
+                        {/* Project memory is a SHARED pool, so a viewer seeing the
+                            full CRUD UI here was not cosmetic — the server used
+                            to accept those writes. The API now requires editor;
+                            this stops offering buttons that will 403. */}
+                        <MemoryPanel projectId={projectId} canEdit={canEdit} />
+                        {!canEdit && (
+                            <p className="mt-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                                You have view-only access to this project, so project memory is read-only.
+                            </p>
+                        )}
                     </div>
                 )}
 

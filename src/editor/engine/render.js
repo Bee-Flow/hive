@@ -146,27 +146,35 @@ function createAtomHost(node, ctx, inline) {
   host.setAttribute('data-bf-atom', node.type);
   host.setAttribute('contenteditable', 'false');
   host.__bfInlineAtom = !!inline;
-  // Server/export-compatible fallback markup so the host is meaningful even
-  // before (or without) a React portal mount.
-  if (node.type === 'image') {
-    const img = d.createElement('img');
-    img.src = safeUrl(node.attrs?.src || '') || '';
-    img.alt = node.attrs?.alt || '';
-    if (node.attrs?.width) img.style.width = node.attrs.width + 'px';
-    img.className = 'notebook-image';
-    host.appendChild(img);
-  } else if (node.type === 'mermaid') {
-    host.setAttribute('data-code', encodeForAttr(node.attrs?.code || ''));
-  } else if (node.type === 'mathBlock' || node.type === 'mathInline') {
-    host.setAttribute('data-latex', escapeAttr(node.attrs?.latex || ''));
-    host.textContent = (inline ? '$' : '$$') + (node.attrs?.latex || '') + (inline ? '$' : '$$');
-  } else if (node.type === 'formula') {
-    host.setAttribute('data-formula', escapeAttr(node.attrs?.src || ''));
-    host.textContent = node.attrs?.value || node.attrs?.src || '';
-  } else if (node.type === 'chart') {
-    host.setAttribute('data-spec', encodeForAttr(node.attrs?.spec || ''));
+  // Identity attributes always go on the host — they cost nothing and keep the
+  // DOM inspectable/parseable.
+  if (node.type === 'mermaid') host.setAttribute('data-code', encodeForAttr(node.attrs?.code || ''));
+  else if (node.type === 'mathBlock' || node.type === 'mathInline') host.setAttribute('data-latex', escapeAttr(node.attrs?.latex || ''));
+  else if (node.type === 'formula') host.setAttribute('data-formula', escapeAttr(node.attrs?.src || ''));
+  else if (node.type === 'chart') host.setAttribute('data-spec', encodeForAttr(node.attrs?.spec || ''));
+
+  // Fallback CHILDREN, so the host is meaningful without React (export, tests).
+  // Only when no portal will mount: createPortal appends and never clears its
+  // container, so emitting these alongside a portal renders the atom TWICE.
+  // That was the duplicate image (BFSF-312) and the "$formula$ formula" double
+  // placeholder (BFSF-317) — and only the portal copy carried the selection and
+  // resize handlers, which is exactly why just one of the two was editable.
+  if (!ctx.mountAtom) {
+    if (node.type === 'image') {
+      const img = d.createElement('img');
+      img.src = safeUrl(node.attrs?.src || '') || '';
+      img.alt = node.attrs?.alt || '';
+      if (node.attrs?.width) img.style.width = node.attrs.width + 'px';
+      img.className = 'notebook-image';
+      host.appendChild(img);
+    } else if (node.type === 'mathBlock' || node.type === 'mathInline') {
+      host.textContent = (inline ? '$' : '$$') + (node.attrs?.latex || '') + (inline ? '$' : '$$');
+    } else if (node.type === 'formula') {
+      host.textContent = node.attrs?.value || node.attrs?.src || '';
+    }
+    return host;
   }
-  ctx.mountAtom && ctx.mountAtom(node, host);
+  ctx.mountAtom(node, host);
   return host;
 }
 
@@ -176,8 +184,13 @@ function createAtomHost(node, ctx, inline) {
  * ctx.remapAtom; this keeps the non-React fallback (export / tests) correct too.
  */
 export function updateAtomHost(host, node) {
+  // A host with a live portal is owned by React: writing to its children here
+  // (textContent = …) removes React-rendered DOM while React still believes it
+  // is mounted — it destroyed the formula's open <input> on every reconcile.
+  // Attributes are safe; children are not.
+  const reactOwned = !!host.__bfAtomId;
   if (node.type === 'image') {
-    const img = host.querySelector && host.querySelector('img');
+    const img = !reactOwned && host.querySelector ? host.querySelector('img') : null;
     if (img) {
       img.src = node.attrs?.src || '';
       img.alt = node.attrs?.alt || '';
@@ -188,9 +201,10 @@ export function updateAtomHost(host, node) {
     host.setAttribute('data-code', encodeForAttr(node.attrs?.code || ''));
   } else if (node.type === 'mathBlock' || node.type === 'mathInline') {
     host.setAttribute('data-latex', escapeAttr(node.attrs?.latex || ''));
+    if (!reactOwned) host.textContent = (host.__bfInlineAtom ? '$' : '$$') + (node.attrs?.latex || '') + (host.__bfInlineAtom ? '$' : '$$');
   } else if (node.type === 'formula') {
     host.setAttribute('data-formula', escapeAttr(node.attrs?.src || ''));
-    host.textContent = node.attrs?.value || node.attrs?.src || '';
+    if (!reactOwned) host.textContent = node.attrs?.value || node.attrs?.src || '';
   } else if (node.type === 'chart') {
     host.setAttribute('data-spec', encodeForAttr(node.attrs?.spec || ''));
   }

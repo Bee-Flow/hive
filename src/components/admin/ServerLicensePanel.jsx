@@ -156,11 +156,10 @@ export default function ServerLicensePanel() {
                 </div>
                 <div className="flex-1">
                     <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                        {t('admin.server_license.title') || 'Server licence'}
+                        {t('admin.server_license.title', 'Server licence')}
                     </h2>
                     <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                        {t('admin.server_license.intro') ||
-                            'One licence key applied install-wide. Every organisation on this server runs at the tier this licence carries; per-organisation licences are ignored while this is active.'}
+                        {t('admin.server_license.intro', 'One licence key applied install-wide. Every organisation on this server runs at the tier this licence carries; per-organisation licences are ignored while this is active.')}
                     </p>
                 </div>
             </div>
@@ -174,11 +173,11 @@ export default function ServerLicensePanel() {
                     {isServerScope ? (
                         <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
                             <ShieldCheck className="inline w-3.5 h-3.5 mr-1 -mt-0.5" />
-                            {t('admin.server_license.active_badge') || 'Server-wide licence active'}
+                            {t('admin.server_license.active_badge', 'Server-wide licence active')}
                         </span>
                     ) : (
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            {t('admin.server_license.inactive_badge') || 'No server-wide licence applied'}
+                            {t('admin.server_license.inactive_badge', 'No server-wide licence applied')}
                         </span>
                     )}
                 </div>
@@ -186,15 +185,15 @@ export default function ServerLicensePanel() {
                 {isServerScope && serverLicense && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
                         <div>
-                            <div className="opacity-60 mb-0.5">{t('admin.server_license.issuer') || 'Issuer'}</div>
+                            <div className="opacity-60 mb-0.5">{t('admin.server_license.issuer', 'Issuer')}</div>
                             <div className="font-mono truncate">{serverLicense.issuer || '—'}</div>
                         </div>
                         <div>
-                            <div className="opacity-60 mb-0.5">{t('admin.server_license.expires') || 'Expires'}</div>
+                            <div className="opacity-60 mb-0.5">{t('admin.server_license.expires', 'Expires')}</div>
                             <div>{fmtDate(expiresAt)} {daysLeft != null && daysLeft >= 0 ? `· ${daysLeft}d` : ''}</div>
                         </div>
                         <div>
-                            <div className="opacity-60 mb-0.5">{t('admin.server_license.billing') || 'Billing'}</div>
+                            <div className="opacity-60 mb-0.5">{t('admin.server_license.billing', 'Billing')}</div>
                             <div>{serverLicense.billingInterval || '—'}</div>
                         </div>
                     </div>
@@ -205,7 +204,7 @@ export default function ServerLicensePanel() {
                     that orgs still need their own subscription. */}
                 {isServerScope && !isGoverning && (
                     <div className="mt-3 p-2.5 rounded-lg text-xs" style={{ background: 'rgba(59,130,246,0.08)', color: 'var(--text-secondary)', border: '1px solid rgba(59,130,246,0.2)' }}>
-                        {t('admin.server_license.not_governing') || 'This licence is recorded but does not cover organisations on this deployment — each organisation still needs its own subscription.'}
+                        {t('admin.server_license.not_governing', 'This licence is recorded but does not cover organisations on this deployment — each organisation still needs its own subscription.')}
                     </div>
                 )}
 
@@ -228,7 +227,7 @@ export default function ServerLicensePanel() {
                                 disabled={!!busy}
                             >
                                 <Key className="inline w-3.5 h-3.5 mr-1 -mt-0.5" />
-                                {t('admin.server_license.replace') || 'Replace licence'}
+                                {t('admin.server_license.replace', 'Replace licence')}
                             </button>
                             <button
                                 onClick={handleDeactivate}
@@ -237,8 +236,8 @@ export default function ServerLicensePanel() {
                                 disabled={!!busy}
                             >
                                 {busy === 'deactivate'
-                                    ? (<><Loader2 className="inline w-3.5 h-3.5 mr-1 -mt-0.5 animate-spin" />{t('admin.server_license.deactivating') || 'Deactivating…'}</>)
-                                    : (t('admin.server_license.deactivate') || 'Deactivate')}
+                                    ? (<><Loader2 className="inline w-3.5 h-3.5 mr-1 -mt-0.5 animate-spin" />{t('admin.server_license.deactivating', 'Deactivating…')}</>)
+                                    : (t('admin.server_license.deactivate', 'Deactivate'))}
                             </button>
                         </>
                     ) : (
@@ -248,7 +247,7 @@ export default function ServerLicensePanel() {
                             disabled={!!busy}
                         >
                             <Key className="inline w-3.5 h-3.5 mr-1 -mt-0.5" />
-                            {t('admin.server_license.activate') || 'Apply server-wide licence'}
+                            {t('admin.server_license.activate', 'Apply server-wide licence')}
                         </button>
                     )}
                 </div>
@@ -258,7 +257,7 @@ export default function ServerLicensePanel() {
                         <textarea
                             value={tokenInput}
                             onChange={(e) => setTokenInput(e.target.value)}
-                            placeholder={t('admin.server_license.token_placeholder') || 'Paste licence JWT or admin blob (beeflow-admin-v1.…)'}
+                            placeholder={t('admin.server_license.token_placeholder', 'Paste licence JWT or admin blob (beeflow-admin-v1.…)')}
                             className="w-full h-24 rounded-md px-2 py-1.5 text-xs font-mono"
                             style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
                         />
@@ -269,7 +268,7 @@ export default function ServerLicensePanel() {
                                 style={{ color: 'var(--text-secondary)' }}
                                 disabled={!!busy}
                             >
-                                {t('common.cancel') || 'Cancel'}
+                                {t('common.cancel', 'Cancel')}
                             </button>
                             <button
                                 onClick={handleActivate}
@@ -277,8 +276,8 @@ export default function ServerLicensePanel() {
                                 className="px-3 py-1 rounded-md text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
                             >
                                 {busy === 'activate'
-                                    ? (<><Loader2 className="inline w-3.5 h-3.5 mr-1 -mt-0.5 animate-spin" />{t('admin.server_license.activating') || 'Activating…'}</>)
-                                    : (t('admin.server_license.activate_confirm') || 'Activate server-wide')}
+                                    ? (<><Loader2 className="inline w-3.5 h-3.5 mr-1 -mt-0.5 animate-spin" />{t('admin.server_license.activating', 'Activating…')}</>)
+                                    : (t('admin.server_license.activate_confirm', 'Activate server-wide'))}
                             </button>
                         </div>
                     </div>
@@ -291,13 +290,13 @@ export default function ServerLicensePanel() {
                     <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} />
                     <div>
                         <div className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                            {t('admin.server_license.warn_title') || 'Override semantics'}
+                            {t('admin.server_license.warn_title', 'Override semantics')}
                         </div>
                         <ul className="list-disc pl-4 space-y-0.5 opacity-90">
-                            <li>{t('admin.server_license.warn_override') || 'Every organisation on this install will resolve to the server-wide tier.'}</li>
-                            <li>{t('admin.server_license.warn_per_org_hidden') || 'Per-organisation activation is disabled in Org Settings while a server-wide licence is active.'}</li>
-                            <li>{t('admin.server_license.warn_rollback') || 'Per-organisation licences are preserved — deactivating restores them.'}</li>
-                            <li>{t('admin.server_license.warn_tier_min') || 'Community-tier licences are rejected: Community is the default floor already.'}</li>
+                            <li>{t('admin.server_license.warn_override', 'Every organisation on this install will resolve to the server-wide tier.')}</li>
+                            <li>{t('admin.server_license.warn_per_org_hidden', 'Per-organisation activation is disabled in Org Settings while a server-wide licence is active.')}</li>
+                            <li>{t('admin.server_license.warn_rollback', 'Per-organisation licences are preserved — deactivating restores them.')}</li>
+                            <li>{t('admin.server_license.warn_tier_min', 'Community-tier licences are rejected: Community is the default floor already.')}</li>
                         </ul>
                     </div>
                 </div>

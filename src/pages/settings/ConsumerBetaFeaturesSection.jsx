@@ -4,6 +4,7 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import { pickBetaIcon } from '../../utils/betaFeatureIcon';
 import { useLicenseContext } from '../../components/LicenseContext';
+import UpgradePrompt from '../../components/billing/UpgradePrompt';
 
 /**
  * Consumer Beta features section.
@@ -14,7 +15,7 @@ import { useLicenseContext } from '../../components/LicenseContext';
  */
 const ConsumerBetaFeaturesSection = () => {
     const { t } = useTranslation();
-    const { hasTier, upgradeUrl, loading: licenseLoading } = useLicenseContext();
+    const { hasTier, upgradeUrl, deploymentMode, loading: licenseLoading } = useLicenseContext();
     const [loading, setLoading] = useState(true);
     const [allowed, setAllowed] = useState([]);
     const [registry, setRegistry] = useState([]);
@@ -52,32 +53,24 @@ const ConsumerBetaFeaturesSection = () => {
             <div className="space-y-5 animate-fadeIn">
                 <div>
                     <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                        {t('settings.beta_features') || 'Beta features'}
+                        {t('settings.beta_features', 'Beta features')}
                     </h2>
                     <p className="text-sm text-[var(--text-muted)] mt-1">
-                        {t('settings.beta_features_intro') || 'Experimental features available on your account'}
+                        {t('settings.beta_features_intro', 'Experimental features available on your account')}
                     </p>
                 </div>
-                <div className="rounded-2xl border border-blue-500/30 bg-blue-500/5 p-6">
-                    <div className="flex items-start gap-3">
-                        <Sparkles className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">
-                                {t('settings.beta_requires_enterprise') || 'Beta features require Enterprise'}
-                            </h3>
-                            <p className="text-xs text-[var(--text-muted)] mb-3">
-                                {t('settings.beta_upgrade_blurb') || 'Beta capabilities — voice chat, webpages, automations, meeting notes, ticket assistant — ship with the Enterprise tier.'}
-                            </p>
-                            <a
-                                href={upgradeUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600"
-                            >
-                                {t('license.upgrade_at_beeflow') || 'Upgrade at beeflow.nl'}
-                            </a>
-                        </div>
-                    </div>
+                {/* Shared paywall. A consumer on cloud can upgrade in two
+                    clicks, so the CTA goes to /app/billing rather than sending
+                    them out to the public pricing site to start over. */}
+                <div className="rounded-2xl border p-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                    <UpgradePrompt
+                        requiredTier="enterprise"
+                        feature="beta_features"
+                        deploymentMode={deploymentMode}
+                        upgradeUrl={upgradeUrl}
+                        title={t('settings.beta_requires_enterprise', 'Beta features require Enterprise')}
+                        description={t('settings.beta_upgrade_blurb', 'Beta capabilities — voice chat, webpages, automations, meeting notes, ticket assistant — ship with the Enterprise tier.')}
+                    />
                 </div>
             </div>
         );
@@ -89,7 +82,7 @@ const ConsumerBetaFeaturesSection = () => {
         <div className="space-y-5 animate-fadeIn">
             <div>
                 <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                    {t('settings.beta_features') || 'Beta features'}
+                    {t('settings.beta_features', 'Beta features')}
                 </h2>
                 <p className="text-sm text-[var(--text-muted)] mt-1">
                     Experimental features available on your account

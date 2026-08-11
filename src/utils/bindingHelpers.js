@@ -10,7 +10,13 @@
 // Exported so the chip/token layer (mapping/refTokens.js) shares the exact
 // same notion of "contains an interpolation" — keep this the single source.
 export const TEMPLATE_RE = /\{\{[^}]+\}\}/;
-const SIMPLE_PATH_RE = /^[a-zA-Z_$][\w$.[\]]*$/;
+// `*` is in the char class so a `[*]` wildcard path (e.g.
+// steps.read.output.results[*].attachments) is recognised as a clean ref
+// path — the server's ref resolver (bind.js REF_RE / tokenizePath) fully
+// supports `[*]` as a flatten-map. Without it, such a path fell through to
+// the `expr` kind, which the restricted grammar can't evaluate → silent
+// undefined at runtime.
+const SIMPLE_PATH_RE = /^[a-zA-Z_$][\w$.[\]*]*$/;
 const VALID_REF_ROOTS = ['trigger', 'steps', 'vars', 'secrets', 'loop'];
 
 /**
@@ -110,6 +116,111 @@ export function insertAtCursor(el, snippet) {
 }
 
 /**
+ * Detect an in-progress variable token at the caret, to trigger the inline
+ * autocomplete picker while typing.
+ *   - mode 'fixed' (templates): an UNCLOSED `{{` before the caret with a
+ *     path-ish partial → the token spans from the `{{` to the caret.
+ *   - mode 'expression'/path: a partial rooted path (`steps.` / `trigger.` /
+ *     `loop.` / `item.` / `vars.`) ending at the caret.
+ * `roots` overrides which roots count — App Studio's scope shares none of the
+ * routine roots but `item`/`vars` (see AUTOCOMPLETE_ROOTS).
+ * Returns `{ start, end, query }` (range in el.value) or null.
+ */
+export function getAutocompleteToken(el, mode, roots = AUTOCOMPLETE_ROOTS) {
+    if (!el || typeof el.value !== 'string') return null;
+    const caret = el.selectionStart ?? el.value.length;
+    const hit = getAutocompleteTokenFromPrefix(el.value.slice(0, caret), mode, roots);
+    return hit ? { start: caret - hit.length, end: caret, query: hit.query } : null;
+}
+
+/**
+ * The same rule, expressed over just the text BEFORE the caret — which is all a
+ * contenteditable can offer (RefTokenInput has no selectionStart, and the pills
+ * before the caret are not text at all). Returns `{ length, query }`, where
+ * `length` is how many typed characters the accepted suggestion should swallow.
+ */
+export function getAutocompleteTokenFromPrefix(before, mode, roots = AUTOCOMPLETE_ROOTS) {
+    const text = typeof before === 'string' ? before : '';
+    if (mode === 'fixed') {
+        const open = text.lastIndexOf('{{');
+        if (open === -1) return null;
+        const partial = text.slice(open + 2);
+        if (partial.includes('}') || partial.includes('{')) return null;
+        if (!/^[\w$.[\]*\s]*$/.test(partial)) return null;
+        return { length: text.length - open, query: partial.trim() };
+    }
+    const list = safeRoots(roots);
+    if (!list.length) return null;
+    // Built from `list` rather than written out, so a caller with a different
+    // scope (App Studio: currentUser/form/screen/actions/…) completes ITS roots
+    // instead of the routine builder's.
+    const rooted = new RegExp(`(?:^|[^\\w$.])((?:${list.join('|')})\\.[\\w$.[\\]*]*)$`);
+    const m = rooted.exec(text);
+    if (m) return { length: m[1].length, query: m[1] };
+    // A bare partial that could still BECOME a root ("st", "trig", "steps").
+    // Without this the picker only ever opened once a full root plus its dot
+    // was already typed, so typing "st" suggested nothing and the feature read
+    // as broken (BFSF-321). Restricted to prefixes of an actual root, and to
+    // 2+ characters, so ordinary expression text doesn't pop the picker open on
+    // every keystroke.
+    const bare = /(?:^|[^\w$.])([A-Za-z_$][\w$]*)$/.exec(text);
+    if (!bare) return null;
+    const partial = bare[1];
+    if (partial.length < 2) return null;
+    const lower = partial.toLowerCase();
+    if (!list.some(root => root.toLowerCase().startsWith(lower))) return null;
+    return { length: partial.length, query: partial };
+}
+
+// Roots the expression-mode picker will complete. Superset of VALID_REF_ROOTS:
+// `item` is the conventional loop-body alias and is accepted by the runtime
+// resolver, so users expect it to autocomplete too.
+export const AUTOCOMPLETE_ROOTS = ['steps', 'trigger', 'loop', 'item', 'vars'];
+
+/**
+ * Keep only roots that are plain identifiers, so a caller-supplied list (in
+ * App Studio's case, one fetched from the server catalog) can never smuggle
+ * regex metacharacters into the pattern built above.
+ */
+function safeRoots(roots) {
+    const list = Array.isArray(roots) ? roots : AUTOCOMPLETE_ROOTS;
+    return list.filter(r => typeof r === 'string' && /^[A-Za-z_$][\w$]*$/.test(r));
+}
+
+/**
+ * Replace [start, end) of the element's value with `snippet`, placing the
+ * caret after it. Sibling of insertAtCursor for token-replacement (the
+ * range was recorded when autocomplete opened — focus may have moved to
+ * the picker's search box since). Returns the new full value.
+ */
+export function replaceRange(el, start, end, snippet) {
+    if (!el) return null;
+    const value = String(el.value ?? '');
+    const from = Math.max(0, Math.min(start, value.length));
+    const to = Math.max(from, Math.min(end, value.length));
+    const next = value.slice(0, from) + snippet + value.slice(to);
+    el.value = next;
+    const caret = from + snippet.length;
+    try { el.setSelectionRange(caret, caret); } catch (_) { /* ignore */ }
+    el.focus();
+    return next;
+}
+
+/**
+ * Suggest a field NAME from a picked path — the last meaningful segment
+ * (`trigger.output.subject` → `subject`). Used by the Set editor's
+ * "Add field from a previous step" action.
+ */
+export function suggestKeyFromPath(path) {
+    const cleaned = String(path || '').trim().replace(/\[(?:\*|\d+)\]/g, '');
+    const segs = cleaned.split('.').filter(Boolean);
+    let seg = segs.pop() || '';
+    if (seg === 'output' && segs.length) seg = segs.pop();
+    const key = seg.replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+|_+$/g, '');
+    return key || 'field';
+}
+
+/**
  * Format a path for insertion given the current field mode.
  *   - 'fixed'      — wrap as `{{path}}` so the runtime interpolates it
  *   - 'expression' — bare path (the field will detect ref vs expr)
@@ -178,17 +289,66 @@ function findOperator(text, op) {
 export function buildConditionExpr(leftPath, op, rightBinding) {
     const left = String(leftPath || '').trim();
     if (!left) return '';
-    const right = renderRightSide(rightBinding);
+    const right = renderBindingValue(rightBinding);
     return `${left} ${op} ${right}`;
 }
 
-function renderRightSide(b) {
+/**
+ * Render a binding as the right-hand side of a restricted-JS expression:
+ * literals as JSON, refs as the bare path, exprs verbatim. Shared by the
+ * condition/filter builders so every comparison serialises identically.
+ */
+export function renderBindingValue(b) {
     if (!b || typeof b !== 'object') return JSON.stringify(b ?? '');
     if (b.kind === 'literal') return JSON.stringify(b.value ?? '');
     if (b.kind === 'ref')     return String(b.path || '');
     if (b.kind === 'expr')    return String(b.value || '');
-    if (b.kind === 'template') return JSON.stringify(b.value || '');
+    if (b.kind === 'template') return templateToExprFragment(String(b.value || ''));
     return JSON.stringify(b);
+}
+
+// A single `{{ path }}` token, scanned exactly like the runtime's
+// server/automation/bind.js interpolateTemplate so "what counts as an
+// interpolation" cannot drift between the two.
+const TEMPLATE_TOKEN_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
+
+/**
+ * Render a `template` binding as an EXPRESSION fragment.
+ *
+ * This used to be `JSON.stringify(b.value)`, which turned the raw,
+ * uninterpolated template text into a string LITERAL: picking a variable in
+ * the condition builder's default "fixed" mode (BindingField inserts
+ * `{{path}}` there, and bindingFromInput promotes that to kind 'template')
+ * saved
+ *     steps.s1.output.status == "{{trigger.output.status}}"
+ * — an expression that is false for every run, silently, with a green status.
+ * Nothing interpolates inside an `expr`; only the binding resolver does that.
+ *
+ * So a template that is ONE whole-string interpolation collapses to its bare
+ * path — the same rule BindingField.translateForMode uses when the user flips
+ * the mode switch. Mixed literal+interpolation text becomes `concat(...)` of
+ * quoted literal runs and bare paths (`concat` is on the engine's whitelist),
+ * which is what the template MEANT. Anything whose interpolation isn't a clean
+ * path (e.g. `{{a + 1}}`) keeps the historical quoted-raw-string rendering
+ * rather than emitting something the restricted grammar can't parse.
+ */
+function templateToExprFragment(text) {
+    const parts = [];
+    let last = 0;
+    let sawPath = false;
+    TEMPLATE_TOKEN_RE.lastIndex = 0;
+    let m;
+    while ((m = TEMPLATE_TOKEN_RE.exec(text)) !== null) {
+        const inner = m[1].trim();
+        if (!isCleanPath(inner)) return JSON.stringify(text);
+        if (m.index > last) parts.push(JSON.stringify(text.slice(last, m.index)));
+        parts.push(inner);
+        sawPath = true;
+        last = m.index + m[0].length;
+    }
+    if (!sawPath) return JSON.stringify(text);
+    if (last < text.length) parts.push(JSON.stringify(text.slice(last)));
+    return parts.length === 1 ? parts[0] : `concat(${parts.join(', ')})`;
 }
 
 // §WS4.1 — canonical path tokeniser/resolver, ported to match the SERVER runtime
@@ -241,6 +401,12 @@ function resolveTokens(tokens, cur) {
             return out;
         }
         if (cur == null) return undefined;
+        // Never walk the prototype chain — mirrors server bind.js: a picked
+        // path like "constructor" must preview as undefined here, exactly as
+        // it resolves at runtime. Array/string indices and `.length` are own
+        // properties (hasOwnProperty.call auto-boxes primitives), so
+        // legitimate paths are unaffected.
+        if (!Object.prototype.hasOwnProperty.call(cur, tok.key)) return undefined;
         cur = cur[tok.key];
     }
     return cur;
@@ -258,6 +424,35 @@ export function walkPath(path, root) {
     const tokens = tokenizePath(String(path));
     if (!tokens) return undefined;
     return resolveTokens(tokens, root);
+}
+
+// Mirrors server bind.js REF_RE. The FE walkPath above deliberately skips
+// this check (it previews saved paths verbatim), but walkRelativePath must
+// enforce it so a parse_json field path resolves IDENTICALLY at design time
+// and at runtime — e.g. a bare-digit path `0` is rejected on both sides
+// (use `[0]`).
+const REF_RE = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*|\[(?:[0-9]+|\*|"[^"]*"|'[^']*')\])*$/;
+
+/**
+ * Walk a path RELATIVE to an arbitrary value (not the runState roots).
+ * Byte-for-byte mirror of server/automation/bind.js walkRelativePath —
+ * used by the parse_json step editor's live preview so what the user sees
+ * is exactly what the runtime extracts.
+ *
+ * Wrapping the value as `{$: value}` and prefixing the path with `$`/`$.`
+ * keeps REF_RE satisfied (it rejects a leading `[`) while allowing
+ * root-array sources (`[0].x`, `[*].sku`), and reuses resolveTokens'
+ * `[*]` flatten + prototype-chain block unchanged. `''`/`'$'`/nullish
+ * returns the whole source.
+ */
+export function walkRelativePath(path, value) {
+    if (path === '' || path === '$' || path == null) return value;
+    const p = String(path);
+    const abs = p.startsWith('[') ? `$${p}` : `$.${p}`;
+    if (!REF_RE.test(abs)) return undefined;
+    const tokens = tokenizePath(abs);
+    if (!tokens) return undefined;
+    return resolveTokens(tokens, { $: value });
 }
 
 /**

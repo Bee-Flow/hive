@@ -1,7 +1,7 @@
-import { CheckCircle2, AlertTriangle, Clock, Play } from 'lucide-react';
 import React, { useState } from 'react';
 import DiagramPane from './DiagramPane';
 import OutputView from './OutputView';
+import { tokenFor } from '../../../shared/statusTokens';
 
 /**
  * Read-only execution view for ONE run, shared by the in-automation Run
@@ -98,8 +98,11 @@ function StepDataPanel({ record, onClose }) {
 }
 
 function StatusIcon({ status }) {
-    if (status === 'success') return <CheckCircle2 size={12} className="text-emerald-500" />;
-    if (status === 'error')   return <AlertTriangle size={12} className="text-red-500" />;
-    if (status === 'running') return <Clock size={12} className="text-amber-500" />;
-    return <Play size={12} className="text-[var(--text-tertiary)]" />;
+    // Use the canonical status token table (single source of truth) so every
+    // state — incl. awaiting_approval / cancelled / queued / handled_error —
+    // gets its correct icon + colour, instead of falling through to a neutral
+    // gray Play icon that made distinct states look identical.
+    const t = tokenFor(status);
+    const Icon = t.icon;
+    return <Icon size={12} className={`${t.solid}${t.spin ? ' animate-spin' : ''}`} />;
 }

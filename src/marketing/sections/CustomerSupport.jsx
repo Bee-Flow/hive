@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ArrowRight, CheckCircle2, Bot, User, AlertTriangle, Loader2, Send } from 'lucide-react';
 import { API_BASE } from '../../utils/helpers';
 import EditableText from '../components/EditableText';
@@ -28,10 +28,13 @@ import SectionFrame from '../components/SectionFrame';
  *                      content + a custom sectionId (#contact anchor) so HomePage
  *                      and PricingPage keep working.
  *
- * Styling is self-contained (inline) but reads the marketing design tokens
- * (--brand-*, --border-subtle, --radius-base) with hard fallbacks, mirroring
- * CookieBanner — so it follows brand-colour overrides and dark mode and never
- * hardcodes an off-palette colour.
+ * Styling: the static form/card/button skeleton lives in marketing.css as
+ * `.support-*` classes scoped under `.customer-support-block` (NOT under
+ * .marketing-root — this widget also renders on the standalone HomePage /
+ * PricingPage via ContactSection, so every token reference there carries a
+ * hard fallback). Only DYNAMIC values (disabled opacity, scroll caps,
+ * per-bubble tints) stay inline, still reading the design tokens through
+ * the `T` map with hard fallbacks, mirroring CookieBanner.
  *
  * Inline-editable paths: customer-support.title, customer-support.lead
  */
@@ -84,14 +87,14 @@ function formatRelative(iso) {
 
 // Design tokens with fallbacks — see component doc. Resolved once at module
 // scope as plain CSS-var strings; the browser does the actual resolution.
+// Only the values still used INLINE (dynamic/bubble styling) live here;
+// the form/card/button skeleton moved to the `.support-*` classes.
 const T = {
-    cardBg: 'var(--brand-bg, #ffffff)',
     surface:'var(--brand-surface, #F3F4F6)',
     text:   'var(--brand-text, #1F2937)',
     muted:  'var(--brand-text-secondary, #6B7280)',
     border: 'var(--border-subtle, #E5E7EB)',
     primary:'var(--brand-primary, #F5A623)',
-    radius: 'var(--radius-base, 12px)',
 };
 
 // Per-author-kind bubble appearance. AI = blue tint, staff = green tint —
@@ -105,39 +108,6 @@ function bubbleMeta(kind) {
     }
 }
 
-const labelStyle = { display: 'block', fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 4 };
-const inputStyle = {
-    width: '100%',
-    padding: '10px 12px',
-    border: `1px solid ${T.border}`,
-    borderRadius: 8,
-    fontSize: 14,
-    boxSizing: 'border-box',
-    background: T.cardBg,
-    color: T.text,
-};
-const textareaStyle = { ...inputStyle, resize: 'vertical', minHeight: 120, fontFamily: 'inherit' };
-const buttonStyle = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '12px 24px',
-    background: T.primary,
-    color: T.text,
-    border: 'none',
-    borderRadius: 999,
-    fontSize: 15,
-    fontWeight: 600,
-    cursor: 'pointer',
-};
-const cardStyle = {
-    background: T.cardBg,
-    border: `1px solid ${T.border}`,
-    borderRadius: T.radius,
-    padding: 24,
-    textAlign: 'left',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
-};
 const errorStyle = { color: '#dc2626', fontSize: 13, marginTop: 8 };
 
 export default function CustomerSupport({ data, sectionId }) {
@@ -145,6 +115,11 @@ export default function CustomerSupport({ data, sectionId }) {
     // is a plain function call, safe to compute up top.
     const preview = isPreviewMode();
     const renderedAt = useRef(Date.now());
+    // Unique per-instance prefix for the form-field ids: the block can be
+    // placed more than once on a page (CMS block + legacy #contact wrapper),
+    // and duplicate ids silently break the label→field association that
+    // makes the labels programmatic (WCAG 1.3.1/1.3.5).
+    const uid = useId();
 
     // First-contact form fields.
     const [name, setName] = useState('');
@@ -290,7 +265,7 @@ export default function CustomerSupport({ data, sectionId }) {
     // and reply inputs would lose focus on every keystroke and every poll.
     const wrap = (children) => (
         <SectionFrame id="customer-support" name="Customer Support" enabled={data.enabled}>
-            <section id={id} className={sectionClass} style={{ paddingTop: 80, paddingBottom: 80 }}>
+            <section id={id} className={sectionClass}>
                 <div className="container">
                     <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center' }}>
                         {children}
@@ -309,7 +284,7 @@ export default function CustomerSupport({ data, sectionId }) {
         const waitingFirst = !hasReply;
 
         return wrap(
-                <div style={{ ...cardStyle, textAlign: 'left' }}>
+                <div className="support-card">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                         <CheckCircle2 size={22} color={T.primary} aria-hidden="true" />
                         <div style={{ minWidth: 0 }}>
@@ -352,7 +327,10 @@ export default function CustomerSupport({ data, sectionId }) {
                                 onChange={e => setReply(e.target.value)}
                                 placeholder="Reply…"
                                 maxLength={5000}
-                                style={{ ...inputStyle, resize: 'vertical', minHeight: 56, fontFamily: 'inherit' }}
+                                className="support-input"
+                                // Inline min-height wins over the class's
+                                // 120px floor — the reply box starts compact.
+                                style={{ minHeight: 56 }}
                             />
                             <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                                 <span style={{ fontSize: 12, color: T.muted }}>Our AI replies first; a human takes over if needed.</span>
@@ -360,7 +338,8 @@ export default function CustomerSupport({ data, sectionId }) {
                                     type="button"
                                     onClick={sendReply}
                                     disabled={sending || !reply.trim()}
-                                    style={{ ...buttonStyle, padding: '8px 16px', fontSize: 14, opacity: (sending || !reply.trim()) ? 0.6 : 1 }}
+                                    className="support-submit"
+                                    style={{ padding: '8px 16px', fontSize: 14, opacity: (sending || !reply.trim()) ? 0.6 : 1 }}
                                 >
                                     <Send size={14} aria-hidden="true" /> {sending ? 'Sending…' : 'Send'}
                                 </button>
@@ -387,12 +366,12 @@ export default function CustomerSupport({ data, sectionId }) {
     // ── Static confirmation (spam path / no access token) ───────────────
     if (sentDone) {
         return wrap(
-                <div style={cardStyle}>
+                <div className="support-card">
                     <CheckCircle2 size={40} color={T.primary} style={{ marginBottom: 12 }} aria-hidden="true" />
                     <h2 className="headline-md" style={{ color: T.text, margin: '0 0 12px' }}>{c.successTitle}</h2>
                     <p style={{ color: T.muted, fontSize: 15, lineHeight: 1.6, margin: '0 0 16px' }}>{c.successBody}</p>
                     {sentDone.threadUrl && (
-                        <a href={sentDone.threadUrl} style={buttonStyle}>
+                        <a href={sentDone.threadUrl} className="support-submit">
                             View the conversation
                             <ArrowRight size={16} aria-hidden="true" />
                         </a>
@@ -423,12 +402,16 @@ export default function CustomerSupport({ data, sectionId }) {
                 {c.lead}
             </EditableText>
 
-            <form style={cardStyle} onSubmit={submit} noValidate>
-                {/* Honeypot — visually hidden but reachable by naive bots. */}
+            <form className="support-card" onSubmit={submit} noValidate>
+                {/* Honeypot — visually hidden but reachable by naive bots.
+                    Deliberately NO autocomplete value and no id/htmlFor pair:
+                    it must never be offered to (or filled by) a browser's
+                    autofill, only by bots that fill every field they find. */}
                 <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', height: 0, overflow: 'hidden' }}>
                     <label>Website (leave blank)
                         <input
                             type="text"
+                            name="website_url"
                             tabIndex={-1}
                             autoComplete="off"
                             value={honeypot}
@@ -437,12 +420,20 @@ export default function CustomerSupport({ data, sectionId }) {
                     </label>
                 </div>
 
+                {/* Real fields: explicit htmlFor/id association (the wrapping
+                    div breaks implicit association) + name/autocomplete so
+                    browsers and assistive tech can identify the purpose of
+                    each field (WCAG 1.3.5). Subject/message have no matching
+                    autocomplete token — none exists for them. */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                     <div>
-                        <label style={labelStyle}>{c.nameLabel}</label>
+                        <label className="support-label" htmlFor={`${uid}-name`}>{c.nameLabel}</label>
                         <input
-                            style={inputStyle}
+                            id={`${uid}-name`}
+                            className="support-input"
                             type="text"
+                            name="name"
+                            autoComplete="name"
                             value={name}
                             onChange={e => setName(e.target.value)}
                             placeholder={c.namePlaceholder}
@@ -450,10 +441,13 @@ export default function CustomerSupport({ data, sectionId }) {
                         />
                     </div>
                     <div>
-                        <label style={labelStyle}>{c.emailLabel}</label>
+                        <label className="support-label" htmlFor={`${uid}-email`}>{c.emailLabel}</label>
                         <input
-                            style={inputStyle}
+                            id={`${uid}-email`}
+                            className="support-input"
                             type="email"
+                            name="email"
+                            autoComplete="email"
                             required
                             value={email}
                             onChange={e => setEmail(e.target.value)}
@@ -463,10 +457,12 @@ export default function CustomerSupport({ data, sectionId }) {
                     </div>
                 </div>
                 <div style={{ marginBottom: 12 }}>
-                    <label style={labelStyle}>{c.subjectLabel}</label>
+                    <label className="support-label" htmlFor={`${uid}-subject`}>{c.subjectLabel}</label>
                     <input
-                        style={inputStyle}
+                        id={`${uid}-subject`}
+                        className="support-input"
                         type="text"
+                        name="subject"
                         required
                         value={subject}
                         onChange={e => setSubject(e.target.value)}
@@ -475,9 +471,11 @@ export default function CustomerSupport({ data, sectionId }) {
                     />
                 </div>
                 <div style={{ marginBottom: 12 }}>
-                    <label style={labelStyle}>{c.messageLabel}</label>
+                    <label className="support-label" htmlFor={`${uid}-message`}>{c.messageLabel}</label>
                     <textarea
-                        style={textareaStyle}
+                        id={`${uid}-message`}
+                        className="support-input"
+                        name="message"
                         required
                         value={message}
                         onChange={e => setMessage(e.target.value)}
@@ -489,7 +487,8 @@ export default function CustomerSupport({ data, sectionId }) {
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 12 }}>
                     <button
                         type="submit"
-                        style={{ ...buttonStyle, opacity: (submitting || preview) ? 0.6 : 1, cursor: preview ? 'not-allowed' : 'pointer' }}
+                        className="support-submit"
+                        style={{ opacity: (submitting || preview) ? 0.6 : 1, cursor: preview ? 'not-allowed' : 'pointer' }}
                         disabled={submitting || preview}
                     >
                         {submitting ? 'Sending…' : c.submitLabel}

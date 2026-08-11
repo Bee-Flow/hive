@@ -22,7 +22,8 @@
         "useDefineForClassFields": true,
         "forceConsistentCasingInFileNames": true,
         "paths": {
-            "@/*": ["./src/*"]
+            "@/*": ["./src/*"],
+            "@shared/*": ["./src/shared/*"]
         }
     },
     "include": [

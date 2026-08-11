@@ -2,14 +2,18 @@ import React, { useEffect, useRef, useState } from 'react';
 import AppIcon from '../../AppIcon';
 
 /**
- * Site/project switcher — sits at the top of the website-builder panel.
+ * Site/project switcher.
  *
- * Closed: a button showing the active site's name + chevron.
- * Open:   a popover listing every site, each with a hover row-menu
- *         (Rename / Delete) plus a "+ New site" footer.
+ * Standalone (default): a trigger button + popover listing every site, each
+ * with a hover row-menu (Rename / Delete) plus a "+ New site" footer.
+ * Embedded (`embedded` prop): renders ONLY the list + create footer, for
+ * hosts that already provide the trigger/popover (the builder TopBar's
+ * SiteVersionMenu).
  *
  * All API calls are owned by the parent (ProductWebsitePanel). This
- * component just renders + dispatches handler props.
+ * component just renders + dispatches handler props. Deleting is NOT
+ * confirmed here — `onDelete(site)` receives the full site object and the
+ * parent asks for confirmation (one dialog system shell-wide).
  */
 export default function SiteSwitcher({
     sites,
@@ -19,6 +23,7 @@ export default function SiteSwitcher({
     onCreate,
     onRename,
     onDelete,
+    embedded = false,
 }) {
     const [open, setOpen] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -59,13 +64,59 @@ export default function SiteSwitcher({
         setRenamingId(null);
     };
 
+    // Confirmation is the parent's job (shared ConfirmDialog); we pass the
+    // full site object so the dialog can name what's being deleted.
     const handleDelete = async (site) => {
-        const ok = window.confirm(
-            `Delete site "${site.name}"? This permanently removes all of its pages, blocks, and content.`
-        );
-        if (!ok) return;
-        await onDelete(site.id);
+        await onDelete(site);
     };
+
+    const listAndFooter = (
+        <>
+            {/* Site list */}
+            <ul className="max-h-72 overflow-y-auto py-1">
+                {sites.length === 0 && (
+                    <li className="px-3 py-2 text-xs text-[var(--text-muted)] italic">
+                        No sites yet
+                    </li>
+                )}
+                {sites.map(site => (
+                    <SiteRow
+                        key={site.id}
+                        site={site}
+                        isActive={site.id === activeSiteId}
+                        isLive={site.id === liveSiteId}
+                        isRenaming={renamingId === site.id}
+                        onPick={() => handlePick(site.id)}
+                        onStartRename={() => setRenamingId(site.id)}
+                        onCancelRename={() => setRenamingId(null)}
+                        onConfirmRename={(name) => handleRenameConfirm(site.id, name)}
+                        onDelete={() => handleDelete(site)}
+                    />
+                ))}
+            </ul>
+
+            {/* Create footer */}
+            <div className="border-t border-[var(--border-subtle)]">
+                {creating ? (
+                    <CreateSiteForm
+                        onConfirm={handleCreateConfirm}
+                        onCancel={() => setCreating(false)}
+                    />
+                ) : (
+                    <button
+                        type="button"
+                        onClick={() => setCreating(true)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[var(--accent-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+                    >
+                        <AppIcon name="Plus" className="w-3.5 h-3.5" />
+                        New site
+                    </button>
+                )}
+            </div>
+        </>
+    );
+
+    if (embedded) return listAndFooter;
 
     return (
         <div ref={rootRef} className="relative">
@@ -95,47 +146,7 @@ export default function SiteSwitcher({
                     className="absolute z-30 mt-1 left-0 right-0 rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-lg overflow-hidden"
                     style={{ minWidth: 220 }}
                 >
-                    {/* Site list */}
-                    <ul className="max-h-72 overflow-y-auto py-1">
-                        {sites.length === 0 && (
-                            <li className="px-3 py-2 text-xs text-[var(--text-muted)] italic">
-                                No sites yet
-                            </li>
-                        )}
-                        {sites.map(site => (
-                            <SiteRow
-                                key={site.id}
-                                site={site}
-                                isActive={site.id === activeSiteId}
-                                isLive={site.id === liveSiteId}
-                                isRenaming={renamingId === site.id}
-                                onPick={() => handlePick(site.id)}
-                                onStartRename={() => setRenamingId(site.id)}
-                                onCancelRename={() => setRenamingId(null)}
-                                onConfirmRename={(name) => handleRenameConfirm(site.id, name)}
-                                onDelete={() => handleDelete(site)}
-                            />
-                        ))}
-                    </ul>
-
-                    {/* Create footer */}
-                    <div className="border-t border-[var(--border-subtle)]">
-                        {creating ? (
-                            <CreateSiteForm
-                                onConfirm={handleCreateConfirm}
-                                onCancel={() => setCreating(false)}
-                            />
-                        ) : (
-                            <button
-                                type="button"
-                                onClick={() => setCreating(true)}
-                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[var(--accent-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
-                            >
-                                <AppIcon name="Plus" className="w-3.5 h-3.5" />
-                                New site
-                            </button>
-                        )}
-                    </div>
+                    {listAndFooter}
                 </div>
             )}
         </div>
@@ -180,7 +191,7 @@ function SiteRow({ site, isActive, isLive, isRenaming, onPick, onStartRename, on
                         Live
                     </span>
                 )}
-                <span className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                <span className="opacity-40 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
                     <IconBtn name="Pencil" title="Rename" onClick={(e) => { e.stopPropagation(); onStartRename(); }} />
                     <IconBtn name="Trash2" title="Delete" danger onClick={(e) => { e.stopPropagation(); onDelete(); }} />
                 </span>

@@ -9,8 +9,47 @@
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import EN_DEFAULTS from '../i18n/en-defaults';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { isPublicMarketingPath } from '../utils/cmsPublicRouting';
+
+/*
+ * EN_DEFAULTS is loaded ASYNCHRONOUSLY, on purpose. The static import put the
+ * whole English catalogue — ~400 KB raw, ~106 KB gzipped, 55% of the entry
+ * chunk — on the first-load path of every page, including the marketing site,
+ * which contains not a single t() call. The catalogue now arrives via
+ * `ensureI18nDefaults()`:
+ *
+ *   - every lazy surface that DOES translate (AuthedApp, the public pages)
+ *     is imported through `lazyWithI18n` (utils/lazyWithReload.js), which
+ *     awaits this promise alongside the chunk — so by the time any of their
+ *     t() calls run, DEFAULTS is populated and nothing ever renders a raw key;
+ *   - the provider also kicks the load on mount as a safety net and bumps a
+ *     state counter when it resolves, re-rendering any t() consumer that
+ *     somehow raced ahead of it.
+ *
+ * DEFAULTS is a live module-scope binding rather than React state because the
+ * provider-less fallback path in useTranslation() has no state to subscribe
+ * to — it reads whatever has arrived, which for every real surface is the
+ * full catalogue (see lazyWithI18n above).
+ */
+let DEFAULTS = {};
+let defaultsPromise = null;
+const defaultsListeners = new Set();
+export function ensureI18nDefaults() {
+    if (!defaultsPromise) {
+        defaultsPromise = import('../i18n/en-defaults').then((m) => {
+            DEFAULTS = m.default || {};
+            defaultsListeners.forEach((fn) => fn());
+            defaultsListeners.clear();
+        }).catch((e) => {
+            // A failed chunk leaves keys resolving to their string fallbacks —
+            // degraded but readable. Reset so a later surface can retry.
+            console.warn('[i18n] defaults chunk failed to load:', e?.message);
+            defaultsPromise = null;
+        });
+    }
+    return defaultsPromise;
+}
 
 const TranslationContext = createContext(null);
 
@@ -57,9 +96,34 @@ export function TranslationProvider({ children }) {
         const browserLang = (navigator.language || navigator.userLanguage || 'en').split('-')[0].toLowerCase();
         return browserLang || 'en';
     });
-    const [strings, setStrings] = useState(EN_DEFAULTS);
+    // Server strings only — the EN catalogue is layered underneath inside t()
+    // (`strings[key] ?? DEFAULTS[key]`), which makes the old `{...EN_DEFAULTS,
+    // ...data}` spreads unnecessary and lets the defaults arrive at any time.
+    const [strings, setStrings] = useState({});
     const [isLoading, setIsLoading] = useState(false);
     const loadedLocaleRef = useRef('en'); // defaults are already loaded
+
+    // Safety net for anything not routed through lazyWithI18n; bumping state
+    // re-renders every t() consumer once the catalogue lands.
+    const [, setDefaultsTick] = useState(0);
+    useEffect(() => {
+        let cancelled = false;
+        // …but not on the public marketing surface. Nothing under src/marketing
+        // calls t(), and every genuine consumer arrives through lazyWithI18n,
+        // which resolves the catalogue alongside its own chunk. Left ungated,
+        // this net pulled ~100 KB gzipped into the LCP window of a page that
+        // never reads a single key.
+        if (typeof window !== 'undefined' && isPublicMarketingPath(window.location.pathname)) {
+            return undefined;
+        }
+        if (Object.keys(DEFAULTS).length === 0) {
+            const bump = () => { if (!cancelled) setDefaultsTick((n) => n + 1); };
+            defaultsListeners.add(bump);
+            ensureI18nDefaults();
+            return () => { cancelled = true; defaultsListeners.delete(bump); };
+        }
+        return undefined;
+    }, []);
 
     const loadStrings = useCallback(async (loc) => {
         // Check cache first
@@ -68,7 +132,7 @@ export function TranslationProvider({ children }) {
             try {
                 const parsed = JSON.parse(cached);
                 if (parsed.data) {
-                    setStrings({ ...EN_DEFAULTS, ...parsed.data });
+                    setStrings(parsed.data);
                     loadedLocaleRef.current = loc;
                 }
             } catch { }
@@ -89,7 +153,7 @@ export function TranslationProvider({ children }) {
             const res = await authFetch(`${API_BASE}/api/languages/user/strings/${loc}`);
             if (res.ok) {
                 const data = await res.json();
-                setStrings({ ...EN_DEFAULTS, ...data });
+                setStrings(data);
                 loadedLocaleRef.current = loc;
                 // Cache for 5 minutes
                 localStorage.setItem(`${CACHE_PREFIX}${loc}`, JSON.stringify({
@@ -99,7 +163,7 @@ export function TranslationProvider({ children }) {
             }
         } catch (err) {
             console.warn('[i18n] Failed to load translations:', err.message);
-            // Keep EN_DEFAULTS as fallback — no need to set empty strings
+            // Keep the EN catalogue (layered in t()) as fallback — no need to set empty strings
         }
         setIsLoading(false);
     }, []);
@@ -120,7 +184,7 @@ export function TranslationProvider({ children }) {
             const res = await fetch(`${API_BASE}/api/languages/public/strings/${loc}`);
             if (res.ok) {
                 const data = await res.json();
-                setStrings({ ...EN_DEFAULTS, ...data });
+                setStrings(data);
                 loadedLocaleRef.current = loc;
                 localStorage.setItem(`${CACHE_PREFIX}${loc}`, JSON.stringify({ data, timestamp: Date.now() }));
                 return;
@@ -172,17 +236,17 @@ export function TranslationProvider({ children }) {
      * t(key, fallbackOrParams?, params?) — translate a key.
      *
      * Supported signatures:
-     *   t('org.cost')                          → strings['org.cost'] || EN_DEFAULTS['org.cost'] || 'org.cost'
-     *   t('org.cost', 'Cost')                  → string fallback used when key is missing in both server strings AND EN_DEFAULTS
+     *   t('org.cost')                          → strings['org.cost'] || DEFAULTS['org.cost'] || 'org.cost'
+     *   t('org.cost', 'Cost')                  → string fallback used when key is missing in both server strings AND the EN catalogue
      *   t('hello', { name: 'Tom' })            → interpolate "{name}" placeholders
      *   t('greet', 'Hi {name}', { name: 'T' }) → fallback + interpolation
      *
-     * Resolution order: server strings → EN_DEFAULTS → string fallback → raw key.
+     * Resolution order: server strings → EN catalogue (DEFAULTS) → string fallback → raw key.
      */
     const t = useCallback((key, fallbackOrParams, paramsArg) => {
         const hasStringFallback = typeof fallbackOrParams === 'string';
         const params = hasStringFallback ? paramsArg : fallbackOrParams;
-        let value = strings[key] || EN_DEFAULTS[key];
+        let value = strings[key] || DEFAULTS[key];
         if (value === undefined || value === null) {
             value = hasStringFallback ? fallbackOrParams : key;
         }
@@ -216,9 +280,24 @@ export function TranslationProvider({ children }) {
 export function useTranslation() {
     const ctx = useContext(TranslationContext);
     if (!ctx) {
-        // Graceful fallback if provider is not mounted
+        // Graceful fallback if the provider is not mounted (embeds, isolated
+        // tests). This used to return the raw KEY whenever the second argument
+        // was a params object — so `t('x.n_selected', { count: 2 })` rendered
+        // the literal "x.n_selected" on screen. Resolve against the EN catalogue and
+        // interpolate, exactly like the real t().
         return {
-            t: (key) => key,
+            t: (key, fallbackOrParams, paramsArg) => {
+                const hasStringFallback = typeof fallbackOrParams === 'string';
+                const params = hasStringFallback ? paramsArg : fallbackOrParams;
+                let value = DEFAULTS[key];
+                if (typeof value !== 'string') value = hasStringFallback ? fallbackOrParams : key;
+                if (params && typeof params === 'object') {
+                    for (const [k, v] of Object.entries(params)) {
+                        value = value.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+                    }
+                }
+                return value;
+            },
             locale: 'en',
             setLocale: () => { },
             isLoading: false,

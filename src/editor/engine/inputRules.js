@@ -5,12 +5,12 @@
  * Block rules ("# ", "- ", "1. ", "> ", "```") fire at the start of a plain
  * paragraph; typography rules ("--", "...", smart quotes) fire anywhere.
  */
-import { gitHubEmojis } from '@tiptap/extension-emoji';
-import { getNode, updateAt } from './doc.js';
+import { getNode, updateAt, parentPath } from './doc.js';
 import { inlineToTokens, tokensToInline } from './inline.js';
 import { textSelection, pos, isText, isCollapsed } from './selection.js';
-import { isTextblock } from '../model/schema.js';
+import { isTextblock, isCode } from '../model/schema.js';
 import * as T from './transforms.js';
+import * as Tbl from './tables.js';
 
 export function runInputRules(state, typed) {
   const sel = state.selection;
@@ -18,10 +18,31 @@ export function runInputRules(state, typed) {
   const { path, offset } = sel.anchor;
   const block = getNode(state.doc, path);
   if (!isTextblock(block.type)) return null;
+  // Code blocks ARE textblocks, so only the block rules were excluded (they
+  // check for `paragraph`). Smart quotes turned every string literal typed into
+  // a code block into ‘…’, `--` became an en dash in CLI flags, and `:rocket:`
+  // became an emoji — silently, and persisted.
+  if (isCode(block.type)) return null;
   const toks = inlineToTokens(block.content);
   const prefix = toks.slice(0, offset).map((t) => (t.node ? '￼' : t.ch)).join('');
 
-  if (block.type === 'paragraph') {
+  // Table cells are kept to a single paragraph on purpose (see the Enter
+  // handler in view.js); a block rule turning one into a list or a code block
+  // went around that.
+  const cellNode = getNode(state.doc, parentPath(path));
+  const inCell = cellNode?.type === 'tableCell';
+
+  // "=" as the first character of an OTHERWISE EMPTY table cell starts a
+  // formula, the way it does in a spreadsheet. The typed '=' must be the sole
+  // content of the cell (nothing after the caret, no other blocks): firing at
+  // the start of a non-empty cell handed the cell to setCellFormula, which
+  // used to wipe the existing content (S4).
+  if (inCell && typed === '=' && prefix === '=' && toks.length === 1
+    && block.type === 'paragraph' && (cellNode.content || []).length === 1) {
+    return Tbl.setCellFormula(clearPrefix(state, path, offset), '=');
+  }
+
+  if (block.type === 'paragraph' && !inCell) {
     if (typed === ' ') {
       const rule = BLOCK_RULES.find(([re]) => re.test(prefix));
       if (rule) { const cleared = clearPrefix(state, path, offset); return rule[1](cleared); }
@@ -56,22 +77,50 @@ const EMOJI = {
   ok: '🆗', rocket_ship: '🚀', clap: '👏', wave: '👋', pray: '🙏', muscle: '💪',
 };
 
-// Full GitHub shortcode set (same data the old editor used), built lazily and
-// merged over the curated EMOJI map above (which wins for the common aliases).
-let _emojiMap;
-function emojiFor(name) {
-  if (EMOJI[name]) return EMOJI[name];
-  if (!_emojiMap) {
-    _emojiMap = {};
-    try {
-      for (const it of gitHubEmojis || []) {
-        if (!it || !it.emoji) continue;
-        for (const sc of [it.name, ...(it.shortcodes || [])]) {
-          if (sc) { const k = sc.toLowerCase(); if (!(k in _emojiMap)) _emojiMap[k] = it.emoji; }
+// Full shortcode set, from @emoji-mart/data. Loaded lazily on the first
+// unrecognised :shortcode: so the emoji dataset never sits in the critical
+// path — the curated EMOJI map above answers the common ones synchronously and
+// always wins, so the usual cases never wait for this at all.
+//
+// Consequence worth knowing: the first *exotic* shortcode typed in a session
+// resolves to nothing and the user types it again. That is the price of not
+// shipping the dataset eagerly, and it beats the old arrangement, where this
+// table was the last thing keeping a whole editor framework in the bundle.
+let _emojiMap = null;
+let _emojiLoading = false;
+
+function loadFullEmojiSet() {
+  if (_emojiMap || _emojiLoading) return;
+  _emojiLoading = true;
+  import('@emoji-mart/data')
+    .then((mod) => {
+      const data = (mod && mod.default) || mod || {};
+      const map = {};
+      const nativeOf = (e) => (e && e.skins && e.skins[0] && e.skins[0].native) || null;
+      for (const [id, e] of Object.entries(data.emojis || {})) {
+        const native = nativeOf(e);
+        if (!native) continue;
+        const key = id.toLowerCase();
+        if (!(key in map)) map[key] = native;
+        for (const alias of e.aliases || []) {
+          const a = String(alias).toLowerCase();
+          if (!(a in map)) map[a] = native;
         }
       }
-    } catch (e) { /* degrade to the curated set */ }
-  }
+      // Top-level alias table (alias -> emoji id).
+      for (const [alias, id] of Object.entries(data.aliases || {})) {
+        const native = nativeOf((data.emojis || {})[id]);
+        const a = String(alias).toLowerCase();
+        if (native && !(a in map)) map[a] = native;
+      }
+      _emojiMap = map;
+    })
+    .catch(() => { _emojiMap = {}; /* degrade to the curated set */ });
+}
+
+function emojiFor(name) {
+  if (EMOJI[name]) return EMOJI[name];
+  if (!_emojiMap) { loadFullEmojiSet(); return null; }
   return _emojiMap[name] || null;
 }
 

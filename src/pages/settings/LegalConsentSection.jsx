@@ -68,7 +68,10 @@ export default function LegalConsentSection() {
 
     const documents = data?.documents || [];
     const optional = data?.optional || [];
-    const hasUpdates = documents.some(d => !d.upToDate);
+    // Connector-org members are Authorised Users covered by their
+    // organisation's acceptance — they never accept individually (BFSF-286).
+    const coveredByOrg = !!data?.coveredByOrganization;
+    const hasUpdates = !coveredByOrg && documents.some(d => !d.upToDate);
 
     const cardStyle = { borderColor: 'var(--border-default)', background: 'var(--bg-card, var(--bg-secondary))' };
 
@@ -109,6 +112,8 @@ export default function LegalConsentSection() {
                                         {doc.accepted ? (
                                             <><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                                                 {t('settings.consent_accepted_on', 'Accepted v{version} on {date}', { version: doc.acceptedVersion, date: fmtDate(doc.acceptedAt) })}</>
+                                        ) : coveredByOrg ? (
+                                            <><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> {t('settings.consent_covered_by_org', "Covered by your organisation's agreement")}</>
                                         ) : doc.acceptedVersion != null ? (
                                             <><AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> {t('settings.consent_update_available', 'Update available — please review')}</>
                                         ) : (

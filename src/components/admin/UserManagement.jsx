@@ -1,9 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Users, UserPlus, Shield, Trash2, Edit2, Key, Loader2, Tag, Image, Smile, Building, ChevronDown, Unlink, Cloud } from 'lucide-react';
+import { Users, UserPlus, Shield, Trash2, Edit2, Key, Loader2, Tag, Image, Smile, Building, ChevronDown, Unlink, Cloud, Activity } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 import { ORG_ROLES } from '../../config/orgRoles';
+import ConfirmDialog from '../shared/ConfirmDialog';
+import Modal from '../shared/Modal';
+import PeopleDirectory from './security/people/PeopleDirectory';
+
+// BFSF-286: registration provenance labels. Literal keys (no template
+// interpolation) so the i18nGuard static scan sees them.
+const ORG_SOURCE_KEY = {
+    direct: 'admin.org_source_direct',
+    admin: 'admin.org_source_admin',
+    nextcloud_connector: 'admin.org_source_nextcloud_connector',
+};
 
 const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, user: currentUser }) => {
     const { t } = useTranslation();
@@ -37,10 +48,48 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
     const [groupData, setGroupData] = useState({ id: '', name: '', description: '', permissions: [], roles: [], organizationId: '', allowedAgentTypes: [] });
     const [roleData, setRoleData] = useState({ id: '', name: '', description: '', permissions: [] });
 
+    // Destructive actions route through <ConfirmDialog/> rather than
+    // window.confirm: the native dialog is unstyled, unthemeable, blocks the
+    // event loop, and cannot be driven by a test.
+    const [confirmState, setConfirmState] = useState(null);
+    const askConfirm = (opts) => setConfirmState(opts);
+
+    const closeUserModal = () => { setShowAddUser(false); setShowEditUser(false); };
+    const closeOrgModal = () => { setShowAddOrg(false); setShowEditOrg(false); };
+    const closeGroupModal = () => { setShowAddGroup(false); setShowEditGroup(false); };
+    const closeRoleModal = () => { setShowAddRole(false); setShowEditRole(false); };
+
     // Load data on mount
     useEffect(() => {
         loadData();
     }, []);
+
+    // The caller's own organisation — used by the my-organization section and by
+    // the effect below that seeds its form.
+    const myOrg = organizations.find(o => userOrgIds.includes(o.id));
+
+    // Seed the org form when the my-organization section opens. This used to run
+    // as a `setTimeout(..., 0)` from inside the render path, so it re-fired on
+    // every render until the state landed.
+    useEffect(() => {
+        if (activeSection !== 'my-organization' || !myOrg || orgData.id === myOrg.id) return;
+        setOrgData({
+            id: myOrg.id,
+            name: myOrg.name,
+            description: myOrg.description || '',
+            tagline: myOrg.tagline || '',
+            address: myOrg.address || '',
+            email: myOrg.email || '',
+            phone: myOrg.phone || '',
+            website: myOrg.website || '',
+            kvk: myOrg.kvk || '',
+            vat: myOrg.vat || '',
+            logo: myOrg.logo || '',
+            footerText: myOrg.footerText || '',
+            defaultGroups: myOrg.defaultGroups || [],
+            allowSignup: !!myOrg.allowSignup,
+        });
+    }, [activeSection, myOrg?.id, orgData.id]);
 
     const loadData = async () => {
         setLoading(true);
@@ -142,8 +191,47 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
         }
     };
 
-    const handleDeleteUser = async (userId) => {
-        if (!window.confirm('Are you sure you want to delete this user?')) return;
+    // BFSF-274: org-admin escape hatch for users locked out of 2FA. Clears the
+    // enrollment; forced re-enrollment (when enabled) kicks in at next login.
+    const handleResetMfa = (user) => {
+        const name = user.displayName || user.username || user.id;
+        askConfirm({
+            title: t('admin.sec_reset_mfa_title', 'Reset two-factor authentication?'),
+            description: t('admin.reset_mfa_confirm', 'Reset two-factor authentication for {name}? Their authenticator and recovery codes stop working immediately; they will be asked to enroll again at their next sign-in.', { name }),
+            confirmLabel: t('admin.reset_mfa', 'Reset 2FA'),
+            destructive: true,
+            onConfirm: () => doResetMfa(user),
+        });
+    };
+
+    const doResetMfa = async (user) => {
+        try {
+            const res = await authFetch(`${API_BASE}/auth/users/${user.id}/mfa/reset`, { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                alert(data.wasEnabled === false
+                    ? t('admin.reset_mfa_not_enabled', 'This user has no two-factor authentication enabled.')
+                    : t('admin.reset_mfa_done', 'Two-factor authentication was reset.'));
+            } else {
+                alert(data.error || 'Failed to reset 2FA');
+            }
+        } catch (err) {
+            console.error('Failed to reset 2FA:', err);
+            alert('Failed to reset 2FA. Please try again.');
+        }
+    };
+
+    const handleDeleteUser = (userId) => {
+        askConfirm({
+            title: t('admin.sec_delete_user_title', 'Delete this user?'),
+            description: t('admin.sec_delete_user_desc', 'The account is removed and cannot be restored.'),
+            confirmLabel: t('admin.sec_delete', 'Delete'),
+            destructive: true,
+            onConfirm: () => doDeleteUser(userId),
+        });
+    };
+
+    const doDeleteUser = async (userId) => {
         try {
             const res = await authFetch(`${API_BASE}/auth/users/${userId}`, { method: 'DELETE' });
             if (res.ok) {
@@ -208,8 +296,17 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
         } catch (err) { setMessage({ type: 'error', text: 'Connection error' }); }
     };
 
-    const handleDeleteGroup = async (groupId) => {
-        if (!window.confirm('Are you sure you want to delete this group?')) return;
+    const handleDeleteGroup = (groupId) => {
+        askConfirm({
+            title: t('admin.sec_delete_group_title', 'Delete this group?'),
+            description: t('admin.sec_delete_group_desc', 'Members keep their accounts but lose whatever this group granted them.'),
+            confirmLabel: t('admin.sec_delete', 'Delete'),
+            destructive: true,
+            onConfirm: () => doDeleteGroup(groupId),
+        });
+    };
+
+    const doDeleteGroup = async (groupId) => {
         try {
             const res = await authFetch(`${API_BASE}/auth/groups/${groupId}`, { method: 'DELETE' });
             if (res.ok) { setMessage({ type: 'success', text: 'Group deleted' }); loadData(); }
@@ -263,8 +360,17 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
         } catch (err) { setMessage({ type: 'error', text: 'Connection error' }); }
     };
 
-    const handleDeleteRole = async (roleId) => {
-        if (!window.confirm('Are you sure you want to delete this role?')) return;
+    const handleDeleteRole = (roleId) => {
+        askConfirm({
+            title: t('admin.sec_delete_role_title', 'Delete this role?'),
+            description: t('admin.sec_delete_role_desc', 'Groups and users holding this role lose the permissions it granted.'),
+            confirmLabel: t('admin.sec_delete', 'Delete'),
+            destructive: true,
+            onConfirm: () => doDeleteRole(roleId),
+        });
+    };
+
+    const doDeleteRole = async (roleId) => {
         try {
             const res = await authFetch(`${API_BASE}/auth/roles/${roleId}`, { method: 'DELETE' });
             if (res.ok) { setMessage({ type: 'success', text: 'Role deleted' }); loadData(); }
@@ -287,6 +393,19 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
     };
 
     // --- Organization Actions ---
+    // NOT a duplicate of config/integrationCatalog.js — a STALE SUBSET of it.
+    // The catalog has 44 entries; this has 22. Nothing here is missing from the
+    // catalog, but the catalog additionally carries outlook-readonly,
+    // agent-search, browser-fetch, transcription, linkedin, github, signrequest,
+    // maps, google-groups, kb-search, webpages and all 11 nextcloud-* ids —
+    // none of which an org admin can toggle from this modal today.
+    //
+    // Deliberately NOT swapped for the catalog during the P2 coherence pass:
+    // that would double the org's configurable integration surface, which is a
+    // product decision, not a tidy-up. The catalog's header says it exists so
+    // IntegrationsAdminPanel and OrgFeatureTogglesPanel "stay in sync" — this
+    // modal is a third consumer that drifted. Needs an owner decision: adopt the
+    // catalog wholesale, or declare this list intentionally curated and say so.
     const ALL_INTEGRATIONS = [
         { id: 'gmail', label: 'Gmail' },
         { id: 'google-calendar', label: 'Calendar (Google)' },
@@ -362,8 +481,17 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
         } catch (err) { setMessage({ type: 'error', text: 'Connection error' }); }
     };
 
-    const handleDeleteOrg = async (orgId) => {
-        if (!window.confirm('Are you sure you want to delete this organization?')) return;
+    const handleDeleteOrg = (orgId) => {
+        askConfirm({
+            title: t('admin.sec_delete_org_title', 'Delete this organisation?'),
+            description: t('admin.sec_delete_org_desc', 'Its groups and settings go with it. Members keep their accounts but lose access to everything scoped to this organisation.'),
+            confirmLabel: t('admin.sec_delete', 'Delete'),
+            destructive: true,
+            onConfirm: () => doDeleteOrg(orgId),
+        });
+    };
+
+    const doDeleteOrg = async (orgId) => {
         try {
             const res = await authFetch(`${API_BASE}/auth/organizations/${orgId}`, { method: 'DELETE' });
             if (res.ok) { setMessage({ type: 'success', text: 'Organization deleted' }); loadData(); }
@@ -371,8 +499,17 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
         } catch (err) { setMessage({ type: 'error', text: 'Connection error' }); }
     };
 
-    const handleRemoveNcBinding = async (org) => {
-        if (!window.confirm(t('admin.org_nc_remove_confirm', { name: org.name }))) return;
+    const handleRemoveNcBinding = (org) => {
+        askConfirm({
+            title: t('admin.sec_nc_unlink_title', 'Disconnect this Nextcloud instance?'),
+            description: t('admin.org_nc_remove_confirm', { name: org.name }),
+            confirmLabel: t('admin.sec_nc_unlink_confirm', 'Disconnect'),
+            destructive: true,
+            onConfirm: () => doRemoveNcBinding(org),
+        });
+    };
+
+    const doRemoveNcBinding = async (org) => {
         try {
             const res = await authFetch(`${API_BASE}/auth/admin/nc-bindings/org/${org.id}`, { method: 'DELETE' });
             if (res.ok) { setMessage({ type: 'success', text: t('admin.org_nc_remove_success') }); loadData(); }
@@ -428,75 +565,16 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                     <>
                         {/* Users Section */}
                         {activeSection === 'users' && (
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between mb-6">
-                                    <div>
-                                        <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Users</h3>
-                                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Manage user accounts</p>
-                                    </div>
-                                    {canManageUsers && <button onClick={openAddUser} className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium" style={{ background: 'var(--accent-primary)', color: 'white' }}>
-                                        <UserPlus className="w-4 h-4" /> Add User
-                                    </button>}
-                                </div>
-                                <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-                                    <table className="w-full">
-                                        <thead><tr style={{ background: 'var(--bg-tertiary)' }}>
-                                            <th className="text-left px-4 py-3 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>User</th>
-                                            <th className="text-right px-4 py-3 text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Actions</th>
-                                        </tr></thead>
-                                        <tbody>
-                                            {users.map(user => (
-                                                <tr key={user.id} className="border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-                                                    <td className="px-4 py-3">
-                                                        <div className="flex items-center gap-3">
-                                                            {user.avatarType === 'emoji' && user.avatar ? (
-                                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg" style={{ background: 'var(--bg-tertiary)' }}>
-                                                                    {user.avatar}
-                                                                </div>
-                                                            ) : user.avatarType === 'image' && user.avatar ? (
-                                                                <img src={user.avatar.startsWith('/') ? `${API_BASE}${user.avatar}` : user.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
-                                                            ) : (
-                                                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium" style={{ background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white' }}>
-                                                                    {(user.displayName?.[0] || '?').toUpperCase()}
-                                                                </div>
-                                                            )}
-                                                            <div>
-                                                                <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{user.displayName}</p>
-                                                                <div className="flex items-center gap-2 mt-0.5">
-                                                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{user.username || user.id}</p>
-                                                                    {user.email && (
-                                                                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>• {user.email}</span>
-                                                                    )}
-                                                                    {(user.groups || []).length > 0 && (
-                                                                        <div className="flex flex-wrap gap-1">
-                                                                            {(user.groups || []).map(gid => {
-                                                                                const group = groups.find(g => g.id === gid);
-                                                                                return group ? (
-                                                                                    <span key={gid} className="text-xs px-1.5 py-0 rounded-full" style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', fontSize: '10px' }}>
-                                                                                        {group.name}
-                                                                                    </span>
-                                                                                ) : null;
-                                                                            })}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right">
-                                                        {!user.isSystem && user.id !== 'admin' && (
-                                                            <div className="flex items-center justify-end gap-2">
-                                                                <button onClick={() => openEditUser(user)} className="p-1.5 rounded hover:bg-blue-500/10 text-blue-500"><Edit2 className="w-4 h-4" /></button>
-                                                                <button onClick={() => handleDeleteUser(user.id)} className="p-1.5 rounded hover:bg-red-500/10 text-red-500"><Trash2 className="w-4 h-4" /></button>
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
+                            <PeopleDirectory
+                                users={users}
+                                groups={groups}
+                                organizations={organizations}
+                                canManageUsers={canManageUsers}
+                                onAddUser={openAddUser}
+                                onEditUser={openEditUser}
+                                onResetMfa={handleResetMfa}
+                                onDeleteUser={(user) => handleDeleteUser(user.id)}
+                            />
                         )}
 
                         {/* Organizations Section */}
@@ -520,6 +598,8 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                                         <h4 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{org.name}</h4>
                                                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{org.description}</p>
                                                         {org.nc_instance_id && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{t('admin.org_nc_bound_label')}: {org.nc_base_url || org.nc_instance_id}</p>}
+                                                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{t('admin.org_source_label')}: {t(ORG_SOURCE_KEY[org.registrationSource] || 'admin.org_source_unknown')}</p>
+                                                        {org.registrationSource === 'nextcloud_connector' && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{t('admin.org_terms_channel')}: {t('admin.org_terms_channel_connector')}</p>}
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 opacity-100 xl:opacity-0 xl:group-hover:opacity-100">
@@ -566,6 +646,7 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                                             <td className="px-4 py-2 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{org.nc_instance_id}</td>
                                                             <td className="px-4 py-2" style={{ color: 'var(--text-muted)' }}>{org.nc_provisioned_at ? new Date(org.nc_provisioned_at).toLocaleDateString() : '—'}</td>
                                                             <td className="px-4 py-2 text-right whitespace-nowrap">
+                                                                <button onClick={() => { if (onNavigate) onNavigate(`admin/security/connector-health/${org.id}`); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-teal-600 hover:bg-teal-500/10 font-medium"><Activity className="w-4 h-4" /> {t('admin.ch_health_link', 'Health')}</button>
                                                                 <button onClick={() => handleRemoveNcBinding(org)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-amber-600 hover:bg-amber-500/10 font-medium"><Unlink className="w-4 h-4" /> {t('admin.org_nc_remove_title')}</button>
                                                             </td>
                                                         </tr>
@@ -706,17 +787,10 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                         )}
 
                         {/* My Organization Section (for org-scoped users) */}
-                        {activeSection === 'my-organization' && (() => {
-                            const myOrg = organizations.find(o => userOrgIds.includes(o.id));
-                            if (!myOrg) return <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>No organization found</div>;
-                            // Use orgData for editing — auto-populate when switching to this tab
-                            const isEditing = orgData.id === myOrg.id;
-                            const editData = isEditing ? orgData : { id: myOrg.id, name: myOrg.name, description: myOrg.description || '', tagline: myOrg.tagline || '', address: myOrg.address || '', email: myOrg.email || '', phone: myOrg.phone || '', website: myOrg.website || '', kvk: myOrg.kvk || '', vat: myOrg.vat || '', logo: myOrg.logo || '', footerText: myOrg.footerText || '', defaultGroups: myOrg.defaultGroups || [], allowSignup: !!myOrg.allowSignup };
-                            if (!isEditing) {
-                                // Trigger state update on first render
-                                setTimeout(() => setOrgData(editData), 0);
-                            }
-                            return (
+                        {activeSection === 'my-organization' && (
+                            !myOrg ? (
+                                <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>No organization found</div>
+                            ) : (
                                 <div className="max-w-2xl">
                                     <div className="mb-6">
                                         <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>My Organization</h3>
@@ -777,17 +851,38 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                         </div>
                                     </div>
                                 </div>
-                            );
-                        })()}
+                            )
+                        )}
                     </>
                 )}
             </div>
 
             {/* User Modal */}
-            {(showAddUser || showEditUser) && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="w-full max-w-md p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-auto" style={{ background: 'var(--bg-secondary)' }}>
-                        <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>{showEditUser ? 'Edit User' : 'Add New User'}</h3>
+            <Modal
+                open={showAddUser || showEditUser}
+                onClose={closeUserModal}
+                title={showEditUser ? t('admin.sec_user_edit_title', 'Edit user') : t('admin.sec_user_add_title', 'Add new user')}
+                size="md"
+                footer={
+                    <>
+                        <button onClick={closeUserModal} className="px-4 py-2 rounded-lg font-medium text-[var(--text-secondary)]">
+                            {t('admin.sec_cancel', 'Cancel')}
+                        </button>
+                        {(() => {
+                            const canSubmit = showEditUser || (userData.username && userData.displayName && userData.password);
+                            return (
+                                <button
+                                    onClick={showEditUser ? handleUpdateUser : handleAddUser}
+                                    disabled={!canSubmit}
+                                    className="px-4 py-2 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--accent-primary)] text-white"
+                                >
+                                    {showEditUser ? t('admin.sec_save', 'Save') : t('admin.sec_user_add_submit', 'Add user')}
+                                </button>
+                            );
+                        })()}
+                    </>
+                }
+            >
                         <div className="space-y-4">
                             {/* Avatar Picker */}
                             <div>
@@ -983,31 +1078,28 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                 </div>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button onClick={() => { setShowAddUser(false); setShowEditUser(false); }} className="px-4 py-2 rounded-lg font-medium" style={{ color: 'var(--text-secondary)' }}>Cancel</button>
-                            {(() => {
-                                const canSubmit = showEditUser || (userData.username && userData.displayName && userData.password);
-                                return (
-                                    <button
-                                        onClick={showEditUser ? handleUpdateUser : handleAddUser}
-                                        disabled={!canSubmit}
-                                        className="px-4 py-2 rounded-lg font-medium"
-                                        style={{ background: 'var(--accent-primary)', color: 'white', opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? 'pointer' : 'not-allowed' }}
-                                    >
-                                        {showEditUser ? 'Save' : 'Add User'}
-                                    </button>
-                                );
-                            })()}
-                        </div>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             {/* Organization Modal */}
-            {(showAddOrg || showEditOrg) && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="w-full max-w-lg p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-auto" style={{ background: 'var(--bg-secondary)' }}>
-                        <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>{showEditOrg ? 'Edit Organization' : 'Add New Organization'}</h3>
+            <Modal
+                open={showAddOrg || showEditOrg}
+                onClose={closeOrgModal}
+                title={showEditOrg ? t('admin.sec_org_edit_title', 'Edit organisation') : t('admin.sec_org_add_title', 'Add new organisation')}
+                size="lg"
+                footer={
+                    <>
+                        <button onClick={closeOrgModal} className="px-4 py-2 rounded-lg font-medium text-[var(--text-secondary)]">
+                            {t('admin.sec_cancel', 'Cancel')}
+                        </button>
+                        <button
+                            onClick={showEditOrg ? handleUpdateOrg : handleAddOrg}
+                            className="px-4 py-2 rounded-lg font-medium bg-[var(--accent-primary)] text-white"
+                        >
+                            {showEditOrg ? t('admin.sec_save', 'Save') : t('admin.sec_org_add_submit', 'Add organisation')}
+                        </button>
+                    </>
+                }
+            >
                         <div className="space-y-4">
                             {/* Company Logo */}
                             <div>
@@ -1134,19 +1226,28 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                 </div>
                             )}
                         </div>
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button onClick={() => { setShowAddOrg(false); setShowEditOrg(false); }} className="px-4 py-2 rounded-lg font-medium" style={{ color: 'var(--text-secondary)' }}>Cancel</button>
-                            <button onClick={showEditOrg ? handleUpdateOrg : handleAddOrg} className="px-4 py-2 rounded-lg font-medium" style={{ background: 'var(--accent-primary)', color: 'white' }}>{showEditOrg ? 'Save' : 'Add Organization'}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             {/* Group Modal */}
-            {(showAddGroup || showEditGroup) && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="w-full max-w-md p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-auto" style={{ background: 'var(--bg-secondary)' }}>
-                        <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>{showEditGroup ? 'Edit Group' : 'Add New Group'}</h3>
+            <Modal
+                open={showAddGroup || showEditGroup}
+                onClose={closeGroupModal}
+                title={showEditGroup ? t('admin.sec_group_edit_title', 'Edit group') : t('admin.sec_group_add_title', 'Add new group')}
+                size="md"
+                footer={
+                    <>
+                        <button onClick={closeGroupModal} className="px-4 py-2 rounded-lg font-medium text-[var(--text-secondary)]">
+                            {t('admin.sec_cancel', 'Cancel')}
+                        </button>
+                        <button
+                            onClick={showEditGroup ? handleUpdateGroup : handleAddGroup}
+                            className="px-4 py-2 rounded-lg font-medium bg-[var(--accent-primary)] text-white"
+                        >
+                            {showEditGroup ? t('admin.sec_save', 'Save') : t('admin.sec_group_add_submit', 'Add group')}
+                        </button>
+                    </>
+                }
+            >
                         <div className="space-y-4">
                             {!showEditGroup && <div><label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Group Name</label><input type="text" value={groupData.name} onChange={e => setGroupData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 rounded-lg border bg-transparent outline-none focus:border-[var(--accent-primary)]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} placeholder="Editors" /></div>}
 
@@ -1200,19 +1301,28 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                 </div>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button onClick={() => { setShowAddGroup(false); setShowEditGroup(false); }} className="px-4 py-2 rounded-lg font-medium" style={{ color: 'var(--text-secondary)' }}>Cancel</button>
-                            <button onClick={showEditGroup ? handleUpdateGroup : handleAddGroup} className="px-4 py-2 rounded-lg font-medium" style={{ background: 'var(--accent-primary)', color: 'white' }}>{showEditGroup ? 'Save' : 'Add Group'}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             {/* Role Modal */}
-            {(showAddRole || showEditRole) && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="w-full max-w-lg p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-auto" style={{ background: 'var(--bg-secondary)' }}>
-                        <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>{showEditRole ? 'Edit Role' : 'Add New Role'}</h3>
+            <Modal
+                open={showAddRole || showEditRole}
+                onClose={closeRoleModal}
+                title={showEditRole ? t('admin.sec_role_edit_title', 'Edit role') : t('admin.sec_role_add_title', 'Add new role')}
+                size="lg"
+                footer={
+                    <>
+                        <button onClick={closeRoleModal} className="px-4 py-2 rounded-lg font-medium text-[var(--text-secondary)]">
+                            {t('admin.sec_cancel', 'Cancel')}
+                        </button>
+                        <button
+                            onClick={showEditRole ? handleUpdateRole : handleAddRole}
+                            className="px-4 py-2 rounded-lg font-medium bg-[var(--accent-primary)] text-white"
+                        >
+                            {showEditRole ? t('admin.sec_save', 'Save') : t('admin.sec_role_add_submit', 'Add role')}
+                        </button>
+                    </>
+                }
+            >
                         <div className="space-y-4">
                             {!showEditRole && <div><label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Role Name</label><input type="text" value={roleData.name} onChange={e => setRoleData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 rounded-lg border bg-transparent outline-none focus:border-[var(--accent-primary)]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} placeholder="Editor" /></div>}
                             <div><label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Description</label><input type="text" value={roleData.description} onChange={e => setRoleData(p => ({ ...p, description: e.target.value }))} className="w-full px-3 py-2 rounded-lg border bg-transparent outline-none focus:border-[var(--accent-primary)]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} placeholder="Can edit content" /></div>
@@ -1247,13 +1357,22 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                 </div>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button onClick={() => { setShowAddRole(false); setShowEditRole(false); }} className="px-4 py-2 rounded-lg font-medium" style={{ color: 'var(--text-secondary)' }}>Cancel</button>
-                            <button onClick={showEditRole ? handleUpdateRole : handleAddRole} className="px-4 py-2 rounded-lg font-medium" style={{ background: 'var(--accent-primary)', color: 'white' }}>{showEditRole ? 'Save' : 'Add Role'}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            </Modal>
+
+            <ConfirmDialog
+                open={!!confirmState}
+                title={confirmState?.title || ''}
+                description={confirmState?.description}
+                confirmLabel={confirmState?.confirmLabel}
+                cancelLabel={t('admin.sec_cancel', 'Cancel')}
+                destructive={confirmState?.destructive}
+                onConfirm={async () => {
+                    const action = confirmState?.onConfirm;
+                    setConfirmState(null);
+                    if (action) await action();
+                }}
+                onCancel={() => setConfirmState(null)}
+            />
         </div>
     );
 };

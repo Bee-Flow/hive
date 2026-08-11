@@ -109,7 +109,25 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
         if (!m) return { provider: null, body: msg };
         return { provider: m[1].toLowerCase(), body: m[2] };
     };
-    const startReconnect = (provider) => {
+    const startReconnect = async (provider) => {
+        // BFSF-255: Google reconnects go through the CONNECT flow (popup +
+        // vault), NEVER the SSO LOGIN flow — /auth/login/google replaces the
+        // session and can silently create a NEW user for password accounts.
+        // On failure we send the user to the Connections settings instead of
+        // falling back to that trap.
+        if (provider === 'google') {
+            try {
+                const res = await authFetch(`${API_BASE}/api/integrations/google/auth-url`);
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.url) {
+                    const [w, h] = [600, 700];
+                    window.open(data.url, 'google-oauth', `width=${w},height=${h},left=${(screen.width - w) / 2},top=${(screen.height - h) / 2}`);
+                    return;
+                }
+            } catch (_) { /* fall through to the settings page below */ }
+            window.open('/app/settings?tab=integrations', '_blank', 'noopener');
+            return;
+        }
         // Pop a fresh tab so the user keeps the notifications panel open.
         const url = `/auth/login/${encodeURIComponent(provider)}?returnTo=${encodeURIComponent(window.location.pathname || '/')}`;
         window.open(url, '_blank', 'noopener');

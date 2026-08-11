@@ -21,10 +21,41 @@ export default function SocialProof({ data }) {
     // the strip so the filter rule reads it without rebuilding styles.
     const tint = Number.isFinite(data.logoTint) ? data.logoTint : 0;
 
+    // 'numbers' variant: a hard-numbers row (stars, users, uptime — the
+    // OSS trust stack) renders above the logo wall. Absent/unknown ⇒
+    // classic wall only.
+    const variant = data.variant === 'numbers' ? 'numbers' : 'classic';
+    const stats = Array.isArray(data.stats) ? data.stats : [];
+    const showStats = variant === 'numbers' && (stats.length > 0 || isEditable());
+
     return (
         <SectionFrame id="socialProof" name="Social proof" enabled={data.enabled}>
             <section className="social-proof">
                 <div className="container">
+                    {showStats ? (
+                        <div className="social-proof-stats reveal">
+                            {stats.map((s, i) => (
+                                <div key={i} className="social-proof-stat">
+                                    <EditableText
+                                        as="div"
+                                        path={`socialProof.stats.${i}.number`}
+                                        placeholder="4.7★"
+                                        className="social-proof-stat-number tnum"
+                                    >
+                                        {s.number || ''}
+                                    </EditableText>
+                                    <EditableText
+                                        as="div"
+                                        path={`socialProof.stats.${i}.label`}
+                                        placeholder="G2 rating"
+                                        className="social-proof-stat-label"
+                                    >
+                                        {s.label || ''}
+                                    </EditableText>
+                                </div>
+                            ))}
+                        </div>
+                    ) : null}
                     {showEyebrow ? (
                         <div
                             className="social-proof-eyebrow"

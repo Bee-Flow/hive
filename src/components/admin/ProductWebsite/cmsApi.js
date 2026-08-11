@@ -13,15 +13,19 @@ export const cmsApi = {
     // ── Site management (no siteId required) ──
     listSites:           ()                            => `${root}/sites`,
     createSite:          ()                            => `${root}/sites`,
-    // Import a previously-exported site (POST JSON body). Always
-    // creates a NEW siteId — never overwrites an existing one.
+    // Import a previously-exported site. Accepts either a multipart .zip
+    // (field name `file`) or a raw JSON body. Always creates a NEW siteId —
+    // never overwrites an existing one.
     importSite:          ()                            => `${root}/sites/import`,
     // /sites/:siteId → also serves as the SiteDoc / admin payload endpoint
     // for that site (replaces /admin/site).
     site:                (siteId)                      => `${root}/sites/${siteId}`,
-    // Site export — GET returns the full SiteDoc + every PageDoc as a
-    // downloadable JSON file (Content-Disposition: attachment).
-    siteExport:          (siteId)                      => `${root}/sites/${siteId}/export`,
+    // Site export (Content-Disposition: attachment). 'zip' is the complete
+    // backup — the bundle plus every referenced image/video; 'json' is the
+    // bundle alone, which references assets by key and therefore only
+    // reconstitutes fully on an install that shares the storage bucket.
+    // Both carry every page, every block and every language.
+    siteExport:          (siteId, format = 'zip')      => `${root}/sites/${siteId}/export?format=${encodeURIComponent(format)}`,
     // Duplicate a site into a new version of the same version group
     // (POST, no body). Returns { id, name, versionGroupId, versionName }.
     siteDuplicate:       (siteId)                      => `${root}/sites/${siteId}/duplicate`,

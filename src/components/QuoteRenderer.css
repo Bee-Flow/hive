@@ -1,3 +1,14 @@
+/* SCOPING NOTE — read before adding a rule here.
+   Every selector in this file must be scoped to `.quote-document` (the
+   wrapper QuoteRenderer.jsx renders all quote content into).
+
+   `.feature-card`, `.features-grid` and `.feature-card h3` used to be
+   declared globally here. The marketing site uses those exact class names,
+   so on every published page the quote stylesheet won any property the
+   marketing rules did not also declare: feature-card titles rendered in
+   #3b82f6 blue and card text hyphenated mid-word ("sum-mariser",
+   "in-cluded") because marketing sets neither `color` nor `hyphens` there.
+   A generic class name in an unscoped stylesheet reaches the whole app. */
 /* QuoteRenderer - Professional Quote/Offerte Styling */
 /* A4 paper format: 210mm x 297mm */
 
@@ -331,14 +342,14 @@
     overflow-wrap: break-word;
 }
 
-.features-grid {
+.quote-document .features-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
     margin-top: 10px;
 }
 
-.feature-card {
+.quote-document .feature-card {
     background: #f8fafc;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
@@ -352,7 +363,7 @@
     margin-bottom: 4px;
 }
 
-.feature-card h3 {
+.quote-document .feature-card h3 {
     font-size: 11px;
     font-weight: 600;
     color: #3b82f6;
@@ -362,7 +373,7 @@
     hyphens: auto;
 }
 
-.feature-card p {
+.quote-document .feature-card p {
     font-size: 9px;
     color: #6b7280;
     margin: 0;
@@ -503,7 +514,7 @@
 }
 
 /* Feature Card - Keep intact */
-.feature-card {
+.quote-document .feature-card {
     page-break-inside: avoid;
     break-inside: avoid;
     background: #f8fafc;

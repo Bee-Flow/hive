@@ -10,6 +10,7 @@ import {
 import MeetingPicker from '../../components/meeting-picker/MeetingPicker';
 import { useCapture } from '../meeting-notes/capture/CaptureContext';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
+import useTranslation from '../../hooks/useTranslation';
 
 /* ── Source type metadata ─────────────────────────────────────── */
 export const SOURCE_META = {
@@ -25,9 +26,13 @@ export const SOURCE_META = {
     meeting:  { color: '#ec4899', bg: 'rgba(236,72,153,0.1)', label: 'Meeting', Icon: Mic },
 };
 
-const STAGE_LABEL = {
-    queued: 'Queued…', extracting: 'Reading…', fetching: 'Fetching…', embedding: 'Indexing…',
-};
+// Ingest stage → label. Built per-render from `t` (the panel ships in Dutch too).
+const stageLabel = (t, stage) => ({
+    queued: t('notebooks.stage_queued', 'Queued…'),
+    extracting: t('notebooks.stage_extracting', 'Reading…'),
+    fetching: t('notebooks.stage_fetching', 'Fetching…'),
+    embedding: t('notebooks.stage_embedding', 'Indexing…'),
+}[stage] || t('notebooks.stage_processing', 'Processing…'));
 
 const shimmerStyle = {
     background: 'linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 50%, var(--bg-tertiary) 75%)',
@@ -35,11 +40,11 @@ const shimmerStyle = {
     animation: 'shimmer 1.6s infinite',
 };
 
-const ADD_BUTTONS = [
-    { key: 'file',    label: 'File',    Icon: Upload,  accent: '#3b82f6', desc: 'PDF, Word, Excel, CSV…' },
-    { key: 'url',     label: 'URL',     Icon: Globe,   accent: '#f59e0b', desc: 'Fetch a web page' },
-    { key: 'text',    label: 'Text',    Icon: Type,    accent: '#10b981', desc: 'Paste any text' },
-    { key: 'meeting', label: 'Notes',   Icon: Mic,     accent: '#ec4899', desc: 'From a meeting note' },
+const addButtons = (t) => [
+    { key: 'file',    label: t('notebooks.src_file', 'File'),  Icon: Upload, accent: '#3b82f6', desc: t('notebooks.src_file_desc', 'PDF, Word, Excel, CSV…') },
+    { key: 'url',     label: t('notebooks.src_url', 'URL'),    Icon: Globe,  accent: '#f59e0b', desc: t('notebooks.src_url_desc', 'Fetch a web page') },
+    { key: 'text',    label: t('notebooks.src_text', 'Text'),  Icon: Type,   accent: '#10b981', desc: t('notebooks.src_text_desc', 'Paste any text') },
+    { key: 'meeting', label: t('notebooks.src_notes', 'Notes'), Icon: Mic,   accent: '#ec4899', desc: t('notebooks.src_notes_desc', 'From a meeting note') },
 ];
 
 // Max characters for a pasted-text source (server still re-validates on ingest).
@@ -49,7 +54,7 @@ const PASTE_MAX_CHARS = 500000;
 function SourceCard({
     source, onDelete, onRetry, onCancel, onPreview, onRename,
     selectable, selected, onToggleSelect,
-    onDragStart, onDragOver, onDrop, dragging,
+    onDragStart, onDragOver, onDrop, dragging, t,
 }) {
     const meta  = SOURCE_META[source.type] || SOURCE_META.file;
     const { Icon } = meta;
@@ -139,20 +144,20 @@ function SourceCard({
                     {isProcessing && (
                         <span className="flex items-center gap-0.5 text-[9px] font-medium" style={{ color: 'var(--warning, #d97706)' }}>
                             <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                            {STAGE_LABEL[source.stage] || 'Processing…'}
+                            {stageLabel(t, source.stage)}
                         </span>
                     )}
                     {isReady && source.wordCount > 0 && (
-                        <span className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>{source.wordCount.toLocaleString()} words</span>
+                        <span className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>{t('notebooks.n_words', { count: source.wordCount.toLocaleString() })}</span>
                     )}
                     {isDuplicate && (
-                        <span className="flex items-center gap-0.5 text-[9px] font-medium px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }} title="Duplicate of an existing source">
-                            <Copy className="w-2.5 h-2.5" /> Duplicate
+                        <span className="flex items-center gap-0.5 text-[9px] font-medium px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }} title={t('notebooks.duplicate_title', 'Duplicate of an existing source')}>
+                            <Copy className="w-2.5 h-2.5" /> {t('notebooks.duplicate', 'Duplicate')}
                         </span>
                     )}
                     {isError && (
                         <span className="flex items-center gap-0.5 text-[9px] font-medium" style={{ color: 'var(--error, #ef4444)' }}>
-                            <AlertCircle className="w-2.5 h-2.5" /> Failed
+                            <AlertCircle className="w-2.5 h-2.5" /> {t('notebooks.failed', 'Failed')}
                         </span>
                     )}
                 </div>
@@ -161,7 +166,7 @@ function SourceCard({
                     <div className="mt-1">
                         <button onClick={() => setShowDetails(v => !v)} className="flex items-center gap-0.5 text-[9px] font-medium hover:underline" style={{ color: 'var(--error, #ef4444)' }}>
                             {showDetails ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
-                            {showDetails ? 'Hide details' : 'Show details'}
+                            {showDetails ? t('notebooks.hide_details', 'Hide details') : t('notebooks.show_details', 'Show details')}
                         </button>
                         {showDetails && (
                             <pre className="mt-1 text-[9px] leading-snug whitespace-pre-wrap break-words p-1.5 rounded" style={{ color: 'var(--error, #ef4444)', background: 'rgba(239,68,68,0.08)', maxHeight: '120px', overflow: 'auto' }}>{source.error}</pre>
@@ -172,13 +177,13 @@ function SourceCard({
                 {(isError || isProcessing) && (
                     <div className="flex items-center gap-1 mt-1.5">
                         {canRetry && (
-                            <button onClick={() => onRetry?.(source.id)} className="flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(59,130,246,0.1)', color: '#2563eb' }} title="Retry ingestion">
-                                <RotateCw className="w-2.5 h-2.5" /> Retry
+                            <button onClick={() => onRetry?.(source.id)} className="flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(59,130,246,0.1)', color: '#2563eb' }} title={t('notebooks.retry_ingestion', 'Retry ingestion')}>
+                                <RotateCw className="w-2.5 h-2.5" /> {t('notebooks.retry', 'Retry')}
                             </button>
                         )}
                         {isProcessing && onCancel && (
-                            <button onClick={() => onCancel(source.id)} className="flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }} title="Cancel ingestion">
-                                <XCircle className="w-2.5 h-2.5" /> Cancel
+                            <button onClick={() => onCancel(source.id)} className="flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }} title={t('notebooks.cancel_ingestion', 'Cancel ingestion')}>
+                                <XCircle className="w-2.5 h-2.5" /> {t('common.cancel', 'Cancel')}
                             </button>
                         )}
                     </div>
@@ -192,17 +197,19 @@ function SourceCard({
             </div>
 
             {/* hover actions */}
+            {/* focus-within keeps these reachable by keyboard: opacity-0 alone
+                made every per-source action mouse-only. */}
             {!selectable && (
-                <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all">
                     {canPreview && (
-                        <button onClick={() => onPreview?.(source)} className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)]" title="Preview">
+                        <button onClick={() => onPreview?.(source)} className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)]" title={t('notebooks.preview', 'Preview')} aria-label={t('notebooks.preview', 'Preview')}>
                             <Eye className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
                         </button>
                     )}
-                    <button onClick={() => setEditing(true)} className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)]" title="Rename">
+                    <button onClick={() => setEditing(true)} className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)]" title={t('notebooks.rename', 'Rename')} aria-label={t('notebooks.rename', 'Rename')}>
                         <Pencil className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
                     </button>
-                    <button onClick={() => onDelete(source.id)} className="p-1 rounded-lg hover:bg-red-500/10" title="Remove source">
+                    <button onClick={() => onDelete(source.id)} className="p-1 rounded-lg hover:bg-red-500/10" title={t('notebooks.remove_source', 'Remove source')} aria-label={t('notebooks.remove_source', 'Remove source')}>
                         <Trash2 className="w-3 h-3 text-red-400" />
                     </button>
                 </div>
@@ -212,7 +219,7 @@ function SourceCard({
 }
 
 /* ── Preview modal ─────────────────────────────────────────────── */
-function SourcePreviewModal({ preview, onClose }) {
+function SourcePreviewModal({ preview, onClose, t }) {
     useEffect(() => {
         const h = (e) => { if (e.key === 'Escape') onClose(); };
         document.addEventListener('keydown', h);
@@ -231,7 +238,7 @@ function SourcePreviewModal({ preview, onClose }) {
                     ) : preview.content ? (
                         <pre className="text-[12px] leading-relaxed whitespace-pre-wrap break-words" style={{ color: 'var(--text-secondary)', fontFamily: 'inherit' }}>{preview.content}</pre>
                     ) : (
-                        <p className="text-[12px] text-center py-10" style={{ color: 'var(--text-muted)' }}>No preview available for this source.</p>
+                        <p className="text-[12px] text-center py-10" style={{ color: 'var(--text-muted)' }}>{t('notebooks.no_preview', 'No preview available for this source.')}</p>
                     )}
                 </div>
             </div>
@@ -241,21 +248,21 @@ function SourcePreviewModal({ preview, onClose }) {
 }
 
 /* ── MeetingSourcePanel ────────────────────────────────────────── */
-function MeetingSourcePanel({ meetingMode, onChangeMode, onAddMeeting, onClose }) {
+function MeetingSourcePanel({ meetingMode, onChangeMode, onAddMeeting, onClose, t }) {
     const { openCapture } = useCapture();
     return (
         <div className="shrink-0 mx-3 mb-2 rounded-xl border p-3 space-y-3"
              style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', animation: 'fadeSlideDown 0.18s ease-out' }}>
             <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent-primary)' }}>Meeting Notes</span>
-                <button onClick={onClose} className="p-0.5 rounded hover:bg-black/10 transition-colors">
+                <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent-primary)' }}>{t('notebooks.meeting_notes', 'Meeting Notes')}</span>
+                <button onClick={onClose} className="p-0.5 rounded hover:bg-black/10 transition-colors" aria-label={t('notebooks.close', 'Close')}>
                     <X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
                 </button>
             </div>
             <div>
-                <p className="text-[9px] uppercase font-bold tracking-wide mb-1" style={{ color: 'var(--text-tertiary)' }}>Include as source</p>
+                <p className="text-[9px] uppercase font-bold tracking-wide mb-1" style={{ color: 'var(--text-tertiary)' }}>{t('notebooks.include_as_source', 'Include as source')}</p>
                 <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded-lg" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
-                    {[{ key: 'full', label: 'Full transcript' }, { key: 'summary', label: 'Summary only' }].map((opt) => {
+                    {[{ key: 'full', label: t('notebooks.full_transcript', 'Full transcript') }, { key: 'summary', label: t('notebooks.summary_only', 'Summary only') }].map((opt) => {
                         const active = meetingMode === opt.key;
                         return (
                             <button key={opt.key} onClick={() => onChangeMode(opt.key)} className="px-2 py-1 rounded-md text-[10px] font-semibold transition-all"
@@ -269,10 +276,10 @@ function MeetingSourcePanel({ meetingMode, onChangeMode, onAddMeeting, onClose }
             <MeetingPicker
                 mode="single"
                 onSelect={(m) => onAddMeeting(m.id)}
-                placeholder="Search meeting notes…"
+                placeholder={t('notebooks.search_meeting_notes', 'Search meeting notes…')}
                 emptyAction={(
                     <button type="button" onClick={() => openCapture()} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold border" style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
-                        <Mic className="w-3 h-3" /> Capture one now
+                        <Mic className="w-3 h-3" /> {t('notebooks.capture_one_now', 'Capture one now')}
                     </button>
                 )}
             />
@@ -286,7 +293,11 @@ export default function NotebookSources({
     onRetrySource, onCancelSource, onRenameSource, onReorderSources, onBulkDelete, onPreviewSource,
     dragOver, setDragOver, totalWords, readyCount, showMeetingNotes = true
 }) {
-    const visibleButtons = showMeetingNotes ? ADD_BUTTONS : ADD_BUTTONS.filter(b => b.key !== 'meeting');
+    const { t } = useTranslation();
+    const visibleButtons = React.useMemo(() => {
+        const all = addButtons(t);
+        return showMeetingNotes ? all : all.filter(b => b.key !== 'meeting');
+    }, [t, showMeetingNotes]);
     const [activePanel, setActivePanel] = useState(null);
     const [urlInput, setUrlInput] = useState('');
     const [textInput, setTextInput] = useState('');
@@ -353,11 +364,11 @@ export default function NotebookSources({
 
             {/* Header */}
             <div className="shrink-0 px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
-                <span className="text-xs font-bold tracking-wide uppercase" style={{ color: 'var(--text-secondary)' }}>Sources</span>
+                <span className="text-xs font-bold tracking-wide uppercase" style={{ color: 'var(--text-secondary)' }}>{t('notebooks.sources', 'Sources')}</span>
                 <div className="flex items-center gap-1.5">
                     {sources.length > 0 && (
                         <>
-                            <button onClick={() => { setSelectMode(v => !v); setSelected(new Set()); }} className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors" title="Select multiple"
+                            <button onClick={() => { setSelectMode(v => !v); setSelected(new Set()); }} className="p-1 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors" title={t('notebooks.select_multiple', 'Select multiple')} aria-label={t('notebooks.select_multiple', 'Select multiple')}
                                 style={{ color: selectMode ? 'var(--accent-primary)' : 'var(--text-tertiary)' }}>
                                 <CheckSquare className="w-3.5 h-3.5" />
                             </button>
@@ -388,12 +399,12 @@ export default function NotebookSources({
             {activePanel === 'url' && (
                 <div className="shrink-0 mx-3 mb-2 rounded-xl border p-3 space-y-2" style={{ background: 'var(--bg-secondary)', borderColor: 'rgba(245,158,11,0.3)', animation: 'fadeSlideDown 0.18s ease-out' }}>
                     <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#f59e0b' }}>Add URL</span>
-                        <button onClick={() => setActivePanel(null)} className="p-0.5 rounded hover:bg-black/10"><X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} /></button>
+                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#f59e0b' }}>{t('notebooks.add_url', 'Add URL')}</span>
+                        <button onClick={() => setActivePanel(null)} className="p-0.5 rounded hover:bg-black/10" aria-label={t('notebooks.close', 'Close')}><X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} /></button>
                     </div>
                     <div className="flex items-center gap-1.5">
-                        <input autoFocus value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitUrl(); if (e.key === 'Escape') setActivePanel(null); }} placeholder="https://..." className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-xs border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }} />
-                        <button onClick={submitUrl} disabled={!urlInput.trim()} className="shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-bold disabled:opacity-40" style={{ background: '#f59e0b', color: 'white' }}>Add</button>
+                        <input autoFocus value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitUrl(); if (e.key === 'Escape') setActivePanel(null); }} placeholder="https://..." aria-label={t('notebooks.add_url', 'Add URL')} className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-xs border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }} />
+                        <button onClick={submitUrl} disabled={!urlInput.trim()} className="shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-bold disabled:opacity-40" style={{ background: '#f59e0b', color: 'white' }}>{t('notebooks.add', 'Add')}</button>
                     </div>
                 </div>
             )}
@@ -402,30 +413,30 @@ export default function NotebookSources({
             {activePanel === 'text' && (
                 <div className="shrink-0 mx-3 mb-2 rounded-xl border p-3 space-y-2" style={{ background: 'var(--bg-secondary)', borderColor: 'rgba(16,185,129,0.3)', animation: 'fadeSlideDown 0.18s ease-out' }}>
                     <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#10b981' }}>Paste Text</span>
-                        <button onClick={() => setActivePanel(null)} className="p-0.5 rounded hover:bg-black/10"><X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} /></button>
+                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#10b981' }}>{t('notebooks.paste_text', 'Paste Text')}</span>
+                        <button onClick={() => setActivePanel(null)} className="p-0.5 rounded hover:bg-black/10" aria-label={t('notebooks.close', 'Close')}><X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} /></button>
                     </div>
-                    <input value={textName} onChange={e => setTextName(e.target.value)} placeholder="Name (optional)" className="w-full px-2.5 py-1.5 rounded-lg text-xs border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }} />
-                    <textarea autoFocus value={textInput} onChange={e => setTextInput(e.target.value)} placeholder="Paste your text here…" maxLength={PASTE_MAX_CHARS} className="w-full px-2.5 py-1.5 rounded-lg text-xs border outline-none resize-none" style={{ background: 'var(--bg-primary)', borderColor: pasteOverLimit ? 'var(--error, #ef4444)' : 'var(--border-subtle)', color: 'var(--text-primary)', height: '80px' }} />
-                    {pasteOverLimit && <p className="text-[9px] font-medium" style={{ color: 'var(--error, #ef4444)' }}>Too long — max {PASTE_MAX_CHARS.toLocaleString()} characters.</p>}
-                    <button onClick={submitText} disabled={!textInput.trim() || pasteOverLimit} className="w-full py-1.5 rounded-lg text-[10px] font-bold disabled:opacity-40" style={{ background: '#10b981', color: 'white' }}>Add Text</button>
+                    <input value={textName} onChange={e => setTextName(e.target.value)} placeholder={t('notebooks.name_optional', 'Name (optional)')} className="w-full px-2.5 py-1.5 rounded-lg text-xs border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }} />
+                    <textarea autoFocus value={textInput} onChange={e => setTextInput(e.target.value)} placeholder={t('notebooks.paste_placeholder', 'Paste your text here…')} maxLength={PASTE_MAX_CHARS} className="w-full px-2.5 py-1.5 rounded-lg text-xs border outline-none resize-none" style={{ background: 'var(--bg-primary)', borderColor: pasteOverLimit ? 'var(--error, #ef4444)' : 'var(--border-subtle)', color: 'var(--text-primary)', height: '80px' }} />
+                    {pasteOverLimit && <p className="text-[9px] font-medium" style={{ color: 'var(--error, #ef4444)' }}>{t('notebooks.paste_too_long', { max: PASTE_MAX_CHARS.toLocaleString() })}</p>}
+                    <button onClick={submitText} disabled={!textInput.trim() || pasteOverLimit} className="w-full py-1.5 rounded-lg text-[10px] font-bold disabled:opacity-40" style={{ background: '#10b981', color: 'white' }}>{t('notebooks.add_text', 'Add Text')}</button>
                 </div>
             )}
 
             {/* Meeting Panel */}
             {activePanel === 'meeting' && (
-                <MeetingSourcePanel meetingMode={meetingMode} onChangeMode={updateMeetingMode} onAddMeeting={(id) => { onAddMeeting?.(id, { mode: meetingMode }); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
+                <MeetingSourcePanel t={t} meetingMode={meetingMode} onChangeMode={updateMeetingMode} onAddMeeting={(id) => { onAddMeeting?.(id, { mode: meetingMode }); setActivePanel(null); }} onClose={() => setActivePanel(null)} />
             )}
 
             {/* Bulk action bar */}
             {selectMode && selected.size > 0 && (
                 <div className="shrink-0 mx-3 mb-2 flex items-center justify-between px-3 py-1.5 rounded-lg" style={{ background: 'var(--accent-primary)', color: 'white' }}>
-                    <span className="text-[11px] font-semibold">{selected.size} selected</span>
+                    <span className="text-[11px] font-semibold">{t('notebooks.n_selected', { count: selected.size })}</span>
                     <div className="flex items-center gap-2">
                         <button onClick={() => setConfirmBulk(true)} className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md bg-white/15 hover:bg-white/25 transition-colors">
-                            <Trash2 className="w-3 h-3" /> Delete
+                            <Trash2 className="w-3 h-3" /> {t('notebooks.delete', 'Delete')}
                         </button>
-                        <button onClick={clearSelection} className="text-[11px] font-medium px-2 py-1 rounded-md hover:bg-white/15 transition-colors">Cancel</button>
+                        <button onClick={clearSelection} className="text-[11px] font-medium px-2 py-1 rounded-md hover:bg-white/15 transition-colors">{t('common.cancel', 'Cancel')}</button>
                     </div>
                 </div>
             )}
@@ -448,9 +459,9 @@ export default function NotebookSources({
                         <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ background: 'var(--brand-gradient-soft)', border: '1px solid var(--border-subtle)' }}>
                             <Upload className="w-6 h-6" style={{ color: 'var(--brand-primary)' }} />
                         </div>
-                        <p className="text-[13px] font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>Add your first source</p>
+                        <p className="text-[13px] font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>{t('notebooks.add_first_source', 'Add your first source')}</p>
                         <p className="text-[10px] text-center leading-relaxed mb-4" style={{ color: 'var(--text-tertiary)' }}>
-                            Sources power the AI chat &amp; citations.<br />Drag &amp; drop a file, or pick a type:
+                            {t('notebooks.sources_empty_hint', 'Sources power the AI chat & citations. Drag & drop a file, or pick a type:')}
                         </p>
                         <div className="w-full space-y-1.5">
                             {visibleButtons.map(({ key, label, Icon, accent, desc }) => (
@@ -486,6 +497,7 @@ export default function NotebookSources({
                             onDragOver={onCardDragOver}
                             onDrop={onCardDrop}
                             dragging={dragId === source.id}
+                            t={t}
                         />
                     ))
                 )}
@@ -499,20 +511,22 @@ export default function NotebookSources({
                     </div>
                     <div className="flex items-center justify-between">
                         <span className="text-[9px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
-                            {readyCount === sources.length ? `All ${sources.length} source${sources.length !== 1 ? 's' : ''} ready` : `${readyCount} / ${sources.length} ready`}
+                            {readyCount === sources.length
+                                ? t('notebooks.all_n_sources_ready', { count: sources.length })
+                                : t('notebooks.n_of_m_ready', { ready: readyCount, total: sources.length })}
                         </span>
-                        <span className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>{totalWords.toLocaleString()} words</span>
+                        <span className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>{t('notebooks.n_words', { count: totalWords.toLocaleString() })}</span>
                     </div>
                 </div>
             )}
 
-            {preview && <SourcePreviewModal preview={preview} onClose={() => setPreview(null)} />}
+            {preview && <SourcePreviewModal preview={preview} onClose={() => setPreview(null)} t={t} />}
             <ConfirmDialog
                 open={confirmBulk}
-                title="Delete sources?"
-                description={`This permanently removes ${selected.size} source${selected.size !== 1 ? 's' : ''} and their indexed content. This can't be undone.`}
-                confirmLabel="Delete"
-                cancelLabel="Cancel"
+                title={t('notebooks.confirm_bulk_delete_title', 'Delete sources?')}
+                description={t('notebooks.confirm_bulk_delete_body', { count: selected.size })}
+                confirmLabel={t('notebooks.delete', 'Delete')}
+                cancelLabel={t('common.cancel', 'Cancel')}
                 destructive
                 onConfirm={doBulkDelete}
                 onCancel={() => setConfirmBulk(false)}

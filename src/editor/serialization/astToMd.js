@@ -16,6 +16,13 @@ import { getMark } from '../model/marks.js';
 import { attr } from '../model/nodes.js';
 import { escapeMdText } from './util.js';
 
+// Node types that are block-level when they appear inside a table cell, and so
+// need recursing into rather than being handed to the inline renderer.
+const NON_INLINE = new Set([
+  'paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'taskList',
+  'listItem', 'taskItem', 'codeBlock', 'table', 'tableRow', 'tableCell', 'horizontalRule',
+]);
+
 export function astToMarkdown(docNode) {
   const blocks = docNode?.content || [];
   return serializeBlocks(blocks).replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n';
@@ -127,9 +134,69 @@ function serializeTable(tableNode) {
 
   function cellText(cell) {
     const blocks = cell.content || [];
-    // Tables hold inline-ish content; flatten paragraphs joined by spaces.
-    const txt = blocks.map((b) => (b.content ? inline(b.content) : '')).join(' ').trim();
-    return txt.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+    // A Markdown cell is a single line, so block structure is flattened — but it
+    // must still be REPRESENTED. This used to be `b.content ? inline(b.content) : ''`,
+    // which silently emptied any cell holding a list, an image or a blockquote:
+    // those either carry their payload in attrs (image) or nest another level
+    // (list → listItem → paragraph), so the one-level check produced ''. A table
+    // of screenshots or bulleted cells survived a save as a grid of blanks.
+    const txt = blocks.map(cellBlock).filter(Boolean).join(' ').trim();
+    const spans = cellSpanSuffix(cell);
+    return txt.replace(/\|/g, '\\|').replace(/\n/g, ' ') + spans;
+  }
+
+  function cellBlock(b) {
+    if (!b || typeof b !== 'object') return '';
+    switch (b.type) {
+      case 'image':      return serializeImage(b);
+      case 'bulletList':
+      case 'orderedList': {
+        const ordered = b.type === 'orderedList';
+        return (b.content || []).map((li, i) => {
+          const marker = ordered ? `${i + 1}. ` : '• ';
+          return marker + (li.content || []).map(cellBlock).filter(Boolean).join(' ');
+        }).join('<br>');
+      }
+      case 'taskList':
+        return (b.content || []).map((li) => {
+          const done = attr(li, 'checked') ? '[x] ' : '[ ] ';
+          return done + (li.content || []).map(cellBlock).filter(Boolean).join(' ');
+        }).join('<br>');
+      case 'codeBlock': {
+        const code = (b.content || []).map((c) => c.text || '').join('');
+        return '`' + code.replace(/`/g, '\\`').replace(/\n/g, ' ') + '`';
+      }
+      case 'horizontalRule': return '';
+      default:
+        // paragraph, heading, blockquote, listItem, … — recurse when the child
+        // is itself block-level, otherwise render its inline run.
+        if (!b.content) return '';
+        return b.content.some((c) => c && c.type && c.type !== 'text' && NON_INLINE.has(c.type))
+          ? b.content.map(cellBlock).filter(Boolean).join(' ')
+          : inline(b.content);
+    }
+  }
+
+  /**
+   * Merged-cell geometry as a trailing `{cs=2 rs=3}` marker.
+   *
+   * GFM tables have no concept of a merged cell, so colspan/rowspan were simply
+   * dropped: a header spanning two columns came back as one cell and every row
+   * beneath it shifted left. Emitting the span keeps the grid reconstructable
+   * (mdToAst reads this back), and degrades to visible-but-harmless text in any
+   * other Markdown renderer.
+   */
+  function cellSpanSuffix(cell) {
+    const cs = parseInt(attr(cell, 'colspan'), 10);
+    const rs = parseInt(attr(cell, 'rowspan'), 10);
+    const cw = parseInt(attr(cell, 'colwidth'), 10);
+    const parts = [];
+    if (Number.isFinite(cs) && cs > 1) parts.push(`cs=${cs}`);
+    if (Number.isFinite(rs) && rs > 1) parts.push(`rs=${rs}`);
+    // Column widths round-trip through HTML but were dropped here, so every AI
+    // read/write (which goes via the Markdown mirror) silently reset them.
+    if (Number.isFinite(cw) && cw > 0) parts.push(`w=${cw}`);
+    return parts.length ? ` {${parts.join(' ')}}` : '';
   }
 }
 
@@ -139,7 +206,7 @@ function serializeImage(n) {
   const title = attr(n, 'title');
   const titlePart = title ? ` "${title.replace(/"/g, '\\"')}"` : '';
   const attrs = imageAttrSuffix(n);
-  return `![${alt}](${src}${titlePart})${attrs}`;
+  return `![${alt}](${mdUrl(src)}${titlePart})${attrs}`;
 }
 
 function imageAttrSuffix(n) {
@@ -185,7 +252,23 @@ function serializeInline(n) {
   if (hasType(marks, 'bold')) s = `**${s}**`;
   s = wrapSpan(s, marks);
   const link = getMark(marks, 'link');
-  if (link) s = `[${s}](${link.attrs?.href || ''})`;
+  if (link) s = `[${s}](${mdUrl(link.attrs?.href || '')})`;
+  return s;
+}
+
+/**
+ * Render a URL for a Markdown destination.
+ *
+ * A bare `(`/`)` or space inside the destination ends it early, so
+ * `https://en.wikipedia.org/wiki/Foo_(bar)` round-tripped as
+ * `https://en.wikipedia.org/wiki/Foo_(bar` plus a stray `)` in the text — the
+ * link broke a little more on every save. The angle-bracket form is the
+ * CommonMark way to say "this whole thing is the destination".
+ */
+export function mdUrl(url) {
+  const s = String(url ?? '');
+  if (!s) return '';
+  if (/[()\s]/.test(s)) return `<${s.replace(/([<>])/g, '\\$1')}>`;
   return s;
 }
 

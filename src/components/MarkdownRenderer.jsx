@@ -33,6 +33,18 @@ import MapEmbedRenderer from './MapEmbedRenderer';
 import MermaidRenderer from './MermaidRenderer';
 import WebpageLinkCard from './WebpageLinkCard';
 
+/**
+ * Inline loading placeholder shown while a special ```json-*``` block is still
+ * streaming or its JSON is incomplete. Extracted from the ~13 identical copies
+ * that differed only by their label text.
+ */
+const BlockLoading = ({ label }) => (
+    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
+        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{label}</span>
+    </div>
+);
+
 // Register languages
 hljs.registerLanguage('python', python);
 hljs.registerLanguage('py', python);
@@ -64,6 +76,14 @@ hljs.registerLanguage('markdown', markdown);
 hljs.registerLanguage('md', markdown);
 
 // Code block with language header, copy button, and optional collapsing
+// BFSF-273: react-markdown v9 removed the `inline` prop this renderer's code
+// component destructured — it was silently undefined ever since the v10
+// upgrade, routing EVERY code span (single-backtick inline included) through
+// CollapsibleCodeBlock (5 hooks + hljs + measurement timers per token). The
+// v10 way to tell them apart is nesting: fenced blocks arrive wrapped in a
+// <pre>, inline code does not. The `pre` override below provides this context.
+const PreContext = React.createContext(false);
+
 const COLLAPSE_HEIGHT = 200; // px
 const CollapsibleCodeBlock = ({ className, children, ...props }) => {
     const [expanded, setExpanded] = useState(false);
@@ -264,6 +284,265 @@ const CollapsibleCodeBlock = ({ className, children, ...props }) => {
     );
 };
 
+/**
+ * Renderer for every fenced/inline code span in a message.
+ *
+ * A real, PascalCase component rather than an inline `code() {}` entry in the
+ * `components` map. It reads PreContext to tell a block from an inline span, and
+ * a hook inside a lowercase render function is exactly what
+ * react-hooks/rules-of-hooks forbids — the rule cannot know react-markdown mounts
+ * those entries as components. Hoisting it out makes the hook legal on its own
+ * terms instead of asking for an exemption.
+ *
+ * `isLoading` is threaded in as a prop: while a message is still streaming, a
+ * half-written JSON block must show a placeholder rather than fail to parse.
+ */
+const CodeRenderer = ({ node, className, children, isLoading = false, ...props }) => {
+    // `pre` wraps fenced/indented code in a PreContext provider, so an absent
+    // context means this span is inline.
+    const inline = !React.useContext(PreContext);
+    // Match language tag including hyphens (e.g., html-app)
+    const match = /language-([\w-]+)/.exec(className || '');
+    const language = match ? match[1] : '';
+    const codeString = String(children).replace(/\n$/, '');
+
+    // Workspace blocks are no longer rendered inline — workspace content
+    // is handled via workspace_write tool calls and the WorkspacePanel.
+    const isWorkspace = language === 'workspace' ||
+        language === 'workspace-selection' ||
+        (className || '').includes('language-workspace') ||
+        (className || '').includes('language-workspace-selection');
+
+    if (!inline && isWorkspace) {
+        return null; // Hidden — workspace tool handles display
+    }
+
+    // Check if this is a page code block
+    const isPage = language === 'json-page' ||
+        language === 'page' ||
+        language === 'page-json';
+
+    if (!inline && isPage) {
+        if (isLoading) {
+            return (
+                <BlockLoading label="Creating page..." />
+            );
+        }
+        try {
+            JSON.parse(codeString);
+            return (
+                <div style={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    whiteSpace: 'normal', // Override parent <pre> whitespace
+                    fontFamily: 'var(--font-family, sans-serif)' // Reset font from monospace
+                }}>
+                    <PageRenderer
+                        code={codeString}
+                        onAction={(action) => console.log('Page action:', action)}
+                    />
+                </div>
+            );
+        } catch {
+            // Page JSON is incomplete - show loading indicator
+            return (
+                <BlockLoading label="Creating page..." />
+            );
+        }
+    }
+
+    // Check if this is a research code block
+    const isResearch = language === 'json-research' ||
+        language === 'research' ||
+        language === 'research-json';
+
+    if (!inline && isResearch) {
+        if (isLoading) {
+            return (
+                <BlockLoading label="Building research report..." />
+            );
+        }
+        try {
+            const researchData = JSON.parse(codeString);
+            return (
+                <div style={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    whiteSpace: 'normal',
+                    fontFamily: 'var(--font-family, sans-serif)'
+                }}>
+                    <ResearchRenderer data={researchData} />
+                </div>
+            );
+        } catch {
+            return (
+                <BlockLoading label="Building research report..." />
+            );
+        }
+    }
+
+    // Check if this is a test report code block
+    const isTestReport = language === 'json-test-report' ||
+        language === 'test-report' ||
+        language === 'test-report-json';
+
+    if (!inline && isTestReport) {
+        if (isLoading) {
+            return (
+                <BlockLoading label="Building test report..." />
+            );
+        }
+        try {
+            const testData = JSON.parse(codeString);
+            return (
+                <div style={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    whiteSpace: 'normal',
+                    fontFamily: 'var(--font-family, sans-serif)'
+                }}>
+                    <TestReportRenderer data={testData} />
+                </div>
+            );
+        } catch {
+            return (
+                <BlockLoading label="Building test report..." />
+            );
+        }
+    }
+
+    // Check if this is a quote/offerte code block
+    const isQuote = language === 'quote' ||
+        language === 'offerte' ||
+        language === 'json-quote' ||
+        language === 'json-offerte';
+
+    if (!inline && isQuote) {
+        if (isLoading) {
+            return (
+                <BlockLoading label="Creating quote..." />
+            );
+        }
+        try {
+            const quoteData = JSON.parse(codeString);
+            return (
+                <QuoteRenderer
+                    data={quoteData}
+                    onClose={() => { }}
+                />
+            );
+        } catch {
+            // Quote JSON is incomplete - show loading indicator
+            return (
+                <BlockLoading label="Creating quote..." />
+            );
+        }
+    }
+
+    // Check if this is a Vega-Lite chart code block
+    const isVegaLite = language === 'vega-lite' ||
+        language === 'vegalite' ||
+        language === 'vega';
+
+    if (!inline && isVegaLite) {
+        // While still streaming, always show loading — don't attempt partial renders
+        if (isLoading) {
+            return (
+                <BlockLoading label="Rendering chart..." />
+            );
+        }
+        try {
+            JSON.parse(codeString);
+            return (
+                <div style={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'visible',
+                    whiteSpace: 'normal',
+                    fontFamily: 'var(--font-family, sans-serif)'
+                }}>
+                    <VegaLiteRenderer spec={codeString} />
+                </div>
+            );
+        } catch {
+            // Vega-Lite JSON is incomplete - show loading
+            return (
+                <BlockLoading label="Rendering chart..." />
+            );
+        }
+    }
+
+    // Check if this is a Mermaid diagram code block
+    const isMermaid = language === 'mermaid';
+
+    if (!inline && isMermaid) {
+        if (isLoading) {
+            return (
+                <BlockLoading label="Rendering diagram..." />
+            );
+        }
+        return (
+            <div style={{
+                width: '100%',
+                maxWidth: '100%',
+                overflow: 'visible',
+                whiteSpace: 'normal',
+                fontFamily: 'var(--font-family, sans-serif)'
+            }}>
+                <MermaidRenderer code={codeString} />
+            </div>
+        );
+    }
+
+    // Check if this is a map embed code block
+    const isMapEmbed = language === 'map-embed' ||
+        language === 'map' ||
+        language === 'maps';
+
+    if (!inline && isMapEmbed) {
+        if (isLoading) {
+            return (
+                <BlockLoading label="Loading map..." />
+            );
+        }
+        try {
+            const mapData = JSON.parse(codeString);
+            return (
+                <div style={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    whiteSpace: 'normal',
+                    fontFamily: 'var(--font-family, sans-serif)'
+                }}>
+                    <MapEmbedRenderer
+                        embedUrl={mapData.embedUrl}
+                        title={mapData.title || 'Map'}
+                        mapsLink={mapData.mapsLink}
+                    />
+                </div>
+            );
+        } catch {
+            return (
+                <BlockLoading label="Loading map..." />
+            );
+        }
+    }
+
+    return inline ? (
+        <code className="inline-code" {...props}>
+            {children}
+        </code>
+    ) : (
+        <CollapsibleCodeBlock className={className} {...props}>
+            {children}
+        </CollapsibleCodeBlock>
+    );
+};
+
 const MarkdownRenderer = ({ content, className = '', isLoading = false, ...props }) => {
     // Throttle content updates to prevent flickering during streaming
     const THROTTLE_MS = 150;
@@ -362,288 +641,20 @@ const MarkdownRenderer = ({ content, className = '', isLoading = false, ...props
                 remarkPlugins={[remarkGfm, remarkMath, remarkLegalCitations]}
                 rehypePlugins={[rehypeKatex]}
                 components={{
-                    // Code blocks with syntax highlighting style
-                    code({ node, inline, className, children, ...props }) {
-                        // Match language tag including hyphens (e.g., html-app)
-                        const match = /language-([\w-]+)/.exec(className || '');
-                        const language = match ? match[1] : '';
-                        const codeString = String(children).replace(/\n$/, '');
-
-                        // Workspace blocks are no longer rendered inline — workspace content
-                        // is handled via workspace_write tool calls and the WorkspacePanel.
-                        const isWorkspace = language === 'workspace' ||
-                            language === 'workspace-selection' ||
-                            (className || '').includes('language-workspace') ||
-                            (className || '').includes('language-workspace-selection');
-
-                        if (!inline && isWorkspace) {
-                            return null; // Hidden — workspace tool handles display
-                        }
-
-                        // Check if this is a page code block
-                        const isPage = language === 'json-page' ||
-                            language === 'page' ||
-                            language === 'page-json';
-
-                        if (!inline && isPage) {
-                            if (isLoading) {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Creating page...</span>
-                                    </div>
-                                );
-                            }
-                            try {
-                                JSON.parse(codeString);
-                                return (
-                                    <div style={{
-                                        width: '100%',
-                                        maxWidth: '100%',
-                                        overflow: 'hidden',
-                                        whiteSpace: 'normal', // Override parent <pre> whitespace
-                                        fontFamily: 'var(--font-family, sans-serif)' // Reset font from monospace
-                                    }}>
-                                        <PageRenderer
-                                            code={codeString}
-                                            onAction={(action) => console.log('Page action:', action)}
-                                        />
-                                    </div>
-                                );
-                            } catch {
-                                // Page JSON is incomplete - show loading indicator
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Creating page...</span>
-                                    </div>
-                                );
-                            }
-                        }
-
-                        // Check if this is a research code block
-                        const isResearch = language === 'json-research' ||
-                            language === 'research' ||
-                            language === 'research-json';
-
-                        if (!inline && isResearch) {
-                            if (isLoading) {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Building research report...</span>
-                                    </div>
-                                );
-                            }
-                            try {
-                                const researchData = JSON.parse(codeString);
-                                return (
-                                    <div style={{
-                                        width: '100%',
-                                        maxWidth: '100%',
-                                        overflow: 'hidden',
-                                        whiteSpace: 'normal',
-                                        fontFamily: 'var(--font-family, sans-serif)'
-                                    }}>
-                                        <ResearchRenderer data={researchData} />
-                                    </div>
-                                );
-                            } catch {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Building research report...</span>
-                                    </div>
-                                );
-                            }
-                        }
-
-                        // Check if this is a test report code block
-                        const isTestReport = language === 'json-test-report' ||
-                            language === 'test-report' ||
-                            language === 'test-report-json';
-
-                        if (!inline && isTestReport) {
-                            if (isLoading) {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Building test report...</span>
-                                    </div>
-                                );
-                            }
-                            try {
-                                const testData = JSON.parse(codeString);
-                                return (
-                                    <div style={{
-                                        width: '100%',
-                                        maxWidth: '100%',
-                                        overflow: 'hidden',
-                                        whiteSpace: 'normal',
-                                        fontFamily: 'var(--font-family, sans-serif)'
-                                    }}>
-                                        <TestReportRenderer data={testData} />
-                                    </div>
-                                );
-                            } catch {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Building test report...</span>
-                                    </div>
-                                );
-                            }
-                        }
-
-                        // Check if this is a quote/offerte code block
-                        const isQuote = language === 'quote' ||
-                            language === 'offerte' ||
-                            language === 'json-quote' ||
-                            language === 'json-offerte';
-
-                        if (!inline && isQuote) {
-                            if (isLoading) {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Creating quote...</span>
-                                    </div>
-                                );
-                            }
-                            try {
-                                const quoteData = JSON.parse(codeString);
-                                return (
-                                    <QuoteRenderer
-                                        data={quoteData}
-                                        onClose={() => { }}
-                                    />
-                                );
-                            } catch {
-                                // Quote JSON is incomplete - show loading indicator
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Creating quote...</span>
-                                    </div>
-                                );
-                            }
-                        }
-
-                        // Check if this is a Vega-Lite chart code block
-                        const isVegaLite = language === 'vega-lite' ||
-                            language === 'vegalite' ||
-                            language === 'vega';
-
-                        if (!inline && isVegaLite) {
-                            // While still streaming, always show loading — don't attempt partial renders
-                            if (isLoading) {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Rendering chart...</span>
-                                    </div>
-                                );
-                            }
-                            try {
-                                JSON.parse(codeString);
-                                return (
-                                    <div style={{
-                                        width: '100%',
-                                        maxWidth: '100%',
-                                        overflow: 'visible',
-                                        whiteSpace: 'normal',
-                                        fontFamily: 'var(--font-family, sans-serif)'
-                                    }}>
-                                        <VegaLiteRenderer spec={codeString} />
-                                    </div>
-                                );
-                            } catch {
-                                // Vega-Lite JSON is incomplete - show loading
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Rendering chart...</span>
-                                    </div>
-                                );
-                            }
-                        }
-
-                        // Check if this is a Mermaid diagram code block
-                        const isMermaid = language === 'mermaid';
-
-                        if (!inline && isMermaid) {
-                            if (isLoading) {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Rendering diagram...</span>
-                                    </div>
-                                );
-                            }
-                            return (
-                                <div style={{
-                                    width: '100%',
-                                    maxWidth: '100%',
-                                    overflow: 'visible',
-                                    whiteSpace: 'normal',
-                                    fontFamily: 'var(--font-family, sans-serif)'
-                                }}>
-                                    <MermaidRenderer code={codeString} />
-                                </div>
-                            );
-                        }
-
-                        // Check if this is a map embed code block
-                        const isMapEmbed = language === 'map-embed' ||
-                            language === 'map' ||
-                            language === 'maps';
-
-                        if (!inline && isMapEmbed) {
-                            if (isLoading) {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading map...</span>
-                                    </div>
-                                );
-                            }
-                            try {
-                                const mapData = JSON.parse(codeString);
-                                return (
-                                    <div style={{
-                                        width: '100%',
-                                        maxWidth: '100%',
-                                        overflow: 'hidden',
-                                        whiteSpace: 'normal',
-                                        fontFamily: 'var(--font-family, sans-serif)'
-                                    }}>
-                                        <MapEmbedRenderer
-                                            embedUrl={mapData.embedUrl}
-                                            title={mapData.title || 'Map'}
-                                            mapsLink={mapData.mapsLink}
-                                        />
-                                    </div>
-                                );
-                            } catch {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading map...</span>
-                                    </div>
-                                );
-                            }
-                        }
-
-                        return inline ? (
-                            <code className="inline-code" {...props}>
-                                {children}
-                            </code>
-                        ) : (
-                            <CollapsibleCodeBlock className={className} {...props}>
-                                {children}
-                            </CollapsibleCodeBlock>
+                    // Fenced/indented code arrives wrapped in a <pre>; mark the
+                    // subtree so the code component can tell block from inline
+                    // (see PreContext note above).
+                    pre({ node, children, ...props }) {
+                        return (
+                            <PreContext.Provider value={true}>
+                                <pre {...props}>{children}</pre>
+                            </PreContext.Provider>
                         );
                     },
+                    // Code blocks with syntax highlighting style
+                    // Delegates to the hoisted CodeRenderer so its useContext call
+                    // lives in a properly-named component (see the note there).
+                    code: (codeProps) => <CodeRenderer {...codeProps} isLoading={isLoading} />,
                     // Links — anchor links scroll within message, external open in new tab
                     a({ node, children, href, ...props }) {
                         // Webpage links render as a clickable card instead of a plain anchor

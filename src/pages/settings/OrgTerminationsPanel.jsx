@@ -8,6 +8,7 @@ import { Card, MetricCard, MetricGrid, MonitorHero, TabHeader, AlertBanner, Empt
 import { SEMANTIC } from '../../config/analyticsConfig';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { TYPE_ORDER, isLargeInput } from '../../utils/terminationsModel';
 
 const TERMINATIONS_ERROR_ALERT_PCT = 5;
 const TERMINATIONS_MIN_SAMPLE = 10;
@@ -15,9 +16,6 @@ const API = `${API_BASE}/api/terminations/org`;
 
 const C = SEMANTIC;
 
-const LARGE_INPUT_TOKEN_THRESHOLD = 8000;
-const LARGE_ATTACHMENT_BYTES_THRESHOLD = 256 * 1024;
-const TYPE_ORDER = ['max_tokens', 'max_iterations', 'error', 'aborted'];
 
 function typeMeta(tk) {
     if (tk === 'max_tokens') return { color: C.amber, icon: ZapOff };
@@ -25,18 +23,6 @@ function typeMeta(tk) {
     if (tk === 'error') return { color: C.rose, icon: AlertOctagon };
     if (tk === 'aborted') return { color: C.cyan, icon: XCircle };
     return { color: C.rose, icon: AlertTriangle };
-}
-
-// Token-based heuristics only count when tokens are visible (self-hosted /
-// cloud-admin); in the cloud customer view the badge is attachment-driven only,
-// so it never leaks token magnitude.
-function isLargeInput(row, showTokens) {
-    if ((row.attachment_bytes || 0) >= LARGE_ATTACHMENT_BYTES_THRESHOLD) return true;
-    if (!showTokens) return false;
-    if ((row.prompt_tokens || 0) >= LARGE_INPUT_TOKEN_THRESHOLD) return true;
-    const total = (row.prompt_tokens || 0) + (row.completion_tokens || 0);
-    if (total > 0 && (row.prompt_tokens / total) >= 0.85 && row.termination_type === 'max_tokens') return true;
-    return false;
 }
 
 function TypeBadge({ type, t }) {

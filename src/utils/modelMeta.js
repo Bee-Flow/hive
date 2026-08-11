@@ -57,20 +57,43 @@ export const MISTRAL_MODEL_META = {
     'open-mixtral-8x22b': { name: 'Mixtral 8x22B', desc: 'Large mixture-of-experts model', cat: 'Generalist', input: 2.0, output: 6.0 },
     'open-mixtral-8x7b': { name: 'Mixtral 8x7B', desc: 'Mixture-of-experts model', cat: 'Generalist', input: 0.7, output: 0.7 },
     'open-mistral-7b': { name: 'Mistral 7B', desc: 'Compact open-source model', cat: 'Generalist', input: 0.25, output: 0.25 },
-    // --- OpenAI: Flagship ---
-    'gpt-5.2': { name: 'GPT-5.2', desc: 'Latest flagship model for coding and agentic tasks', cat: 'Generalist', input: 1.75, output: 14.0 },
+    // --- OpenAI: Flagship (GPT-5 family) ---
+    // Newest first. Pricing is indicative for cost estimation; verify against
+    // the Azure/OpenAI pricing pages for billing-grade figures.
+    'gpt-5.5': { name: 'GPT-5.5', desc: 'Frontier reasoning with deep long-context & agentic execution', cat: 'Reasoning' },
+    'gpt-5.4': { name: 'GPT-5.4', desc: 'Strong multi-step reasoning for enterprise agents', cat: 'Reasoning' },
+    'gpt-5.4-mini': { name: 'GPT-5.4 Mini', desc: 'Real-time reasoning for apps and agents', cat: 'Generalist' },
+    'gpt-5.4-nano': { name: 'GPT-5.4 Nano', desc: 'Ultra-low-latency reasoning, smallest tier', cat: 'Generalist' },
+    'gpt-5.4-pro': { name: 'GPT-5.4 Pro', desc: 'Pro reasoning (high effort only)', cat: 'Reasoning' },
+    'gpt-5.2': { name: 'GPT-5.2', desc: 'Flagship model for coding and agentic tasks', cat: 'Generalist', input: 1.75, output: 14.0 },
     'gpt-5.2-pro': { name: 'GPT-5.2 Pro', desc: 'Smartest model for top-quality execution', cat: 'Reasoning', input: 21.0, output: 168.0 },
+    'gpt-5.1': { name: 'GPT-5.1', desc: 'General reasoning with flexible effort (defaults to none)', cat: 'Generalist', input: 1.25, output: 10.0 },
+    'gpt-5.1-chat': { name: 'GPT-5.1 Chat', desc: 'Chat-optimised reasoning model', cat: 'Generalist', input: 1.25, output: 10.0 },
+    'gpt-5': { name: 'GPT-5', desc: 'Base full reasoning model', cat: 'Reasoning', input: 1.25, output: 10.0 },
+    'gpt-5-pro': { name: 'GPT-5 Pro', desc: 'Pro reasoning tier (high effort only)', cat: 'Reasoning', input: 15.0, output: 120.0 },
+    'gpt-5-chat': { name: 'GPT-5 Chat', desc: 'Chat-optimised GPT-5', cat: 'Generalist', input: 1.25, output: 10.0 },
     'gpt-5-mini': { name: 'GPT-5 Mini', desc: 'Fast cost-efficient model for well-defined tasks', cat: 'Generalist', input: 0.25, output: 2.0 },
-    'gpt-4o': { name: 'GPT-4o', desc: 'Multimodal model for complex tasks', cat: 'Generalist', input: 2.5, output: 10.0 },
+    'gpt-5-nano': { name: 'GPT-5 Nano', desc: 'Ultra-light, lowest-latency reasoning', cat: 'Generalist', input: 0.05, output: 0.40 },
+    'gpt-4o': { name: 'GPT-4o', desc: 'Multimodal model (retires 2026-03-31 — migrate to GPT-5/4.1)', cat: 'Generalist', input: 2.5, output: 10.0 },
     'gpt-4o-mini': { name: 'GPT-4o Mini', desc: 'Fast, affordable small model', cat: 'Generalist', input: 0.15, output: 0.60 },
     'gpt-4.1': { name: 'GPT-4.1', desc: 'Flagship model for complex tasks', cat: 'Generalist', input: 2.0, output: 8.0 },
     'gpt-4.1-mini': { name: 'GPT-4.1 Mini', desc: 'Balanced performance and cost', cat: 'Generalist', input: 0.40, output: 1.60 },
     'gpt-4.1-nano': { name: 'GPT-4.1 Nano', desc: 'Fastest and cheapest model', cat: 'Generalist', input: 0.10, output: 0.40 },
-    // --- OpenAI: Reasoning ---
+    // --- OpenAI: Coding (Codex) ---
+    'gpt-5.3-codex': { name: 'GPT-5.3 Codex', desc: 'Code generation with reasoning', cat: 'Coding' },
+    'gpt-5.2-codex': { name: 'GPT-5.2 Codex', desc: 'Code generation with reasoning', cat: 'Coding' },
+    'gpt-5.1-codex': { name: 'GPT-5.1 Codex', desc: 'Code generation with reasoning', cat: 'Coding' },
+    'gpt-5.1-codex-mini': { name: 'GPT-5.1 Codex Mini', desc: 'Lightweight code generation', cat: 'Coding' },
+    'gpt-5.1-codex-max': { name: 'GPT-5.1 Codex Max', desc: 'Code generation with xHigh reasoning effort', cat: 'Coding' },
+    'gpt-5-codex': { name: 'GPT-5 Codex', desc: 'Code generation with reasoning', cat: 'Coding' },
+    // --- OpenAI: Reasoning (o-series) ---
     'o3': { name: 'o3', desc: 'Powerful reasoning model', cat: 'Reasoning', input: 2.0, output: 8.0 },
     'o3-mini': { name: 'o3 Mini', desc: 'Fast reasoning model', cat: 'Reasoning', input: 1.10, output: 4.40 },
     'o4-mini': { name: 'o4 Mini', desc: 'Latest fast reasoning model', cat: 'Reasoning', input: 1.10, output: 4.40 },
     // --- Claude ---
+    'claude-fable-5': { name: 'Claude Fable 5', cat: 'Reasoning' },
+    'claude-opus-4-8': { name: 'Claude Opus 4.8', cat: 'Reasoning' },
+    'claude-sonnet-5': { name: 'Claude Sonnet 5', cat: 'Generalist' },
     'claude-opus-4-7': { name: 'Claude Opus 4.7', desc: 'Most capable Claude — adaptive thinking, agentic coding, 1M context', cat: 'Reasoning', input: 5.0, output: 25.0 },
     'claude-opus-4-6': { name: 'Claude Opus 4.6', desc: 'Powerful reasoning with adaptive thinking', cat: 'Reasoning', input: 5.0, output: 25.0 },
     'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', desc: 'Balanced speed and intelligence, 1M context', cat: 'Generalist', input: 3.0, output: 15.0 },
@@ -123,12 +146,48 @@ export const getModelMeta = (id) => {
     return null;
 };
 
-// Get display name for a model ID
-export const getModelDisplayName = (id) => {
+// Auto-format a raw model ID into a readable name: strip trailing date
+// stamps (e.g. -20251101 or -2411) and title-case the hyphenated parts.
+export const formatModelId = (id) => {
+    if (!id) return id;
+    const name = String(id).replace(/-\d{6,8}$/, '').replace(/-\d{4}$/, '');
+    return name.split('-').map(part => /^\d/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+};
+
+// Get the display name for a model. Accepts either a raw model ID string or
+// a model object ({ id, name }). Resolution order: local alias → metadata
+// name → server-provided name (object form only) → auto-formatted ID.
+export const getModelDisplayName = (model) => {
+    const id = typeof model === 'string' ? model : model?.id;
+    if (!id) return '';
     const aliases = JSON.parse(localStorage.getItem('modelAliases') || '{}');
     if (aliases[id]) return aliases[id];
     const meta = getModelMeta(id);
-    return meta?.name || id;
+    if (meta?.name) return meta.name;
+    if (typeof model === 'object' && model?.name && model.name !== id) return model.name;
+    return formatModelId(id);
+};
+
+// Coarse model-family bucket for a model ID — powers the "Family" filter
+// chips in the shared searchable model picker.
+export const getModelFamily = (modelId) => {
+    if (/^gpt-5/.test(modelId)) return 'GPT-5';
+    if (/^gpt-4\.1/.test(modelId)) return 'GPT-4.1';
+    if (/^gpt-4o/.test(modelId)) return 'GPT-4o';
+    if (/^gpt-4/.test(modelId)) return 'GPT-4';
+    if (/^o\d/.test(modelId)) return 'o-series';
+    if (/^claude-/.test(modelId)) return 'Claude';
+    if (/^gemini-/.test(modelId)) return 'Gemini';
+    if (/^mistral-large/.test(modelId)) return 'Mistral Large';
+    if (/^mistral-medium/.test(modelId)) return 'Mistral Medium';
+    if (/^mistral-small/.test(modelId)) return 'Mistral Small';
+    if (/^magistral/.test(modelId)) return 'Magistral';
+    if (/^codestral/.test(modelId)) return 'Codestral';
+    if (/^devstral/.test(modelId)) return 'Devstral';
+    if (/^pixtral/.test(modelId)) return 'Pixtral';
+    if (/^ministral/.test(modelId)) return 'Ministral';
+    if (/^mistral/.test(modelId)) return 'Mistral Other';
+    return 'Other';
 };
 
 // Cache for allowed models config (fetched from server DB)

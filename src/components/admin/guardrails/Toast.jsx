@@ -9,8 +9,8 @@
  *   - showToast(type, msg)   — global imperative API
  */
 
-import React, { useEffect, useState } from 'react';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 
 const _subscribers = new Set();
 let _id = 0;

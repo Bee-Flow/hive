@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '../../utils/helpers';
+import AppIcon from '../../components/AppIcon';
 
 /**
  * Public marketing-site language switcher.
@@ -75,7 +76,11 @@ export default function LanguageSwitcher() {
                 onClick={() => setOpen(v => !v)}
                 title="Change language"
             >
-                <span aria-hidden="true">🌐</span>
+                {/* Lucide, not the 🌐 emoji it used to be: the emoji sits in
+                    the OS font, so the header picked up a blue Apple globe on
+                    a Mac and a flat Segoe one on Windows, at a weight nothing
+                    else in the chrome shares. */}
+                <AppIcon name="Globe" className="w-4 h-4" aria-hidden="true" />
                 <span>{label}</span>
             </button>
             {open && (

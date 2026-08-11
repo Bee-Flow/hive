@@ -1,28 +1,42 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, Sparkles, Upload, AppWindow, ArrowLeft, X, ArrowUp, Check, Clock, Settings2, Loader2 } from 'lucide-react';
-import { API_BASE, authFetch, parseSaveError } from '../../../utils/helpers';
-import { pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
-import useTranslation from '../../../hooks/useTranslation';
-import beeFlowIcon from '../../../assets/BeeFlow-logo-Icon-2026.svg';
-import ModelTierSelector from '../../ModelTierSelector';
-import MarkdownRenderer from '../../MarkdownRenderer';
-import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
-import PlanCard from './PlanCard';
-import { computeRoutineNextRun } from '../../../utils/routineSchedule';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAgentEditorBootstrap } from './AgentEditorBootstrapContext';
-import { useCan } from '../../Gate';
-import { RoutinesPicker, RoutineModal } from './pickers/RoutinePickers';
-import AvatarPicker from './pickers/AvatarPicker';
-import PublishMenu from './pickers/PublishMenu';
-import FilesUploadModal from './pickers/FilesUploadModal';
-import SkillPicker from './pickers/SkillPicker';
-import AppsPicker from './pickers/AppsPicker';
 import AdvancedDrawer from './pickers/AdvancedDrawer';
+import AppsPicker from './pickers/AppsPicker';
+import AvatarPicker from './pickers/AvatarPicker';
+import FilesUploadModal from './pickers/FilesUploadModal';
+import PublishMenu from './pickers/PublishMenu';
+import PlanCard from './PlanCard';
+import beeFlowIcon from '../../../assets/BeeFlow-logo-Icon-2026.svg';
+import useTranslation from '../../../hooks/useTranslation';
+import { pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
+import { API_BASE, authFetch, parseSaveError } from '../../../utils/helpers';
+import { computeRoutineNextRun } from '../../../utils/routineSchedule';
+import { useCan } from '../../Gate';
+import MarkdownRenderer from '../../MarkdownRenderer';
+import ModelTierSelector from '../../ModelTierSelector';
+import { configuredTierKeys } from '../../tierMeta';
+import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
+import { filterAvailableIntegrations } from '../AgentDesigner/integrationAvailability';
+import { RoutinesPicker, RoutineModal } from './pickers/RoutinePickers';
+import SkillPicker from './pickers/SkillPicker';
+import CategoryField from './CategoryField';
+import { saveAgent } from './state/agentSaveApi';
+import useAgentAutosave from './state/useAgentAutosave';
+import { buildRefineContext, mergeRefinedPlan } from './state/refineMerge';
+import AgentConflictModal from './AgentConflictModal';
 
-export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished, onDirtyChange, rightHeaderExtras = null, user = null, initialRefinement = null }) {
+export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished, onDirtyChange, rightHeaderExtras = null, user = null, initialRefinement = null, readOnly = false }) {
     const { t } = useTranslation();
 
     const [agent, setAgent] = useState(initialAgent);
+    // BFSF-271: read-only mode. `readOnly` comes from the server's per-agent
+    // can_edit verdict; `forcedReadOnly` flips on when a save is rejected with
+    // code 'agent_not_editable' (stale client) so we never retry-loop a 403.
+    const [forcedReadOnly, setForcedReadOnly] = useState(false);
+    const ro = readOnly || forcedReadOnly;
+    const roRef = useRef(ro);
+    roRef.current = ro;
     const [name, setName] = useState(initialAgent?.name || plan?.name || t('agent_wizard.builder.name_placeholder'));
     const [avatar, setAvatar] = useState(pickAgentAvatar(initialAgent) || plan?.avatar || DEFAULT_AGENT_EMOJI);
     const [description, setDescription] = useState(initialAgent?.description || plan?.description || '');
@@ -103,6 +117,17 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     // prominent dismissible banner with an upgrade CTA — never just a console
     // error — so the user understands why the save was blocked.
     const [limitWarning, setLimitWarning] = useState(null);
+    // Optimistic-concurrency version token. Seeded from the loaded agent's `rev`;
+    // advanced on every successful save. null = unguarded (first save of an agent
+    // loaded before the rev column existed) — the response returns a real rev.
+    const [baseVersion, setBaseVersion] = useState(() => Number.isInteger(initialAgent?.rev) ? initialAgent.rev : null);
+    // A refine is applying the AI's plan — locks the instructions editor and
+    // marks the whole refine as one atomic operation (one save at the end).
+    const [refining, setRefining] = useState(false);
+    // A save came back 409: the agent changed elsewhere. Holds the server's copy
+    // so the user can reconcile (load latest vs overwrite mine).
+    const [conflict, setConflict] = useState(null); // null | { currentVersion, agent }
+    const [conflictBusy, setConflictBusy] = useState(false);
 
     // Section open/closed state for the inline accordion.
     const [openSection, setOpenSection] = useState(null); // 'identity'|'model'|'knowledge'|'behavior'|'publishing'|'guardrails'|'embed'|null
@@ -201,7 +226,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 stateRef.current.embedEnabled = fresh.embed_enabled === 1 || fresh.embed_enabled === true;
                 stateRef.current.config = { ...(fresh.config || {}) };
                 dirtyRef.current = false;
-                if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+                setDirty(false);
+                // Adopt the restored version so the next autosave uses it as the
+                // CAS base (a stale pending save can't clobber the restore).
+                setBaseVersion(Number.isInteger(fresh.rev) ? fresh.rev : null);
+                hookMarkSaved(fresh, fresh.rev);
                 setSavingState('saved'); setSavedAt(new Date());
             }
         } catch (_) { /* ignore */ }
@@ -320,106 +349,122 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const agentIdRef = useRef(agent?.id);
     useEffect(() => { agentIdRef.current = agent?.id; }, [agent?.id]);
 
-    const saveTimer = useRef(null);
+    // Local dirty flag — drives the parent's unsaved-changes guard and the
+    // best-effort beforeunload beacon. The autosave hook keeps its OWN dirty
+    // flag for the save loop; this one is UX-only.
     const dirtyRef = useRef(false);
-    // Promise queue for serialized saves. Every flush() call chains onto the
-    // tail so two callers can't double-POST. The previous polling-loop
-    // implementation could allow two callers to both pass `while (inflightRef)`
-    // and race. The chain pattern is self-serializing without a busy wait.
-    const saveChainRef = useRef(Promise.resolve());
-    const inflightRef = useRef(false); // exposed to handleDone / beforeunload only
 
-    const flush = useCallback(() => {
-        const id = agentIdRef.current;
-        if (!id) return saveChainRef.current;
-        if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    // The full canonical snapshot the autosave hook persists on each save.
+    const getSnapshot = useCallback(() => ({
+        name: stateRef.current.name,
+        description: stateRef.current.description,
+        systemPrompt: stateRef.current.systemPrompt,
+        model: stateRef.current.model,
+        categoryId: stateRef.current.categoryId,
+        embedEnabled: stateRef.current.embedEnabled,
+        // Top-level avatar so the agents column reflects the picker (the
+        // marketplace card reads agent.avatar, not config.avatar).
+        avatar: stateRef.current.avatar,
+        config: { ...stateRef.current.config },
+    }), []);
 
-        // Snapshot the dirty state at *enqueue* time. If multiple flushes are
-        // queued in rapid succession, only the first does work and the rest
-        // see dirtyRef cleared and no-op. That's the desired coalescing.
-        const next = saveChainRef.current.then(async () => {
-            if (!dirtyRef.current) return;
-            dirtyRef.current = false;
-            inflightRef.current = true;
-            const snapshot = {
-                name: stateRef.current.name,
-                description: stateRef.current.description,
-                systemPrompt: stateRef.current.systemPrompt,
-                model: stateRef.current.model,
-                categoryId: stateRef.current.categoryId,
-                embedEnabled: stateRef.current.embedEnabled,
-                // Top-level avatar so the agents column reflects the picker
-                // — without this, the marketplace card kept rendering initials
-                // because `agent.avatar` stayed NULL even though config.avatar
-                // was set.
-                avatar: stateRef.current.avatar,
-                config: { ...stateRef.current.config },
-            };
-            try {
-                const res = await authFetch(`${API_BASE}/agents/${id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(snapshot),
-                    signal: unmountAbortRef.current?.signal,
-                });
-                if (!res.ok) {
-                    const info = await parseSaveError(res);
-                    if (info.isLimit) {
-                        if (!mountedRef.current) return;
-                        setLimitWarning({ message: info.message, resource: info.resource });
-                        setSavingState('error');
-                        setSaveErrorMsg(info.message);
-                        dirtyRef.current = true;
-                        return;
-                    }
-                    throw new Error(info.message);
-                }
-                const updated = await res.json();
-                if (!mountedRef.current) return;
-                // Refresh the `agent` shell only (id, timestamps, derived fields).
-                // Do NOT overwrite `stateRef.current` from the server response — by
-                // the time this resolves the user may have typed more, and that
-                // newer text lives only in stateRef. Overwriting here silently
-                // loses keystrokes typed during the in-flight save.
-                setAgent(updated);
-                setSavingState('saved'); setSavedAt(new Date());
-                setSaveErrorMsg('');
-                if (!dirtyRef.current) setDirty(false);
-            } catch (err) {
-                if (err?.name === 'AbortError' || !mountedRef.current) return;
-                console.error('Auto-save failed:', err);
-                setSavingState('error');
-                // Surface the server's reason in the indicator's tooltip so the
-                // user can act on it (e.g., a 403 on a tier they don't have).
-                setSaveErrorMsg(String(err?.message || err || 'Unknown error').slice(0, 500));
-                // Mark dirty again so a retry happens on next change.
-                dirtyRef.current = true;
-            } finally {
-                inflightRef.current = false;
+    const autosave = useAgentAutosave({
+        agentId: agent?.id,
+        getSnapshot,
+        baseVersion,
+        enabled: !!agent?.id && !ro,
+        saveFn: saveAgent,
+        onError: (err) => {
+            // Permission 403 → flip into read-only instead of retrying
+            // (server rejects every subsequent save anyway).
+            if (err?.code === 'agent_not_editable' && mountedRef.current) {
+                setForcedReadOnly(true);
             }
-        });
-        saveChainRef.current = next.catch(() => { /* swallow so the chain survives */ });
-        return saveChainRef.current;
-    }, []);
+        },
+        onSaved: (updated, version, meta) => {
+            // Refresh the `agent` shell only (id, timestamps, derived fields).
+            // Do NOT copy the response into stateRef — by the time it resolves
+            // the user may have typed more, and that newer text lives only in
+            // stateRef; overwriting would silently lose keystrokes.
+            if (updated && mountedRef.current) setAgent(updated);
+            if (Number.isInteger(version)) setBaseVersion(version);
+            dirtyRef.current = false; setDirty(false);
+            setLimitWarning(null);
+            const warnings = meta?.warnings || [];
+            if (warnings.length && mountedRef.current) {
+                setChat(prev => [...prev, { role: 'system', content: `⚠️ ${warnings.length} ${warnings.length === 1 ? 'reference' : 'references'} couldn't be linked and ${warnings.length === 1 ? 'was' : 'were'} skipped.` }]);
+            }
+        },
+        onConflict: ({ currentVersion, agent: serverAgent }) => {
+            if (mountedRef.current) setConflict({ currentVersion, agent: serverAgent });
+        },
+        onLimit: ({ message, resource }) => {
+            if (mountedRef.current) setLimitWarning({ message, resource });
+        },
+    });
+    const { queueSave: hookQueueSave, flush: hookFlush, markSaved: hookMarkSaved, status: autosaveStatus, error: autosaveError, savedAt: autosaveSavedAt } = autosave;
 
+    // Mirror the hook's save status into the pill state. The initial 'saved'
+    // (for an already-persisted agent) survives until the hook transitions.
+    useEffect(() => {
+        if (autosaveStatus && autosaveStatus !== 'idle') setSavingState(autosaveStatus);
+        setSaveErrorMsg(autosaveError || '');
+    }, [autosaveStatus, autosaveError]);
+    useEffect(() => { if (autosaveSavedAt) setSavedAt(autosaveSavedAt); }, [autosaveSavedAt]);
+
+    // Public save helpers used by the ~20 edit handlers below. queueSave also
+    // marks the local dirty flag for the parent's unsaved-changes guard.
     const queueSave = useCallback((immediate = false) => {
+        // Read-only: belt-and-braces so any edit handler that slipped through
+        // the disabled UI can never mark dirty or fire a save.
+        if (roRef.current) return;
         dirtyRef.current = true;
         setDirty(true);
-        // Without a persisted agent id we're in draft mode — there's no save
-        // target yet. The user must explicitly press "Save" to create it. We
-        // still mark the draft dirty so the unsaved-changes guard fires.
-        if (!agentIdRef.current) return;
-        setSavingState('saving');
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        if (immediate) {
-            saveTimer.current = null;
-            flush();
-        } else {
-            // Short debounce — keystrokes settle quickly, but we still want
-            // unfocused changes (toggles) to land near-instantly via `immediate`.
-            saveTimer.current = setTimeout(() => { saveTimer.current = null; flush(); }, 350);
+        hookQueueSave(immediate);
+    }, [hookQueueSave]);
+    const flush = useCallback(() => hookFlush(), [hookFlush]);
+
+    // ── Conflict (409) reconcile ──────────────────────────────────
+    // Load latest: re-fetch the server copy and rehydrate (discards local
+    // unsaved edits — the modal warns about this). Reuses handleVersionRestore.
+    const handleConflictLoadLatest = async () => {
+        if (conflictBusy) return;
+        setConflictBusy(true);
+        try { await handleVersionRestore(); } finally {
+            if (mountedRef.current) { setConflict(null); setConflictBusy(false); }
         }
-    }, [flush]);
+    };
+    // Overwrite: re-send the local snapshot with the server's current version as
+    // the CAS base. If it conflicts again, re-open with the newer version.
+    const handleConflictOverwrite = async () => {
+        if (conflictBusy || !agentIdRef.current || !conflict) return;
+        setConflictBusy(true);
+        try {
+            const res = await saveAgent(agentIdRef.current, getSnapshot(), conflict.currentVersion);
+            if (!mountedRef.current) return;
+            if (res.ok) {
+                if (res.updated) setAgent(res.updated);
+                if (Number.isInteger(res.version)) setBaseVersion(res.version);
+                hookMarkSaved(res.updated, res.version);
+                dirtyRef.current = false; setDirty(false);
+                setConflict(null);
+            } else if (res.conflict) {
+                setConflict({ currentVersion: res.currentVersion, agent: res.agent });
+            } else if (res.limit) {
+                setLimitWarning({ message: res.message, resource: res.resource });
+                setConflict(null);
+            }
+        } catch (err) {
+            if (mountedRef.current) {
+                setSavingState('error');
+                setSaveErrorMsg(String(err?.message || err || 'Save failed').slice(0, 500));
+                setConflict(null);
+            }
+        } finally {
+            if (mountedRef.current) setConflictBusy(false);
+        }
+    };
+    const handleConflictDismiss = () => { if (!conflictBusy) setConflict(null); };
 
     useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
@@ -457,6 +502,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             const created = await res.json();
             setAgent(created);
             agentIdRef.current = created.id;
+            // Seed the concurrency token so post-create autosaves use CAS.
+            setBaseVersion(Number.isInteger(created.rev) ? created.rev : 1);
+            hookMarkSaved(created, created.rev);
             dirtyRef.current = false;
             setDirty(false);
             setSavingState('saved');
@@ -477,9 +525,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     // the browser's native "Leave site?" dialog.
     useEffect(() => {
         const onBeforeUnload = () => {
-            if (saveTimer.current && agentIdRef.current && dirtyRef.current) {
-                clearTimeout(saveTimer.current);
-                saveTimer.current = null;
+            if (roRef.current) return; // read-only sessions never save
+            if (agentIdRef.current && dirtyRef.current) {
+                // Best-effort last save on tab close. Deliberately WITHOUT a
+                // baseVersion so it lands unguarded (a 409 has no UI to reconcile
+                // against during unload).
                 const snapshot = {
                     name: stateRef.current.name,
                     description: stateRef.current.description,
@@ -553,16 +603,20 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         setModel(v);
         setSelectedTier(tierName);
         // model is a top-level agent column (not under config). Stash it on
-        // stateRef so flush() picks it up, then queue an immediate save.
-        if (!agentIdRef.current) return;
+        // stateRef so the save picks it up (also for drafts, so the first POST
+        // includes it), then queue an immediate save (a no-op without an id).
         stateRef.current.model = v;
-        dirtyRef.current = true;
         queueSave(true);
     };
     const updateCategory = (id) => { setCategoryId(id); stateRef.current.categoryId = id; dirtyRef.current = true; queueSave(true); };
+    // BFSF-272: category CRUD for the CategoryField manage popover. Every
+    // mutation also refreshes the bootstrap provider — its mirror effect
+    // (setCategories(bootstrap.categories) above) would otherwise resurrect
+    // deleted/renamed rows on the next re-fire. Errors return inline
+    // (rendered by CategoryField) instead of alert().
     const createCategory = async (name) => {
         const trimmed = name?.trim();
-        if (!trimmed) return null;
+        if (!trimmed) return { ok: false, error: 'Name is required' };
         try {
             const res = await authFetch(`${API_BASE}/agents/categories`, {
                 method: 'POST',
@@ -571,12 +625,59 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             });
             if (!res.ok) throw new Error(await res.text());
             const created = await res.json();
-            setCategories(prev => [...prev, created]);
+            // Idempotent create: `existing: true` = case-insensitive duplicate —
+            // select the existing row, never append a doppelgänger option.
+            setCategories(prev => (prev.some(c => c.id === created.id) ? prev : [...prev, created]));
             updateCategory(created.id);
-            return created;
+            bootstrap.refreshCategories?.();
+            return { ok: true, category: created, existed: !!created.existing };
         } catch (err) {
-            alert(err.message || 'Failed to create category');
-            return null;
+            return { ok: false, error: err.message || 'Failed to create category' };
+        }
+    };
+    const renameCategory = async (id, name) => {
+        try {
+            const res = await authFetch(`${API_BASE}/agents/categories/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) return { ok: false, error: data.error || 'Rename failed', code: data.code };
+            setCategories(prev => prev.map(c => (c.id === id ? { ...c, ...data } : c)));
+            bootstrap.refreshCategories?.();
+            return { ok: true, category: data };
+        } catch (err) {
+            return { ok: false, error: err.message || 'Rename failed' };
+        }
+    };
+    const deleteCategory = async (id, reassignTo) => {
+        try {
+            // On the DEFINITIVE call (reassignTo set): if the open agent uses
+            // this category, move it locally FIRST and flush the save. The
+            // server-side reassign bumps `rev` on every agent still in the
+            // category — pre-moving keeps this editor's baseVersion current
+            // so the next autosave doesn't hit a spurious 409 conflict modal.
+            // (Not on the bare first attempt: that may 409 with "in use" and
+            // the user could still cancel.)
+            if (reassignTo && stateRef.current.categoryId === id) {
+                updateCategory(reassignTo !== 'none' ? reassignTo : null);
+                try { await flush(); } catch (_) { /* best-effort */ }
+            }
+            const qs = reassignTo ? `?reassignTo=${encodeURIComponent(reassignTo)}` : '';
+            const res = await authFetch(`${API_BASE}/agents/categories/${id}${qs}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) return { ok: false, error: data.error || 'Delete failed', code: data.code, count: data.count };
+            setCategories(prev => prev.filter(c => c.id !== id));
+            // Bare-delete success while a DRAFT (unpersisted) agent still
+            // points at the category — clear the dangling local selection.
+            if (stateRef.current.categoryId === id) {
+                updateCategory(null);
+            }
+            bootstrap.refreshCategories?.();
+            return { ok: true };
+        } catch (err) {
+            return { ok: false, error: err.message || 'Delete failed' };
         }
     };
 
@@ -713,53 +814,67 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         setChat(prev => [...prev, { role: 'user', content: text }]);
         if (!usingOverride) setChatInput('');
         setChatBusy(true);
+        setRefining(true);
+        // Close the instructions editor so its buffer can't race the refined
+        // value (every keystroke is already mirrored into stateRef, so nothing
+        // is lost). Flush any pending manual edit first so the refine's own save
+        // is the only one that fires during this operation.
+        setInstructionsEditing(false);
+        if (dirtyRef.current) { try { await flush(); } catch (_) { /* best effort */ } }
         try {
+            // Send the AI the CURRENT curated config and tell it to preserve it.
+            const attachedSkills = (attachedSkillIds || []).map(id => {
+                const s = skillNamesById.get(id);
+                return { id, name: s?.name || '' };
+            });
+            const ctx = buildRefineContext({
+                name,
+                description,
+                avatar,
+                systemPrompt: stateRef.current.systemPrompt,
+                capabilities: plan?.capabilities || stateRef.current.config?.wizard?.capabilities || [],
+                model: stateRef.current.model,
+                enabledIntegrations: stateRef.current.config?.enabledIntegrations || [],
+                attachedSkills,
+                knowledge_base_ids: stateRef.current.config?.knowledge_base_ids || [],
+            });
             const res = await authFetch(`${API_BASE}/agents/wizard/refine`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     prompt: chat[0]?.content || '',
-                    plan: { name, description: agent?.description || '', avatar, capabilities: plan?.capabilities || [], systemPrompt: instructions },
+                    plan: ctx.plan,
+                    current: ctx.current,
                     refinement: text,
                     modelTier: chatTier || tier || 'fast',
                     locale,
                 }),
             });
-            if (!res.ok) throw new Error(await res.text());
-            const { plan: updated } = await res.json();
-            const nextAvatar = updated.avatar || avatar;
-            setName(updated.name);
-            setAvatar(nextAvatar);
-            setInstructions(updated.systemPrompt || instructions);
-            stateRef.current.name = updated.name;
-            stateRef.current.description = updated.description || stateRef.current.description;
-            stateRef.current.systemPrompt = updated.systemPrompt || stateRef.current.systemPrompt;
-            stateRef.current.avatar = nextAvatar;
-            stateRef.current.config = {
-                ...stateRef.current.config,
-                wizard: { capabilities: updated.capabilities, suggestedSkills: updated.suggestedSkills },
-            };
-            queueSave();
-
-            // Apply the remaining plan fields the AI filled in. Previously only
-            // name/avatar/description/instructions landed on the form, leaving
-            // Apps, Skills and the model tier empty even though the AI proposed
-            // them (BFSF-201).
-            if (Array.isArray(updated.enabledIntegrations)) {
-                const apps = updated.enabledIntegrations.filter(id => availableIntegrations.some(a => a.id === id));
-                setEnabledIntegrations(apps);
-                patchConfig({ enabledIntegrations: apps });
-            }
-            if (typeof updated.model === 'string' && ['fast', 'smart', 'thinking'].includes(updated.model)) {
-                updateModel(updated.model);
-            }
-            if (Array.isArray(updated.skills) && updated.skills.length > 0) {
+            if (!res.ok) {
+                // Structured, actionable error — a malformed model output (422)
+                // is retryable; anything else surfaces the server reason. No
+                // state was mutated, so the save pill stays coherent.
+                let msg;
                 try {
-                    const attach = new Set(attachedSkillIds);
-                    for (const s of updated.skills) {
-                        if (s.id && (allSkills || []).some(x => x.id === s.id)) {
-                            attach.add(s.id); // reuse an existing skill
-                        } else if (!s.id && s.name) {
+                    const body = await res.json();
+                    msg = body?.reason === 'plan_parse_failed'
+                        ? t('agent_wizard.builder.refine_parse_error', 'The assistant returned malformed output. Please try again.')
+                        : (body?.error || `Refine failed (${res.status})`);
+                } catch (_) { msg = `Refine failed (${res.status})`; }
+                setChat(prev => [...prev, { role: 'error', content: msg }]);
+                return;
+            }
+            const { plan: updated, preserved } = await res.json();
+
+            // Resolve skills BEFORE the single save so attachedSkillIds are
+            // valid. Base off stateRef (not the stale attachedSkillIds closure).
+            const attach = new Set(stateRef.current.config?.attachedSkillIds || []);
+            if (Array.isArray(updated.skills) && updated.skills.length > 0) {
+                for (const s of updated.skills) {
+                    if (s.id && (allSkills || []).some(x => x.id === s.id)) {
+                        attach.add(s.id); // reuse an existing skill
+                    } else if (!s.id && s.name) {
+                        try {
                             const sres = await authFetch(`${API_BASE}/api/skills`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -769,13 +884,51 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 const created = await sres.json();
                                 if (created?.id) { setAllSkills(prev => [...(prev || []), created]); attach.add(created.id); }
                             }
-                        }
+                        } catch (_) { /* non-fatal — a failed skill is simply not attached */ }
                     }
-                    const nextSkills = Array.from(attach);
-                    setAttachedSkillIds(nextSkills);
-                    patchConfig({ attachedSkillIds: nextSkills });
-                } catch (_) { /* non-fatal — partial skill application is acceptable */ }
+                }
             }
+            const resolvedSkillIds = Array.from(attach);
+
+            // Fold the whole plan into ONE canonical snapshot: preserve & patch.
+            const merged = mergeRefinedPlan(
+                {
+                    name,
+                    description,
+                    systemPrompt: stateRef.current.systemPrompt,
+                    avatar,
+                    model: stateRef.current.model,
+                    config: stateRef.current.config,
+                },
+                updated,
+                preserved,
+                {
+                    availableIntegrationIds: availableIntegrations.map(a => a.id),
+                    selectableTierKeys: configuredTierKeys(tiers),
+                    resolvedSkillIds,
+                },
+            );
+
+            // Apply to stateRef (the canonical source the save reads) AND to
+            // React state, in one synchronous block.
+            stateRef.current.name = merged.name;
+            stateRef.current.description = merged.description;
+            stateRef.current.systemPrompt = merged.systemPrompt;
+            stateRef.current.avatar = merged.avatar;
+            stateRef.current.model = merged.model;
+            stateRef.current.config = merged.config;
+            setName(merged.name);
+            setDescription(merged.description);
+            setInstructions(merged.systemPrompt);
+            setAvatar(merged.avatar);
+            setModel(merged.model);
+            if (typeof merged.model === 'string' && merged.model.startsWith('tier:')) setSelectedTier(merged.model.slice(5));
+            setEnabledIntegrations(merged.config.enabledIntegrations || []);
+            setAttachedSkillIds(merged.config.attachedSkillIds || []);
+            setKnowledgeBaseIds(merged.config.knowledge_base_ids || []);
+
+            // ONE atomic save of the merged snapshot.
+            queueSave(true);
 
             setChat(prev => [...prev, { role: 'plan', plan: updated }]);
 
@@ -811,6 +964,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             setChat(prev => [...prev, { role: 'error', content: err.message }]);
         } finally {
             setChatBusy(false);
+            setRefining(false);
         }
     };
 
@@ -828,35 +982,13 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
 
     // Flush any pending or in-flight save, then close.
     const handleDone = async () => {
-        if (saveTimer.current) {
-            clearTimeout(saveTimer.current);
-            saveTimer.current = null;
-        }
-        if (dirtyRef.current || inflightRef.current) await flush();
+        await flush();
         if (onPublished) onPublished(agent);
     };
 
-    // Filter integration catalog by org/credential gating (mirrors ToolsSection.jsx).
-    // `agent-search` (Web Search) is a built-in platform capability with no
-    // per-org credentials — bypass the org-enabled gate so every agent can opt
-    // into it.
-    const ALWAYS_AVAILABLE = new Set(['agent-search']);
-    const availableIntegrations = (() => {
-        if (!integrationStatus) return INTEGRATION_CATALOG;
-        const status = integrationStatus;
-        return INTEGRATION_CATALOG.filter(item => {
-            if (ALWAYS_AVAILABLE.has(item.id)) return true;
-            const orgEnabled = status.orgEnabledIntegrations;
-            if (orgEnabled && !orgEnabled.includes(item.id)) return false;
-            if (item.group === 'google') return !!status.isGoogleUser;
-            if (item.id === 'fireflies') return !!status.hasFirefliesKey;
-            if (item.id === 'youtrack') return !!status.hasYouTrackConfig;
-            if (item.id === 'gamma') return !!status.hasGammaKey;
-            if (item.id === 'n8n') return !!status.hasN8nConfig;
-            if (item.id === 'linkedin') return !!status.hasLinkedInConfig || !!status.linkedInConnected;
-            return true;
-        });
-    })();
+    // Filter integration catalog by org/credential gating (shared with the
+    // skill editor — see AgentDesigner/integrationAvailability.js).
+    const availableIntegrations = filterAvailableIntegrations(INTEGRATION_CATALOG, integrationStatus);
 
     const skillNamesById = new Map((allSkills || []).map(s => [s.id, s]));
     // Apps are off by default (R4). Legacy `null` rows have been backfilled
@@ -920,7 +1052,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 </div>
             )}
             {/* Left chat panel — glass chrome tier so the wallpaper subtly
-                shows through under the refine-this-agent rail. */}
+                shows through under the refine-this-agent rail. Hidden in
+                read-only mode: refining mutates the agent (BFSF-271). */}
+            {!ro && (
             <aside
                 style={{ width: chatWidth }}
                 className="flex-shrink-0 border-r border-[var(--border-default)] flex flex-col min-w-[240px] max-w-[600px] bg-[var(--bg-secondary)]"
@@ -1012,7 +1146,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 onClick={handleRefine}
                                 disabled={chatBusy || !chatInput.trim()}
                                 className="p-2 bg-[var(--text-primary)] text-white rounded-full hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm active:scale-95 transform duration-100"
-                                title={t('agent_wizard.builder.send') || 'Send'}
+                                title={t('agent_wizard.builder.send', 'Send')}
                                 aria-label="Send"
                             >
                                 {chatBusy ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowUp className="w-5 h-5" />}
@@ -1024,22 +1158,44 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     </div>
                 </div>
             </aside>
+            )}
 
             {/* Drag handle */}
+            {!ro && (
             <div
                 onMouseDown={onDragStart}
                 className="w-1 flex-shrink-0 cursor-col-resize hover:bg-[var(--accent)]/40 active:bg-[var(--accent)]/60 transition-colors z-10"
             />
+            )}
 
             {/* Right config panel */}
             <main className="flex-1 overflow-y-auto">
                 <div className="flex items-center justify-end gap-3 px-8 py-3 relative">
-                    {agent?.id ? (
+                    {/* Read-only: the refine rail (and its Back button) is hidden,
+                        so surface Back here; no save/publish controls. */}
+                    {ro && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={onBack}
+                                className="mr-auto flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                            >
+                                <ArrowLeft size={16} /> {t('agent_wizard.back')}
+                            </button>
+                            <span
+                                role="status"
+                                className="text-xs px-2.5 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 text-[var(--text-secondary)]"
+                            >
+                                {t('agent_studio.read_only_banner', "Read-only — you don't have permission to edit this agent.")}
+                            </span>
+                        </>
+                    )}
+                    {!ro && (agent?.id ? (
                         <SaveStateIndicator t={t} state={savingState} savedAt={savedAt} errorMsg={saveErrorMsg} onRetry={flush} />
                     ) : (
                         <>
                             <span className="text-xs text-[var(--text-tertiary)]">
-                                {t('agent_wizard.builder.draft_label') || 'Draft — not saved yet'}
+                                {t('agent_wizard.builder.draft_label', 'Draft — not saved yet')}
                             </span>
                             <button
                                 type="button"
@@ -1048,13 +1204,13 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 disabled:opacity-50 transition"
                             >
                                 {savingState === 'saving'
-                                    ? (t('agent_wizard.builder.saving') || 'Saving…')
-                                    : (t('agent_wizard.builder.save_draft') || 'Save')}
+                                    ? (t('agent_wizard.builder.saving', 'Saving…'))
+                                    : (t('agent_wizard.builder.save_draft', 'Save'))}
                             </button>
                         </>
-                    )}
+                    ))}
                     {rightHeaderExtras}
-                    {agent?.id && (
+                    {agent?.id && !ro && (
                         <PublishMenu
                             t={t}
                             agent={agent}
@@ -1076,7 +1232,13 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 <div className="max-w-4xl mx-auto px-10 pt-8 pb-12">
                     {/* Header block — avatar + name + action bar as one unit */}
                     <div className="mb-8">
-                        <div className="flex items-center gap-4 mb-4">
+                        {/* `inert` (React 19 native) blocks pointer AND keyboard
+                            for the whole subtree without touching the layout —
+                            unlike fieldset[disabled], whose display:contents is
+                            not honoured by browsers (fieldsets always generate
+                            their own block box, which would break these flex
+                            rows for EVERYONE, read-only or not). */}
+                        <div className="flex items-center gap-4 mb-4" inert={ro || undefined}>
                             <AvatarPicker t={t} avatar={avatar} onChange={updateAvatar} size="lg" />
                             <input
                                 value={name}
@@ -1087,7 +1249,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             />
                         </div>
 
-                    <div ref={actionBarRef} className="flex flex-wrap items-center gap-2 relative">
+                    <div ref={actionBarRef} inert={ro || undefined} className={`flex flex-wrap items-center gap-2 relative ${ro ? 'opacity-60' : ''}`}>
                         <div className="mr-1">
                             <ModelTierSelector
                                 tiers={tiers || {}}
@@ -1111,7 +1273,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         />
                         <ActionPill
                             icon={<Sparkles size={14} />}
-                            label={t('agent_wizard.builder.skills') || 'Skills'}
+                            label={t('agent_wizard.builder.skills', 'Skills')}
                             count={attachedSkillIds.length}
                             onClick={() => setSkillPickerOpen(v => !v)}
                             active={skillPickerOpen}
@@ -1119,7 +1281,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         {agent?.id && routinesAllowed && (
                             <ActionPill
                                 icon={<Clock size={14} />}
-                                label={t('routines.title') || 'Routines'}
+                                label={t('routines.title', 'Routines')}
                                 count={agentRoutines.filter(r => r.isActive).length}
                                 onClick={() => setRoutinesPickerOpen(v => !v)}
                                 active={routinesPickerOpen}
@@ -1132,8 +1294,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             className={`flex items-center justify-center w-8 h-8 rounded-lg border transition-all ${advancedOpen || memoryEnabled || embedEnabled
                                 ? 'border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]'
                                 : 'border-[var(--border-default)] bg-[var(--bg-card,#fff)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]'}`}
-                            title={t('agent_wizard.builder.advanced_settings') || 'Advanced settings'}
-                            aria-label={t('agent_wizard.builder.advanced_settings') || 'Advanced settings'}
+                            title={t('agent_wizard.builder.advanced_settings', 'Advanced settings')}
+                            aria-label={t('agent_wizard.builder.advanced_settings', 'Advanced settings')}
                         >
                             <Settings2 size={14} />
                         </button>
@@ -1222,10 +1384,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     </div>{/* end header card */}
 
                     {(detailsOpen || description || categoryId) ? (
-                        <div className="mb-8 space-y-3">
+                        <div className="mb-8 space-y-3" inert={ro || undefined}>
                             <div>
                                 <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">
-                                    {t('agent_wizard.builder.role_description_label') || 'Role description'}
+                                    {t('agent_wizard.builder.role_description_label', 'Role description')}
                                 </div>
                                 <div className="relative -mx-4">
                                     <textarea
@@ -1246,7 +1408,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             </div>
                             <div>
                                 <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">
-                                    {t('agent_wizard.builder.category_label') || 'Category'}
+                                    {t('agent_wizard.builder.category_label', 'Category')}
                                 </div>
                                 <CategoryField
                                     t={t}
@@ -1254,25 +1416,35 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                     categories={categories}
                                     onChange={updateCategory}
                                     onCreate={createCategory}
+                                    onRename={renameCategory}
+                                    onDelete={deleteCategory}
                                 />
                             </div>
                         </div>
-                    ) : (
+                    ) : (!ro && (
                         <button
                             type="button"
                             onClick={() => setDetailsOpen(true)}
                             className="mb-8 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition flex items-center gap-1"
                         >
                             <Plus size={12} />
-                            {t('agent_wizard.builder.add_details') || 'Add description & category'}
+                            {t('agent_wizard.builder.add_details', 'Add description & category')}
                         </button>
-                    )}
+                    ))}
 
                     <div className="mb-2">
-                        <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">
-                            {t('agent_wizard.builder.instructions')}
+                        <div className="flex items-center gap-2 mb-1">
+                            <div className="text-[13px] font-medium text-[var(--text-secondary)]">
+                                {t('agent_wizard.builder.instructions')}
+                            </div>
+                            {refining && (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-[var(--text-tertiary)]">
+                                    <Loader2 size={11} className="animate-spin" />
+                                    {t('agent_wizard.builder.updating', 'Updating…')}
+                                </span>
+                            )}
                         </div>
-                        {instructionsEditing ? (
+                        {instructionsEditing && !refining && !ro ? (
                             <InstructionsEditor
                                 ref={instructionsTextareaRef}
                                 initialValue={instructions}
@@ -1283,11 +1455,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         ) : (
                             <div
                                 role="button"
-                                tabIndex={0}
-                                onClick={() => setInstructionsEditing(true)}
-                                onFocus={() => setInstructionsEditing(true)}
-                                className="instructions-view min-h-[10rem] px-4 py-3 -mx-4 cursor-text rounded-xl hover:bg-[var(--bg-secondary)]/40 transition"
-                                title={t('agent_wizard.builder.instructions_edit_hint') || 'Click to edit'}
+                                tabIndex={(refining || ro) ? -1 : 0}
+                                onClick={(refining || ro) ? undefined : () => setInstructionsEditing(true)}
+                                onFocus={(refining || ro) ? undefined : () => setInstructionsEditing(true)}
+                                aria-disabled={refining || ro || undefined}
+                                className={`instructions-view min-h-[10rem] px-4 py-3 -mx-4 rounded-xl transition ${refining ? 'opacity-60 cursor-default' : ro ? 'cursor-default' : 'cursor-text hover:bg-[var(--bg-secondary)]/40'}`}
+                                title={(refining || ro) ? undefined : t('agent_wizard.builder.instructions_edit_hint', 'Click to edit')}
                             >
                                 {instructions ? (
                                     <MarkdownRenderer content={instructions} />
@@ -1302,10 +1475,16 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 </div>
             </main>
 
-            {knowledgeOpen && agent?.id && (
+            {/* BFSF-270: no `agent?.id` gate — for unsaved drafts the pill used
+                to flip knowledgeOpen and render NOTHING (a silent no-op). The
+                server never required a saved agent: uploads are KB-scoped and
+                the KB link is staged in stateRef.current.config, which the
+                draft's first save persists. */}
+            {knowledgeOpen && (
                 <FilesUploadModal
                     t={t}
                     agent={agent}
+                    agentName={name}
                     knowledgeBaseIds={knowledgeBaseIds}
                     onKnowledgeBaseIdsChange={onKnowledgeBaseIdsChange}
                     strictKnowledge={strictKnowledge}
@@ -1338,6 +1517,15 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     onCancel={cancelEnableEmbed}
                 />
             )}
+            {conflict && (
+                <AgentConflictModal
+                    t={t}
+                    busy={conflictBusy}
+                    onLoadLatest={handleConflictLoadLatest}
+                    onOverwrite={handleConflictOverwrite}
+                    onDismiss={handleConflictDismiss}
+                />
+            )}
             {routineDeleteTarget && (
                 <div
                     className="fixed inset-0 z-[1100] bg-black/50 flex items-center justify-center p-4"
@@ -1350,10 +1538,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="px-5 py-4 border-b border-[var(--border-default)] text-sm font-semibold text-[var(--text-primary)]">
-                            {t('routines.delete_title') || 'Delete routine'}
+                            {t('routines.delete_title', 'Delete routine')}
                         </div>
                         <div className="px-5 py-4 text-sm text-[var(--text-secondary)]">
-                            {(t('routines.delete_body') || 'Delete "{title}"?').replace('{title}', routineDeleteTarget.title || '')}
+                            {(t('routines.delete_body', 'Delete "{title}"?')).replace('{title}', routineDeleteTarget.title || '')}
                         </div>
                         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--border-default)]">
                             <button
@@ -1361,7 +1549,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 disabled={routineDeleting}
                                 className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] disabled:opacity-50"
                             >
-                                {t('agent_studio.cancel') || 'Cancel'}
+                                {t('agent_studio.cancel', 'Cancel')}
                             </button>
                             <button
                                 onClick={async () => {
@@ -1381,7 +1569,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 disabled={routineDeleting}
                                 className="px-4 py-2 rounded-full text-sm bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
                             >
-                                {routineDeleting ? (t('agent_studio.deleting') || 'Deleting…') : (t('agent_studio.delete') || 'Delete')}
+                                {routineDeleting ? (t('agent_studio.deleting', 'Deleting…')) : (t('agent_studio.delete', 'Delete'))}
                             </button>
                         </div>
                     </div>
@@ -1489,20 +1677,20 @@ function EnableEmbedConfirmModal({ t, agent, onConfirm, onCancel }) {
         <div className="fixed inset-0 z-[1100] bg-black/50 flex items-center justify-center p-4" onClick={onCancel}>
             <div className="bg-[var(--bg-primary)] rounded-xl w-full max-w-md shadow-xl border border-[var(--border-default)]" onClick={(e) => e.stopPropagation()}>
                 <div className="px-5 py-4 border-b border-[var(--border-default)] text-sm font-semibold text-[var(--text-primary)]">
-                    {t('agent_wizard.embed.confirm_title') || 'Make this agent public?'}
+                    {t('agent_wizard.embed.confirm_title', 'Make this agent public?')}
                 </div>
                 <div className="px-5 py-4 text-sm text-[var(--text-secondary)] space-y-3">
-                    <p>{t('agent_wizard.embed.confirm_body') || 'Anyone who knows the URL will be able to chat with this agent without an account. The agent will run with its full configuration: system prompt, attached skills, and knowledge bases.'}</p>
+                    <p>{t('agent_wizard.embed.confirm_body', 'Anyone who knows the URL will be able to chat with this agent without an account. The agent will run with its full configuration: system prompt, attached skills, and knowledge bases.')}</p>
                     {url && (
                         <div className="text-xs px-3 py-2 rounded-lg bg-[var(--bg-secondary)] text-[var(--text-tertiary)] break-all font-mono">{url}</div>
                     )}
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-3 border-t border-[var(--border-default)]">
                     <button onClick={onCancel} className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition">
-                        {t('agent_wizard.embed.confirm_cancel') || 'Cancel'}
+                        {t('agent_wizard.embed.confirm_cancel', 'Cancel')}
                     </button>
                     <button onClick={onConfirm} className="px-4 py-2 rounded-full text-sm bg-[var(--text-primary)] text-[var(--bg-primary)] hover:opacity-90 transition">
-                        {t('agent_wizard.embed.confirm_enable') || 'Enable public access'}
+                        {t('agent_wizard.embed.confirm_enable', 'Enable public access')}
                     </button>
                 </div>
             </div>
@@ -1549,8 +1737,8 @@ function SaveStateIndicator({ t, state, savedAt, errorMsg, onRetry }) {
     }
     // error
     const tooltip = errorMsg
-        ? `${t('agent_wizard.builder.save_error') || 'Save failed'}: ${errorMsg}`
-        : (t('agent_wizard.builder.save_error') || 'Save failed');
+        ? `${t('agent_wizard.builder.save_error', 'Save failed')}: ${errorMsg}`
+        : (t('agent_wizard.builder.save_error', 'Save failed'));
     return (
         <button
             type="button"
@@ -1559,8 +1747,8 @@ function SaveStateIndicator({ t, state, savedAt, errorMsg, onRetry }) {
             title={tooltip}
         >
             <span aria-hidden="true">!</span>
-            {t('agent_wizard.builder.save_error') || 'Save failed'}
-            <span className="underline">{t('agent_wizard.builder.save_retry') || 'retry'}</span>
+            {t('agent_wizard.builder.save_error', 'Save failed')}
+            <span className="underline">{t('agent_wizard.builder.save_retry', 'retry')}</span>
         </button>
     );
 }
@@ -1584,63 +1772,6 @@ function ActionPill({ icon, label, count, onClick, active, popoverTrigger }) {
 }
 
 
-function CategoryField({ t, value, categories, onChange, onCreate }) {
-    const [creating, setCreating] = useState(false);
-    const [draft, setDraft] = useState('');
-    const inputRef = useRef(null);
-    useEffect(() => { if (creating) inputRef.current?.focus(); }, [creating]);
-    const submit = async () => {
-        const name = draft.trim();
-        if (!name) { setCreating(false); return; }
-        const created = await onCreate(name);
-        if (created) { setDraft(''); setCreating(false); }
-    };
-    if (creating) {
-        return (
-            <div className="flex gap-1">
-                <input
-                    ref={inputRef}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') { e.preventDefault(); submit(); }
-                        if (e.key === 'Escape') { setDraft(''); setCreating(false); }
-                    }}
-                    placeholder={t('agent_wizard.builder.category_new_placeholder') || 'New category name'}
-                    className="flex-1 min-w-0 bg-[var(--bg-secondary)]/40 border border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)]"
-                />
-                <button type="button" onClick={submit} className="px-3 py-2 rounded-lg bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 transition">
-                    {t('agent_wizard.builder.category_create') || 'Create'}
-                </button>
-                <button type="button" onClick={() => { setDraft(''); setCreating(false); }} className="px-2 py-2 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition">
-                    <X size={14} />
-                </button>
-            </div>
-        );
-    }
-    return (
-        <div className="flex gap-1">
-            <select
-                value={value || ''}
-                onChange={(e) => onChange(e.target.value || null)}
-                className="flex-1 min-w-0 bg-[var(--bg-secondary)]/40 border border-transparent hover:bg-[var(--bg-secondary)] focus:border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] transition cursor-pointer"
-            >
-                <option value="">{t('agent_wizard.field.category_none')}</option>
-                {categories.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-            </select>
-            <button
-                type="button"
-                onClick={() => setCreating(true)}
-                className="px-2.5 py-2 rounded-lg bg-[var(--bg-secondary)]/40 hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
-                title={t('agent_wizard.builder.category_new') || 'New category'}
-            >
-                <Plus size={14} />
-            </button>
-        </div>
-    );
-}
 
 // Routine-picker constants and components moved to ./pickers/RoutinePickers.jsx
 

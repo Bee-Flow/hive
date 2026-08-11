@@ -6,6 +6,9 @@ import { Check, ChevronDown } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import scopedStorage from '../../utils/scopedStorage';
 import MeetingNotesSection from './MeetingNotesSection';
+import GoogleMeetNotesSection from './GoogleMeetNotesSection';
+import SummaryTemplatesSection from './SummaryTemplatesSection';
+import VoiceprintSection from './VoiceprintSection';
 
 const ROLE_LABELS = {
     admin: 'Admin',
@@ -199,13 +202,13 @@ const PreferencesSection = ({
 
     const localeOptions = locales.map(l => ({ value: l.code, label: l.name }));
     const chatHistoryOptions = [
-        { value: 'per-agent', label: t('settings.chat_history_per_agent') || 'Per agent' },
-        { value: 'all-chats', label: t('settings.chat_history_all_chats') || 'All chats' },
+        { value: 'per-agent', label: t('settings.chat_history_per_agent', 'Per agent') },
+        { value: 'all-chats', label: t('settings.chat_history_all_chats', 'All chats') },
     ];
     const startupOptions = [
-        { value: 'last-used', label: t('settings.continue_where_left') || 'Continue where you left off' },
-        { value: 'specific', label: t('settings.always_open_specific') || 'Always open a specific agent' },
-        { value: 'direct-chat', label: t('settings.start_direct_chat') || 'Start with Direct Chat' },
+        { value: 'last-used', label: t('settings.continue_where_left', 'Continue where you left off') },
+        { value: 'specific', label: t('settings.always_open_specific', 'Always open a specific agent') },
+        { value: 'direct-chat', label: t('settings.start_direct_chat', 'Start with Direct Chat') },
     ];
 
     return (
@@ -245,7 +248,7 @@ const PreferencesSection = ({
 
             {/* ── General ── */}
             <div>
-                <SectionLabel>{t('settings.general_section') || 'General'}</SectionLabel>
+                <SectionLabel>{t('settings.general_section', 'General')}</SectionLabel>
                 <div
                     className="rounded-xl"
                     style={{ border: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}
@@ -274,8 +277,8 @@ const PreferencesSection = ({
                     {showStartup && (
                         <Row
                             first={!hasLanguageRow && !showChatHistory}
-                            label={t('settings.startup_behavior') || 'Startup'}
-                            description={t('settings.startup_behavior_desc') || 'Choose what opens when you launch Bee Flow'}
+                            label={t('settings.startup_behavior', 'Startup')}
+                            description={t('settings.startup_behavior_desc', 'Choose what opens when you launch Bee Flow')}
                             right={
                                 <Dropdown
                                     value={defaultAgentMode}
@@ -312,8 +315,8 @@ const PreferencesSection = ({
                     )}
                     <Row
                         first={!hasLanguageRow && !showChatHistory && !showStartup}
-                        label={t('settings.simple_mode_toggle') || 'Simple Mode'}
-                        description={`${t('settings.simple_mode_desc') || 'Show only New Chat, Search, Agents and your chat history. Hides Studio, Meeting Notes, Notebooks, Webpages and other settings.'}${isMobile ? ` ${t('settings.simple_mode_mobile_note') || 'Always on for small screens.'}` : ''}`}
+                        label={t('settings.simple_mode_toggle', 'Simple Mode')}
+                        description={`${t('settings.simple_mode_desc', 'Show only New Chat, Search, Agents and your chat history. Hides Studio, Meeting Notes, Notebooks, Webpages and other settings.')}${isMobile ? ` ${t('settings.simple_mode_mobile_note', 'Always on for small screens.')}` : ''}`}
                         right={<Toggle on={isSimpleMode || isMobile} onClick={handleSimpleModeToggle} disabled={simpleSaving || isMobile} />}
                     />
                 </div>
@@ -321,6 +324,15 @@ const PreferencesSection = ({
 
             {/* ── Nextcloud Talk Meeting Notes (self-hides when not licensed) ── */}
             <MeetingNotesSection />
+
+            {/* ── Google Meet Meeting Notes (self-hides when not licensed/connected) ── */}
+            <GoogleMeetNotesSection />
+
+            {/* ── My summary templates (self-hides when Meeting Notes not licensed) ── */}
+            <SummaryTemplatesSection />
+
+            {/* ── My voice profile (self-hides unless pyannoteAI is the active engine) ── */}
+            <VoiceprintSection />
 
             {/* ── Sign out ── */}
             {onLogout && (

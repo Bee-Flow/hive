@@ -24,7 +24,8 @@
 // for Fontshare (lowercase + hyphens). Google uses `name` directly.
 const FONT_LIBRARY = [
     // ── Sans-serif (system-style) ──
-    { name: 'Inter',           source: 'google' },
+    // Self-hosted — the live design's body font. See Fraunces below.
+    { name: 'Inter',           source: 'self' },
     { name: 'Roboto',          source: 'google' },
     { name: 'Open Sans',       source: 'google' },
     { name: 'Lato',            source: 'google' },
@@ -39,13 +40,23 @@ const FONT_LIBRARY = [
     { name: 'Space Grotesk',   source: 'google' },
     { name: 'Karla',           source: 'google' },
     { name: 'Raleway',         source: 'google' },
-    // ── Serif ──
+    { name: 'Geist',           source: 'google' },
+    // ── Serif / editorial display ──
     { name: 'Roboto Slab',     source: 'google' },
     { name: 'Source Serif 4',  source: 'google' },
     { name: 'Merriweather',    source: 'google' },
     { name: 'Playfair Display',source: 'google' },
     { name: 'Lora',            source: 'google' },
     { name: 'IBM Plex Serif',  source: 'google' },
+    // Self-hosted since the CLS work: this is the family the LIVE design's
+    // headings use, so it must be on disk and preloadable — a runtime Google
+    // <link> injected after React mounted re-melted the h1 mid-load.
+    { name: 'Fraunces',        source: 'self' },
+    // ── Monospace (eyebrow labels, stats, inline code) ──
+    // Self-hosted — the live design's mono. See Fraunces above.
+    { name: 'IBM Plex Mono',   source: 'self' },
+    { name: 'Geist Mono',      source: 'google' },
+    { name: 'JetBrains Mono',  source: 'google' },
     // ── Self-hosted (Fontshare originals, served from /public/fonts/) ──
     // Variable WOFF2s under agent-hub/public/fonts/<slug>/ and loaded
     // via the @font-face block in agent-hub/src/marketing/
@@ -155,4 +166,25 @@ export function fontStack(name) {
     if (!safe) return 'system-ui, sans-serif';
     const quoted = /\s/.test(safe) ? `"${safe}"` : safe;
     return `${quoted}, system-ui, -apple-system, sans-serif`;
+}
+
+/**
+ * The metric-matched local fallback face for a family, or null.
+ *
+ * These faces exist in self-hosted-fonts.css with size-adjust /
+ * ascent-override / descent-override tuned to the web font's metrics. Placed
+ * between the web font and the generic stack, they make a late-arriving
+ * WOFF2 swap change pixels rather than positions — the whole point of
+ * self-hosting these three families was removing font-swap layout shift,
+ * and a fallback that lays out at different metrics would put it back.
+ * Families without a tuned face fall through to the generic stack exactly
+ * as before.
+ */
+const METRIC_FALLBACK_FACES = new Map([
+    ['fraunces', 'Fraunces Fallback'],
+    ['inter', 'Inter Fallback'],
+    ['ibm plex mono', 'IBM Plex Mono Fallback'],
+]);
+export function fallbackFaceFor(name) {
+    return METRIC_FALLBACK_FACES.get(String(name || '').trim().toLowerCase()) || null;
 }
