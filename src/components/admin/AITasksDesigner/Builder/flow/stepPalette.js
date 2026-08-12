@@ -12,6 +12,7 @@ import {
 import { defaultTriggerLabel } from './triggerLabels';
 import { resolveIntegrationFromTool } from '../../../../../utils/integrationIcons';
 import { INTEGRATION_CATALOG, CATEGORY_ORDER as INTEGRATION_CATEGORY_ORDER } from '../../../../../config/integrationCatalog';
+import { shortAppLabel, actionLabelMap } from './appLabels';
 
 /**
  * Shared step-catalog data + search/grouping for the routines builder's
@@ -342,11 +343,24 @@ function normalizeId(id) {
 
 function buildCategoryMap() {
     const map = new Map();
-    for (const entry of INTEGRATION_CATALOG) map.set(normalizeId(entry.id), entry.category || 'Other');
+    for (const entry of INTEGRATION_CATALOG) map.set(normalizeId(entry.id), entry);
     return map;
 }
 
-/** Group the catalog's apps by integration category → [{id,label,integrationId,actions,connected}]. */
+// Where an app with no explicit `rank` sorts: after every ranked one, then
+// alphabetically among its unranked peers. So a category nobody has ordered by
+// hand keeps the plain A→Z it has always had.
+const UNRANKED = 1000;
+
+/**
+ * Group the catalog's apps by integration category →
+ * [{id,label,shortLabel,integrationId,actions,connected}].
+ *
+ * `shortLabel` is what the ribbon prints on the button; `label` stays full and
+ * is what lands in the node payload. Ordering is by the catalog's `rank` then
+ * by the SHORT label, so the visible order is the alphabetical order of the
+ * text actually on screen.
+ */
 export function groupAppsByCategory(catalog) {
     if (!catalog?.apps) return {};
     const catMap = buildCategoryMap();
@@ -363,11 +377,22 @@ export function groupAppsByCategory(catalog) {
         }));
         if (allActions.length === 0) continue;
         const integrationId = allActions[0].integrationId || a.id;
-        const category = catMap.get(normalizeId(a.id)) || catMap.get(normalizeId(integrationId)) || 'Other';
-        const entry = { id: a.id, label: a.label, integrationId, actions: allActions, connected: a.connected !== false };
+        const known = catMap.get(normalizeId(a.id)) || catMap.get(normalizeId(integrationId)) || null;
+        const category = known?.category || 'Other';
+        const entry = {
+            id: a.id,
+            label: a.label,
+            shortLabel: shortAppLabel(a.label, category, normalizeId(a.id)),
+            rank: Number.isFinite(known?.rank) ? known.rank : UNRANKED,
+            integrationId,
+            actions: allActions,
+            connected: a.connected !== false,
+        };
         (out[category] = out[category] || []).push(entry);
     }
-    for (const k of Object.keys(out)) out[k].sort((x, y) => x.label.localeCompare(y.label));
+    for (const k of Object.keys(out)) {
+        out[k].sort((x, y) => (x.rank - y.rank) || x.shortLabel.localeCompare(y.shortLabel));
+    }
     return out;
 }
 
@@ -496,8 +521,10 @@ export function itemForKey(key, { catalog = null, layers = [] } = {}) {
             if (!act) continue;
             const integrationId = act.integrationId || resolveIntegrationFromTool(act.name) || a.id;
             const label = act.label || prettifyToolName(act.name);
+            const labels = actionLabelMap((a.actions || []).map(x => ({ tool: x.name, label: x.label })));
             return {
-                key: act.name, Icon: null, integrationId, tool: act.name, label, secondary: a.label,
+                key: act.name, Icon: null, integrationId, tool: act.name,
+                label: labels.get(act.name) || label, secondary: a.label,
                 payload: { kind: 'integration_action', tool: act.name, label, appId: integrationId, sideEffect: act.sideEffect },
             };
         }
@@ -557,12 +584,20 @@ export function buildSearchResults(query, { catalog = null, mode = 'step', layer
     if (catalog?.apps) {
         for (const a of catalog.apps) {
             if (!a.available) continue;
+            // Shown as "List rooms" with "Nextcloud Talk" underneath, rather
+            // than "nextcloud talk list rooms" with "Nextcloud Talk" underneath.
+            // Still findable by the app name: `secondary` and `tool` are both
+            // ranked (bucket 3), so typing "nextcloud" or "talk" matches.
+            const labels = actionLabelMap((a.actions || []).map(act => ({ tool: act.name, label: act.label })));
             for (const act of (a.actions || [])) {
                 const integrationId = act.integrationId || resolveIntegrationFromTool(act.name) || a.id;
                 const label = act.label || prettifyToolName(act.name);
                 candidates.push({
                     key: act.name, Icon: null, integrationId, tool: act.name,
-                    label, secondary: a.label, description: act.description, context: a.label,
+                    label: labels.get(act.name) || label,
+                    secondary: a.label, description: act.description, context: a.label,
+                    // The payload label is the FULL name: a node on the canvas
+                    // has nothing next to it to say which app it belongs to.
                     payload: { kind: 'integration_action', tool: act.name, label, appId: integrationId, sideEffect: act.sideEffect },
                 });
             }

@@ -462,6 +462,99 @@ export function SupportTicketResolvedFilterFields({ filter, setFilter }) {
 }
 
 // Lookup used by AppEventFields — `<provider>.<event>` → filter sub-form.
+export function NextcloudFormsSubmittedFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Nextcloud form filter (all optional)">
+            <FormRow label="Form ID" hint="Numeric id — leave empty to fire for every form you can see. Find it with the “List forms” action.">
+                <input type="number" value={filter.formId ?? ''} onChange={(e) => setFilter('formId', e.target.value === '' ? undefined : Number(e.target.value))}
+                    placeholder="51" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Form hash" hint="The token in the form's share link — an alternative to the numeric id.">
+                <input type="text" value={filter.formHash || ''} onChange={(e) => setFilter('formHash', e.target.value || undefined)}
+                    placeholder="abc123def456" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Title contains">
+                <input type="text" value={filter.titleContains || ''} onChange={(e) => setFilter('titleContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Submitted by" hint="Nextcloud user id. Anonymous submissions have no user, so this never matches them.">
+                <input type="text" value={filter.submittedByEquals || ''} onChange={(e) => setFilter('submittedByEquals', e.target.value || undefined)}
+                    className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <div className="text-[11px] text-[var(--text-tertiary)] leading-snug">
+                The answers are not in the trigger payload — follow this with the
+                <code> Get form submissions </code> action, bound to
+                <code> trigger.output.formId </code> and <code> trigger.output.submissionId</code>.
+            </div>
+        </FilterShell>
+    );
+}
+
+export function NextcloudTablesRowFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Nextcloud Tables row filter (all optional)">
+            <FormRow label="Table ID" hint="Numeric id — find it with the “List tables” action.">
+                <input type="number" value={filter.tableId ?? ''} onChange={(e) => setFilter('tableId', e.target.value === '' ? undefined : Number(e.target.value))}
+                    placeholder="34" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Column ID" hint="Numeric column id to test a value against — from “List table columns”. The event carries column ids, not titles.">
+                <input type="number" value={filter.columnId ?? ''} onChange={(e) => setFilter('columnId', e.target.value === '' ? undefined : Number(e.target.value))}
+                    placeholder="13" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Value equals">
+                <input type="text" value={filter.valueEquals ?? ''} onChange={(e) => setFilter('valueEquals', e.target.value === '' ? undefined : e.target.value)}
+                    placeholder="approved" className={inputClass()} />
+            </FormRow>
+            <FormRow label="Value contains">
+                <input type="text" value={filter.valueContains || ''} onChange={(e) => setFilter('valueContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Only when that column changed" hint="Row updates fire on any edit. Tick this to fire only when the column above actually changed value.">
+                <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={filter.changedOnly === true} onChange={(e) => setFilter('changedOnly', e.target.checked || undefined)} />
+                    Ignore edits that left this column alone
+                </label>
+            </FormRow>
+            <FormRow label="Changed by" hint="Nextcloud user id.">
+                <input type="text" value={filter.actorEquals || ''} onChange={(e) => setFilter('actorEquals', e.target.value || undefined)}
+                    className={inputClass() + ' font-mono'} />
+            </FormRow>
+        </FilterShell>
+    );
+}
+
+export function NextcloudTagFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Nextcloud tag filter (all optional)">
+            <FormRow label="Tag ID" hint="Numeric id — from the “List tags” action. Nextcloud's tag event carries ids only, never the tag name.">
+                <input type="number" value={filter.tagId ?? ''} onChange={(e) => setFilter('tagId', e.target.value === '' ? undefined : Number(e.target.value))}
+                    placeholder="3" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <div className="text-[11px] text-[var(--text-tertiary)] leading-snug">
+                The event carries no file path either — follow it with a Files action bound to
+                <code> trigger.output.fileId </code> if you need the path or contents.
+            </div>
+        </FilterShell>
+    );
+}
+
+export function NextcloudCalendarMutationFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Nextcloud calendar filter (all optional)">
+            <FormRow label="Calendar ID" hint="Numeric id of the calendar. Leave empty for all calendars.">
+                <input type="number" value={filter.calendarId ?? ''} onChange={(e) => setFilter('calendarId', e.target.value === '' ? undefined : Number(e.target.value))}
+                    className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <div className="text-[11px] text-[var(--text-tertiary)] leading-snug">
+                Nextcloud's calendar webhook carries object metadata only — there is no summary,
+                start or end in it, so those cannot be filtered on here. Follow the trigger with
+                <code> Get calendar event </code> to read the actual event, or use
+                <strong> Calendar event upcoming </strong> if you want to match on the title.
+            </div>
+        </FilterShell>
+    );
+}
+
 // Unmapped combos render no filter form (the runtime still applies the DSL
 // filter via applyDslFilter). Individual exports above stay for tests.
 export const FILTER_FORM_BY_KEY = {
@@ -472,6 +565,15 @@ export const FILTER_FORM_BY_KEY = {
     'google-drive.file.new': DriveFileNewFilterFields,
     'nextcloud.file.new': NextcloudFileFilterFields,
     'nextcloud.file.changed': NextcloudFileFilterFields,
+    'nextcloud.file.deleted': NextcloudFileFilterFields,
+    'nextcloud.file.renamed': NextcloudFileFilterFields,
+    'nextcloud.file.tagged': NextcloudTagFilterFields,
+    'nextcloud.file.untagged': NextcloudTagFilterFields,
+    'nextcloud.forms.submitted': NextcloudFormsSubmittedFilterFields,
+    'nextcloud.tables.row.added': NextcloudTablesRowFilterFields,
+    'nextcloud.tables.row.updated': NextcloudTablesRowFilterFields,
+    'nextcloud.calendar.event.created': NextcloudCalendarMutationFilterFields,
+    'nextcloud.calendar.event.changed': NextcloudCalendarMutationFilterFields,
     'nextcloud.share.received': NextcloudShareFilterFields,
     'nextcloud.activity.new': NextcloudActivityFilterFields,
     'nextcloud.notification.new': NextcloudNotificationFilterFields,

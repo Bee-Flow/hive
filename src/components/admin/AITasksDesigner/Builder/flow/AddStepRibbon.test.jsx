@@ -1,7 +1,7 @@
 import { nodeLabel } from './nodeDefs';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import AddStepRibbon, { ribbonTabsForScope, RibbonSearch } from './AddStepRibbon';
+import AddStepRibbon, { ribbonTabsForScope, RibbonSearch, RIBBON_APPS_PER_CLUSTER } from './AddStepRibbon';
 import scopedStorage from '../../../../../utils/scopedStorage';
 
 const scope = { catalog: { apps: [], steps: [], flags: {} }, layers: [], inLayer: false, canAddLayerOutput: false, isBlockRoot: false };
@@ -40,6 +40,47 @@ const stepScope = {
     catalog: {
         apps: [], flags: {},
         steps: [{ id: 's1', title: 'Fast websearch', category: 'Test categorie', params: [{}], outputFields: [{}], available: true }],
+    },
+    layers: [], inLayer: false, canAddLayerOutput: false, isBlockRoot: false,
+};
+
+// The shape the real catalog serves for Nextcloud: fourteen apps in ONE
+// category, every action labelled mechanically (`name.replace(/_/g,' ')`) and
+// described in the words of the LLM tool schema. This is the case that made the
+// ribbon two rows tall and printed the app name three times per action.
+const ncTalkActions = [
+    { name: 'nextcloud_talk_list_rooms', label: 'nextcloud talk list rooms', integrationId: 'nextcloud-talk',
+      description: "List the user's Nextcloud Talk conversations (rooms). Returns token, type, name, unread count." },
+    { name: 'nextcloud_talk_send_message', label: 'nextcloud talk send message', integrationId: 'nextcloud-talk',
+      description: 'Post a message to a Talk room. The user has approved sending this message — go ahead.' },
+    { name: 'nextcloud_talk_create_room', label: 'nextcloud talk create room', integrationId: 'nextcloud-talk',
+      description: 'Create a new Talk room.' },
+];
+const NC_APP_IDS = [
+    'nextcloud', 'nextcloud-talk', 'nextcloud-calendar', 'nextcloud-deck', 'nextcloud-tables',
+    'nextcloud-forms', 'nextcloud-mail', 'nextcloud-tasks', 'nextcloud-notes', 'nextcloud-contacts',
+    'nextcloud-teams', 'nextcloud-notifications', 'nextcloud-activity', 'nextcloud-status',
+];
+const NC_LABELS = {
+    nextcloud: 'Nextcloud', 'nextcloud-status': 'Nextcloud User Status',
+};
+const nextcloudScope = {
+    catalog: {
+        apps: NC_APP_IDS.map(id => ({
+            id,
+            label: NC_LABELS[id] || `Nextcloud ${id.replace('nextcloud-', '').replace(/^./, c => c.toUpperCase())}`,
+            available: true,
+            connected: true,
+            actions: id === 'nextcloud-talk'
+                ? ncTalkActions
+                // Two actions, so every app opens a dropdown rather than
+                // adding directly — the case the Apps tab is really about.
+                : [
+                    { name: `${id.replace(/-/g, '_')}_list`, label: `${id.replace(/-/g, ' ')} list`, integrationId: id, description: 'List them.' },
+                    { name: `${id.replace(/-/g, '_')}_create`, label: `${id.replace(/-/g, ' ')} create`, integrationId: id, description: 'Create one.' },
+                ],
+        })),
+        steps: [], flags: {},
     },
     layers: [], inLayer: false, canAddLayerOutput: false, isBlockRoot: false,
 };
@@ -213,6 +254,98 @@ describe('AddStepRibbon', () => {
             renderRibbon({ embedded: true, scope: appScope });
             fireEvent.click(screen.getByRole('tab', { name: /Apps/ }));
             expect(screen.queryByText('Browse all')).toBeNull();
+        });
+
+        describe('a category with a lot of apps (Nextcloud)', () => {
+            const openApps = () => fireEvent.click(screen.getByRole('tab', { name: /Apps/ }));
+
+            it('drops the vendor word the cluster caption already carries', () => {
+                renderRibbon({ embedded: true, scope: nextcloudScope });
+                openApps();
+                expect(screen.getByText('Nextcloud')).toBeTruthy(); // the caption
+                // Fourteen buttons that each began with "Nextcloud " is what
+                // made the strip wider than the window.
+                expect(screen.getByText('Talk')).toBeTruthy();
+                expect(screen.queryByText('Nextcloud Talk')).toBeNull();
+                // The vendor's core app keeps a name of its own rather than
+                // being stripped to nothing.
+                expect(screen.getByText('Files')).toBeTruthy();
+            });
+
+            it('folds the overflow into one command instead of a second ribbon row', () => {
+                renderRibbon({ embedded: true, scope: nextcloudScope });
+                openApps();
+                // The "more" command occupies a cell, so it displaces one more
+                // app rather than widening the cluster by a column.
+                const hidden = NC_APP_IDS.length - (RIBBON_APPS_PER_CLUSTER - 1);
+                expect(hidden).toBeGreaterThan(0);
+                expect(screen.getByText(`${hidden} more`)).toBeTruthy();
+                // The ones folded away are the LOWEST-ranked, not whatever the
+                // alphabet put last: Files and Talk stay on the ribbon, User
+                // Status and Activity are the ones that go.
+                expect(screen.getByText('Files')).toBeTruthy();
+                expect(screen.getByText('Talk')).toBeTruthy();
+                expect(screen.queryByText('User Status')).toBeNull();
+                expect(screen.queryByText('Activity')).toBeNull();
+            });
+
+            it('the folded-away apps are still one click away, with their actions', () => {
+                const { onAddNode } = renderRibbon({ embedded: true, scope: nextcloudScope });
+                openApps();
+                fireEvent.click(screen.getByText(/\d+ more/));
+                fireEvent.click(screen.getByText('User Status'));
+                fireEvent.click(screen.getByText('List'));
+                expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({
+                    kind: 'integration_action', tool: 'nextcloud_status_list',
+                }));
+            });
+
+            it('names an action by what it does, and says what it does', () => {
+                renderRibbon({ embedded: true, scope: nextcloudScope });
+                openApps();
+                fireEvent.click(screen.getByText('Talk'));
+                // Was "nextcloud talk list rooms", under a heading already
+                // reading NEXTCLOUD TALK, with no description at all.
+                expect(screen.getByText('List rooms')).toBeTruthy();
+                expect(screen.queryByText('nextcloud talk list rooms')).toBeNull();
+                expect(screen.getByText(/Returns token, type, name, unread count/)).toBeTruthy();
+                // …and the half of the description addressed to the model
+                // rather than the author does not reach the menu.
+                expect(screen.queryByText(/approved sending this message/)).toBeNull();
+            });
+
+            it('adds the action with the catalog label on the payload', () => {
+                const { onAddNode } = renderRibbon({ embedded: true, scope: nextcloudScope });
+                openApps();
+                fireEvent.click(screen.getByText('Talk'));
+                fireEvent.click(screen.getByText('Send message'));
+                expect(onAddNode).toHaveBeenCalledWith(expect.objectContaining({
+                    kind: 'integration_action',
+                    tool: 'nextcloud_talk_send_message',
+                    label: 'nextcloud talk send message',
+                }));
+            });
+
+            it('offers a filter once an app has more actions than anyone will scan', () => {
+                const many = Array.from({ length: 12 }, (_, i) => ({
+                    name: `nextcloud_files_op${i}`, label: `nextcloud files op${i}`,
+                    integrationId: 'nextcloud', description: `Does thing ${i}.`,
+                }));
+                const scoped = {
+                    ...nextcloudScope,
+                    catalog: {
+                        ...nextcloudScope.catalog,
+                        apps: nextcloudScope.catalog.apps.map(a => (a.id === 'nextcloud' ? { ...a, actions: many } : a)),
+                    },
+                };
+                renderRibbon({ embedded: true, scope: scoped });
+                openApps();
+                fireEvent.click(screen.getByText('Files'));
+                const filter = screen.getByPlaceholderText('Filter 12 actions…');
+                fireEvent.change(filter, { target: { value: 'op7' } });
+                expect(screen.getByText('Op7')).toBeTruthy();
+                expect(screen.queryByText('Op3')).toBeNull();
+            });
         });
 
         it('shows Flowlets on the Reusable tab', () => {

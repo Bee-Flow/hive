@@ -52,6 +52,11 @@ export default function CmdButton({
     glyph = null,
     label,
     title,
+    // The heading of the screen tip, when the button's own label is an
+    // abbreviated form of the real name — an app shown as "Talk" inside a
+    // cluster captioned NEXTCLOUD still has "Nextcloud Talk" as its name, and
+    // the tip is where the full one belongs.
+    tipTitle = null,
     desc = null,
     tipFooter = null,
     onClick,
@@ -96,7 +101,7 @@ export default function CmdButton({
     return (
         <>
             {button}
-            <CmdTip anchorRef={anchorRef} open={open && !disabled} title={label} desc={desc} footer={tipFooter} />
+            <CmdTip anchorRef={anchorRef} open={open && !disabled} title={tipTitle || label} desc={desc} footer={tipFooter} />
         </>
     );
 }

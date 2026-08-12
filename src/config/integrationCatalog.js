@@ -3,6 +3,14 @@
 // two stay in sync. IDs here mirror the runtime gates in
 // server/core/integrationTools.js and server/core/ncIntegrationCatalog.js
 // — never rename without updating those.
+//
+// `rank` (optional) orders an app within its category on the automations
+// ribbon: lower first, ties and unranked apps alphabetical. It exists because
+// Nextcloud contributes fourteen apps to one cluster — more than fits on a
+// laptop — so the ribbon shows the first RIBBON_APPS_PER_CLUSTER of them and
+// puts the rest behind a "more" command. Which ones get folded away is then a
+// product decision (Files/Talk/Calendar before User Status), not an accident of
+// the alphabet. Leave it off anywhere the plain A→Z is right.
 
 export const INTEGRATION_CATALOG = [
     { id: 'gmail', label: 'Gmail', description: 'Send and read emails', category: 'Google Workspace' },
@@ -39,17 +47,20 @@ export const INTEGRATION_CATALOG = [
     { id: 'google-groups', label: 'Google Groups', description: 'List and manage Google Workspace groups', category: 'Google Workspace' },
     { id: 'kb-search', label: 'Knowledge Base', description: 'Search org knowledge bases', category: 'AI & Media' },
     { id: 'webpages', label: 'Webpages', description: 'Run user-authored webpage automations', category: 'Automation' },
-    { id: 'nextcloud', label: 'Nextcloud', description: 'Files & WebDAV (list, search, read, upload, share)', category: 'Nextcloud' },
-    { id: 'nextcloud-mail', label: 'Nextcloud Mail', description: 'Send & read mail via Nextcloud Mail app', category: 'Nextcloud' },
-    { id: 'nextcloud-calendar', label: 'Nextcloud Calendar', description: 'CalDAV — list, search, create, update, delete events', category: 'Nextcloud' },
-    { id: 'nextcloud-contacts', label: 'Nextcloud Contacts', description: 'CardDAV — list, search, create, update, delete contacts', category: 'Nextcloud' },
-    { id: 'nextcloud-deck', label: 'Nextcloud Deck', description: 'Kanban — boards, stacks, cards, labels, comments', category: 'Nextcloud' },
-    { id: 'nextcloud-notifications', label: 'Nextcloud Notifications', description: 'List and dismiss Nextcloud notifications', category: 'Nextcloud' },
-    { id: 'nextcloud-talk', label: 'Nextcloud Talk', description: 'Chat rooms, messages, reactions', category: 'Nextcloud' },
-    { id: 'nextcloud-tasks', label: 'Nextcloud Tasks', description: 'VTODO via CalDAV — list, create, update, complete, delete tasks', category: 'Nextcloud' },
-    { id: 'nextcloud-notes', label: 'Nextcloud Notes', description: 'Plain-text / markdown notes — list, search, create, update, delete', category: 'Nextcloud' },
-    { id: 'nextcloud-activity', label: 'Nextcloud Activity', description: 'Read-only feed of recent file changes, shares, mentions', category: 'Nextcloud' },
-    { id: 'nextcloud-status', label: 'Nextcloud User Status', description: "Get / set / clear the user's availability and custom message", category: 'Nextcloud' },
+    { id: 'nextcloud', label: 'Nextcloud', description: 'Files & WebDAV (list, search, read, upload, share)', rank: 1, category: 'Nextcloud' },
+    { id: 'nextcloud-mail', label: 'Nextcloud Mail', description: 'Send & read mail via Nextcloud Mail app', rank: 7, category: 'Nextcloud' },
+    { id: 'nextcloud-calendar', label: 'Nextcloud Calendar', description: 'CalDAV — list, search, create, update, delete events', rank: 3, category: 'Nextcloud' },
+    { id: 'nextcloud-contacts', label: 'Nextcloud Contacts', description: 'CardDAV — list, search, create, update, delete contacts', rank: 10, category: 'Nextcloud' },
+    { id: 'nextcloud-deck', label: 'Nextcloud Deck', description: 'Kanban — boards, stacks, cards, labels, comments', rank: 4, category: 'Nextcloud' },
+    { id: 'nextcloud-notifications', label: 'Nextcloud Notifications', description: 'List and dismiss Nextcloud notifications', rank: 12, category: 'Nextcloud' },
+    { id: 'nextcloud-talk', label: 'Nextcloud Talk', description: 'Chat rooms, messages, reactions', rank: 2, category: 'Nextcloud' },
+    { id: 'nextcloud-tasks', label: 'Nextcloud Tasks', description: 'VTODO via CalDAV — list, create, update, complete, delete tasks', rank: 8, category: 'Nextcloud' },
+    { id: 'nextcloud-notes', label: 'Nextcloud Notes', description: 'Plain-text / markdown notes — list, search, create, update, delete', rank: 9, category: 'Nextcloud' },
+    { id: 'nextcloud-activity', label: 'Nextcloud Activity', description: 'Read-only feed of recent file changes, shares, mentions', rank: 13, category: 'Nextcloud' },
+    { id: 'nextcloud-tables', label: 'Nextcloud Tables', description: 'Structured data — tables, columns, rows (the store behind form intake and reporting)', rank: 5, category: 'Nextcloud' },
+    { id: 'nextcloud-forms', label: 'Nextcloud Forms', description: 'Forms and their submissions — the intake side of a workflow', rank: 6, category: 'Nextcloud' },
+    { id: 'nextcloud-teams', label: 'Nextcloud Teams', description: 'Teams/Circles — list, create, manage members, share files with a whole team', rank: 11, category: 'Nextcloud' },
+    { id: 'nextcloud-status', label: 'Nextcloud User Status', description: "Get / set / clear the user's availability and custom message", rank: 14, category: 'Nextcloud' },
 ];
 
 // Stable set of Nextcloud IDs — the org-admin generic toggle UI excludes
