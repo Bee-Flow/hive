@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Search, ChevronDown, ChevronRight, Plus, Layers } from 'lucide-react';
 import IntegrationLogo from './nodes/IntegrationLogo';
 import { buildStepGroups, buildSearchResults, gated } from './stepPalette';
+import { actionLabelMap, uiDescription } from './appLabels';
 import { stepDragProps } from './stepDrag';
 import { denseInputClass } from './settings/formStyles';
 
@@ -269,6 +270,10 @@ function AppsTree({ categories, onAdd }) {
 function AppRow({ app, isOpen, onToggle, onAdd }) {
     const notConnected = app.connected === false;
     const primary = app.actions[0];
+    // The category row directly above already names the vendor, so the app is
+    // shown by its short name here too ("Talk", not "Nextcloud Talk").
+    const shownName = app.shortLabel || app.label;
+    const labels = useMemo(() => actionLabelMap(app.actions), [app.actions]);
     const appPayload = primary
         ? { kind: 'integration_action', tool: primary.tool, label: app.label, appId: app.integrationId, sideEffect: primary.sideEffect }
         : null;
@@ -290,7 +295,7 @@ function AppRow({ app, isOpen, onToggle, onAdd }) {
                         ? <ChevronDown size={13} className="shrink-0 text-[var(--text-tertiary)]" />
                         : <ChevronRight size={13} className="shrink-0 text-[var(--text-tertiary)]" />}
                     <IntegrationLogo integrationId={app.integrationId} size={18} />
-                    <span className={`truncate font-medium ${notConnected ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'}`}>{app.label}</span>
+                    <span className={`truncate font-medium ${notConnected ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'}`}>{shownName}</span>
                     {notConnected && (
                         <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] uppercase tracking-wide bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">Connect</span>
                     )}
@@ -313,17 +318,30 @@ function AppRow({ app, isOpen, onToggle, onAdd }) {
                 single left-anchored ladder. */}
             {isOpen && app.actions.length > 0 && (
                 <div className="pl-11 pr-2 pb-1">
-                    {app.actions.map(action => <ActionRow key={action.tool} action={action} onAdd={onAdd} />)}
+                    {app.actions.map(action => <ActionRow key={action.tool} action={action} labels={labels} onAdd={onAdd} />)}
                 </div>
             )}
         </div>
     );
 }
 
-function ActionRow({ action, onAdd }) {
+/**
+ * One operation of an app.
+ *
+ * Both strings shown here are cleaned up first (see ./appLabels): the catalog
+ * labels actions mechanically from the tool name, so this row would otherwise
+ * read "nextcloud talk list rooms" directly underneath a row already saying
+ * "Nextcloud Talk"; and the description is the LLM tool-schema text, which
+ * carries instructions written at the model rather than at the author.
+ */
+function ActionRow({ action, labels, onAdd }) {
+    // The payload keeps the catalog's full label — the node it creates sits on
+    // a canvas with no app row above it to say which app this came from.
     const payload = { kind: 'integration_action', tool: action.tool, label: action.label, appId: action.integrationId, sideEffect: action.sideEffect };
-    const hasDistinctDesc = action.description
-        && action.description.trim().toLowerCase() !== (action.label || '').trim().toLowerCase();
+    const shown = labels?.get(action.tool) || action.label;
+    const description = uiDescription(action.description);
+    const hasDistinctDesc = description
+        && description.trim().toLowerCase() !== String(shown || '').trim().toLowerCase();
     return (
         <div
             {...stepDragProps(payload)}
@@ -331,15 +349,19 @@ function ActionRow({ action, onAdd }) {
             role="button"
             tabIndex={0}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAdd(payload); } }}
-            title={action.description || action.label}
+            title={description || shown}
             className="flex items-start gap-2.5 px-2 py-1.5 rounded-md cursor-pointer select-none hover:bg-[var(--bg-tertiary)] focus:bg-[var(--bg-tertiary)] focus:outline-none"
         >
             <div className="shrink-0 mt-0.5 h-6 w-6 rounded-md bg-[var(--bg-secondary)] flex items-center justify-center">
                 <IntegrationLogo integrationId={action.integrationId} tool={action.tool} size={13} />
             </div>
             <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-[var(--text-primary)]">{action.label}</div>
-                {hasDistinctDesc && <div className="truncate text-xs text-[var(--text-tertiary)]">{action.description}</div>}
+                <div className="truncate text-sm text-[var(--text-primary)]">{shown}</div>
+                {/* Two lines, not `truncate`: these descriptions are the only
+                    thing on the row that says what the action does, and one
+                    clipped line of "List the Nextcloud Tables the user can…"
+                    is barely more use than none. */}
+                {hasDistinctDesc && <div className="text-xs leading-snug text-[var(--text-tertiary)] line-clamp-2">{description}</div>}
             </div>
         </div>
     );

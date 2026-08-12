@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Search, Wand2, ChevronsUpDown, LayoutGrid, Boxes, Home, Undo2, Redo2, Webhook } from 'lucide-react';
+import { Plus, Search, Wand2, ChevronsUpDown, LayoutGrid, Boxes, Home, Undo2, Redo2, Webhook, MoreHorizontal } from 'lucide-react';
 import AddStepMenu from './AddStepMenu';
 import IntegrationLogo from './nodes/IntegrationLogo';
 import Tabs from '../../../../shared/Tabs';
@@ -8,7 +8,10 @@ import CmdButton from '../../../../shared/ribbon/CmdButton';
 import RibbonDropdown from '../../../../shared/ribbon/RibbonDropdown';
 import InlineButton from '../../../../shared/ribbon/InlineButton';
 import { buildStepGroups, orderedAppCategories, AI_STEP, TRIGGERS, additionalTriggerItems } from './stepPalette';
+import { actionLabelMap, uiDescription } from './appLabels';
+import { denseInputClass } from './settings/formStyles';
 import { stepDragProps } from './stepDrag';
+import { getIntegrationById } from '../../../../../config/integrationCatalog';
 import scopedStorage from '../../../../../utils/scopedStorage';
 
 /**
@@ -34,6 +37,18 @@ import scopedStorage from '../../../../../utils/scopedStorage';
 // Shown as its own line in the screen tip rather than glued onto the end of
 // the description, where it used to run the two together.
 const DRAG_HINT = 'Click to add, or drag it onto the canvas.';
+
+/**
+ * How many CELLS a category cluster may fill before the rest of its apps fold
+ * into one "more" command (which then takes the last cell itself).
+ *
+ * A cluster is a 2-row grid, so this is really "at most six columns". Twelve
+ * keeps every category that existed before this cap unchanged (the largest was
+ * Google Workspace at eight) and bites only on Nextcloud, whose fourteen apps
+ * were on their own wide enough to push the Apps strip onto a second row —
+ * doubling the height of the ribbon on every screen under ~2000px.
+ */
+export const RIBBON_APPS_PER_CLUSTER = 12;
 
 export default function AddStepRibbon({
     scope = {},
@@ -341,13 +356,38 @@ export default function AddStepRibbon({
                     )}
 
                     {tab === 'apps' && hasApps && (
-                        appCategories.map(({ category, apps }) => (
-                            <RibbonCluster key={category} caption={category}>
-                                {apps.map(app => (
-                                    <AppCommand key={app.id} app={app} openKey={openKey} setOpenKey={setOpenKey} onAdd={add} />
-                                ))}
-                            </RibbonCluster>
-                        ))
+                        appCategories.map(({ category, apps }) => {
+                            // A cluster is a 2-row grid, so its width is half
+                            // its item count. Nextcloud alone contributes
+                            // fourteen apps — seven columns, which is what
+                            // pushed the strip onto a second row and doubled
+                            // the ribbon's height. Past the cap the rest fold
+                            // into one "more" command that opens the same
+                            // browse list search and the edge-drop menu use.
+                            // The "more" command takes a cell of its own, so it
+                            // displaces the last app rather than adding a
+                            // thirteenth cell and a seventh column with it.
+                            const over = apps.length > RIBBON_APPS_PER_CLUSTER;
+                            const shown = over ? apps.slice(0, RIBBON_APPS_PER_CLUSTER - 1) : apps;
+                            const hidden = over ? apps.slice(RIBBON_APPS_PER_CLUSTER - 1) : [];
+                            return (
+                                <RibbonCluster key={category} caption={category}>
+                                    {shown.map(app => (
+                                        <AppCommand key={app.id} app={app} openKey={openKey} setOpenKey={setOpenKey} onAdd={add} />
+                                    ))}
+                                    {hidden.length > 0 && (
+                                        <MoreAppsCommand
+                                            category={category}
+                                            apps={hidden}
+                                            scope={scope}
+                                            open={openKey === `more:${category}`}
+                                            onToggle={() => setOpenKey(k => (k === `more:${category}` ? null : `more:${category}`))}
+                                            onAdd={add}
+                                        />
+                                    )}
+                                </RibbonCluster>
+                            );
+                        })
                     )}
 
                     {tab === 'reusable' && (
@@ -470,16 +510,44 @@ export function RibbonSearch({ scope = {}, onAdd, disabled = false }) {
 }
 
 /**
+ * What an app IS, in the author's words. The integration catalog carries a
+ * curated one-liner per integration ("Chat rooms, messages, reactions"); the
+ * action count is the other half of the answer, because it tells you whether
+ * clicking opens a menu or adds a step.
+ */
+function appTip(app) {
+    const n = (app.actions || []).length;
+    const known = getIntegrationById(app.integrationId) || getIntegrationById(app.id);
+    const what = known?.description || `Actions from ${app.label}.`;
+    return { title: app.label, desc: what, footer: n === 1 ? DRAG_HINT : `${n} actions — pick one.` };
+}
+
+/**
  * Apps-tab command. A single-action app adds that action directly (no
  * dropdown); a multi-action app opens its action list. Either way it shows the
- * app's logo + name (e.g. "Gmail").
+ * app's logo + its SHORT name — the cluster caption above already says
+ * NEXTCLOUD, so the button says "Talk".
  */
 function AppCommand({ app, openKey, setOpenKey, onAdd }) {
     const actions = app.actions || [];
+    const tip = appTip(app);
     if (actions.length === 1) {
         const a = actions[0];
+        // The PAYLOAD keeps the full name: a node on the canvas has no cluster
+        // caption above it to supply the vendor.
         const payload = { kind: 'integration_action', tool: a.tool, label: app.label, appId: a.integrationId, sideEffect: a.sideEffect };
-        return <CmdButton glyph={<IntegrationLogo integrationId={app.integrationId} size={14} />} label={app.label} desc={`Actions from ${app.label}.`} tipFooter={DRAG_HINT} onClick={() => onAdd(payload)} grabbable {...stepDragProps(payload)} />;
+        return (
+            <CmdButton
+                glyph={<IntegrationLogo integrationId={app.integrationId} size={14} />}
+                label={app.shortLabel || app.label}
+                tipTitle={app.label}
+                desc={uiDescription(a.description) || tip.desc}
+                tipFooter={DRAG_HINT}
+                onClick={() => onAdd(payload)}
+                grabbable
+                {...stepDragProps(payload)}
+            />
+        );
     }
     const key = `app:${app.id}`;
     return (
@@ -497,11 +565,15 @@ function AppCommand({ app, openKey, setOpenKey, onAdd }) {
  * the exact operation is one extra click.
  */
 function AppButton({ app, open, onToggle, onAdd }) {
+    const tip = appTip(app);
     return (
         <RibbonDropdown
             glyph={<IntegrationLogo integrationId={app.integrationId} size={16} />}
-            label={app.label}
-            width={260}
+            label={app.shortLabel || app.label}
+            tipTitle={tip.title}
+            desc={tip.desc}
+            tipFooter={tip.footer}
+            width={320}
             open={open}
             onToggle={onToggle}
         >
@@ -510,34 +582,108 @@ function AppButton({ app, open, onToggle, onAdd }) {
     );
 }
 
-/** The action list shown when an Apps-tab logo is opened. */
+/**
+ * The apps a cluster had no room for, behind one command. It reuses AddStepMenu
+ * rather than repeating the ribbon's own list, so the folded-away apps get the
+ * SAME category → app → action tree (with descriptions) that search and the
+ * edge-drop popover show — being past the cap costs a click, not detail.
+ */
+function MoreAppsCommand({ category, apps, scope, open, onToggle, onAdd }) {
+    const group = { key: `more_${category}`, title: category, kind: 'apps', categories: [{ category, apps }] };
+    return (
+        <RibbonDropdown
+            icon={MoreHorizontal}
+            label={`${apps.length} more`}
+            desc={`${apps.map(a => a.shortLabel || a.label).join(', ')}.`}
+            tipFooter={`More ${category} apps than fit on the ribbon.`}
+            width={320}
+            open={open}
+            onToggle={onToggle}
+        >
+            {/* No onAfterAdd: the ribbon's own `add` already clears openKey,
+                and toggling on top of that would flip the panel back open. */}
+            <AddStepMenu scope={scope} group={group} showSearch={false} onAdd={onAdd} />
+        </RibbonDropdown>
+    );
+}
+
+// Past this, an app's action list is long enough that reading it top to bottom
+// is slower than typing the verb you came for (Files has 34, Talk 18).
+const ACTION_FILTER_THRESHOLD = 8;
+
+/**
+ * The action list shown when an Apps-tab logo is opened.
+ *
+ * This used to render the raw tool name and nothing else — "nextcloud talk list
+ * rooms", under a heading already reading NEXTCLOUD TALK, with the description
+ * that would have explained it passed as `desc`/`tipFooter` props on a plain
+ * <button>, where React drops them. So the one surface whose whole job is
+ * "which of these 18 do I want" answered with three copies of the app name.
+ */
 function AppActionsList({ app, onAdd }) {
     const actions = app.actions || [];
+    const [q, setQ] = useState('');
+    const labels = useMemo(() => actionLabelMap(actions), [actions]);
+    const rows = useMemo(() => actions.map(a => ({
+        action: a,
+        label: labels.get(a.tool) || a.label,
+        desc: uiDescription(a.description),
+    })), [actions, labels]);
+    const needle = q.trim().toLowerCase();
+    const visible = needle
+        ? rows.filter(r => r.label.toLowerCase().includes(needle)
+            || r.desc.toLowerCase().includes(needle)
+            || r.action.tool.toLowerCase().includes(needle))
+        : rows;
+
     return (
-        <div className="py-1 max-h-[60vh] overflow-y-auto custom-scrollbar">
+        <div className="flex flex-col min-h-0">
             <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-tertiary)]">
                 {app.label}
             </div>
-            {actions.length === 0 ? (
-                <div className="px-3 py-2 text-[11px] text-[var(--text-tertiary)] italic">No actions available.</div>
-            ) : actions.map(action => {
-                const payload = { kind: 'integration_action', tool: action.tool, label: action.label, appId: action.integrationId, sideEffect: action.sideEffect };
-                return (
-                    <button
-                        key={action.tool}
-                        type="button"
-                        onClick={() => onAdd(payload)}
-                        {...stepDragProps(payload)}
-                        desc={action.description || `Runs ${action.label}.`} tipFooter={DRAG_HINT}
-                        className="w-full text-left flex items-center gap-2.5 px-3 py-1.5 hover:bg-[var(--bg-secondary)] transition"
-                    >
-                        <span className="shrink-0 h-6 w-6 rounded-md bg-[var(--bg-secondary)] flex items-center justify-center">
-                            <IntegrationLogo integrationId={action.integrationId} tool={action.tool} size={14} />
-                        </span>
-                        <span className="text-sm text-[var(--text-primary)] truncate">{action.label}</span>
-                    </button>
-                );
-            })}
+            {actions.length > ACTION_FILTER_THRESHOLD && (
+                <div className="px-2 pb-2">
+                    <div className="relative">
+                        <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+                        <input
+                            type="text"
+                            value={q}
+                            onChange={(e) => setQ(e.target.value)}
+                            placeholder={`Filter ${actions.length} actions…`}
+                            className={denseInputClass('w-full pl-7 pr-2')}
+                        />
+                    </div>
+                </div>
+            )}
+            <div className="flex-1 py-1 overflow-y-auto custom-scrollbar min-h-0">
+                {visible.length === 0 ? (
+                    <div className="px-3 py-2 text-[11px] text-[var(--text-tertiary)] italic">
+                        {actions.length === 0 ? 'No actions available.' : `No action matches “${q}”.`}
+                    </div>
+                ) : visible.map(({ action, label, desc }) => {
+                    // The payload label stays the catalog's full name so the
+                    // node on the canvas still says which app it belongs to.
+                    const payload = { kind: 'integration_action', tool: action.tool, label: action.label, appId: action.integrationId, sideEffect: action.sideEffect };
+                    return (
+                        <button
+                            key={action.tool}
+                            type="button"
+                            onClick={() => onAdd(payload)}
+                            {...stepDragProps(payload)}
+                            title={desc || label}
+                            className="w-full text-left flex items-start gap-2.5 px-3 py-1.5 hover:bg-[var(--bg-secondary)] transition"
+                        >
+                            <span className="shrink-0 mt-0.5 h-6 w-6 rounded-md bg-[var(--bg-secondary)] flex items-center justify-center">
+                                <IntegrationLogo integrationId={action.integrationId} tool={action.tool} size={14} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-sm text-[var(--text-primary)] truncate">{label}</span>
+                                {desc && <span className="block text-[11px] leading-snug text-[var(--text-tertiary)] line-clamp-2">{desc}</span>}
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 }

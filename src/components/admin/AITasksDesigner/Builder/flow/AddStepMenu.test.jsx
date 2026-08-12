@@ -36,6 +36,9 @@ function rowOrder(el) {
         .filter(Boolean);
 }
 
+/** The Drive app's disclosure row, by the short name the tree now shows. */
+const openDrive = () => screen.getAllByRole('button').find(b => b.textContent.includes('Drive'));
+
 describe('AddStepMenu — apps tree', () => {
     beforeEach(cleanup);
 
@@ -53,7 +56,7 @@ describe('AddStepMenu — apps tree', () => {
         const categories = screen.getAllByRole('button');
         fireEvent.click(categories[0]);
 
-        const appRow = screen.getAllByRole('button').find(b => b.textContent.includes('Google Drive'));
+        const appRow = openDrive();
         expect(appRow).toBeTruthy();
         const order = rowOrder(appRow);
         expect(order[0]).toBe('CHEVRON');
@@ -61,21 +64,44 @@ describe('AddStepMenu — apps tree', () => {
         expect(order[order.length - 1]).toBe('2');
     });
 
+    it('names the app without the vendor word the category row already shows', () => {
+        renderApps();
+        fireEvent.click(screen.getAllByRole('button')[0]);
+        // 'Google Drive' sat directly under a row reading 'Google Workspace'.
+        expect(screen.getByText('Drive')).toBeTruthy();
+        expect(screen.queryByText('Google Drive')).toBeNull();
+    });
+
     it('the app chevron still toggles its actions', () => {
         renderApps();
         fireEvent.click(screen.getAllByRole('button')[0]);
+        expect(screen.queryByText('Search')).toBeNull();
+        fireEvent.click(openDrive());
+        // The catalog labels these 'drive search' / 'drive list files' — the
+        // raw tool name — so the shared prefix comes off for display.
+        expect(screen.getByText('Search')).toBeTruthy();
+        expect(screen.getByText('List files')).toBeTruthy();
         expect(screen.queryByText('drive search')).toBeNull();
-        fireEvent.click(screen.getAllByRole('button').find(b => b.textContent.includes('Google Drive')));
-        expect(screen.getByText('drive search')).toBeTruthy();
-        expect(screen.getByText('drive list files')).toBeTruthy();
     });
 
-    it('clicking an action adds it', () => {
+    it('shows what each action does, not just its name', () => {
+        renderApps();
+        fireEvent.click(screen.getAllByRole('button')[0]);
+        fireEvent.click(openDrive());
+        expect(screen.getByText('Search for files')).toBeTruthy();
+        expect(screen.getByText('List files', { selector: 'div.truncate' })).toBeTruthy();
+    });
+
+    it('clicking an action adds it — with the FULL label on the payload', () => {
         const { onAdd } = renderApps();
         fireEvent.click(screen.getAllByRole('button')[0]);
-        fireEvent.click(screen.getAllByRole('button').find(b => b.textContent.includes('Google Drive')));
-        fireEvent.click(screen.getByText('drive search'));
-        expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ kind: 'integration_action', tool: 'drive_search' }));
+        fireEvent.click(openDrive());
+        fireEvent.click(screen.getByText('Search'));
+        // The node lands on a canvas with no app row above it, so the step it
+        // creates keeps the catalog's own name for the action.
+        expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({
+            kind: 'integration_action', tool: 'drive_search', label: 'drive search',
+        }));
     });
 
     it('the quick-add "+" is separate from the disclosure and adds the primary action', () => {

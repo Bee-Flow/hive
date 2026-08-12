@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
+import CmdTip from './CmdTip';
+import useCmdTip from './useCmdTip';
 
 /**
  * Ribbon dropdown: a pill trigger + a body-portalled, fixed-position panel.
@@ -16,9 +18,18 @@ import { ChevronDown } from 'lucide-react';
  *
  * Trigger glyph: `icon` (lucide component) wins over `glyph` (pre-sized
  * ReactNode, e.g. an <IntegrationLogo/>).
+ *
+ * Explaining what the menu behind the pill CONTAINS: pass `desc` (and
+ * optionally `tipFooter`) and the trigger grows the same Office-style screen tip
+ * a CmdButton has. Every app on the ribbon's Apps tab is one of these pills, and
+ * without a tip they were the only commands on the ribbon that explained
+ * nothing — hovering "Nextcloud Talk" told you no more than reading it did.
  */
 export default function RibbonDropdown({
     label,
+    tipTitle = null,
+    desc = null,
+    tipFooter = null,
     icon: Icon = null,
     glyph = null,
     open,
@@ -29,6 +40,9 @@ export default function RibbonDropdown({
 }) {
     const btnRef = useRef(null);
     const [pos, setPos] = useState(null);
+    // The tip is suppressed while the menu is open: the panel it describes is
+    // already on screen, directly under the tip's own position.
+    const { open: tipOpen, hoverProps, dismiss } = useCmdTip(!!desc);
 
     useLayoutEffect(() => {
         if (!open || !btnRef.current) return undefined;
@@ -50,18 +64,20 @@ export default function RibbonDropdown({
             <button
                 ref={btnRef}
                 type="button"
-                onClick={onToggle}
+                onClick={(e) => { dismiss?.(); onToggle?.(e); }}
                 aria-expanded={open}
                 className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition ${
                     open
                         ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
                 }`}
+                {...hoverProps}
             >
                 {resolvedGlyph}
                 <span className="truncate max-w-[8rem]">{label}</span>
                 <ChevronDown size={12} className="opacity-60" />
             </button>
+            {desc && <CmdTip anchorRef={btnRef} open={tipOpen && !open} title={tipTitle || label} desc={desc} footer={tipFooter} />}
             {open && pos && createPortal(
                 <div
                     data-ribbon-dropdown
