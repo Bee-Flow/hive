@@ -11,7 +11,9 @@ import { buildValue, describeDataPath, isDataPath, parseValue } from './valuePar
 const roundTrip = (binding) => {
     const p = parseValue(binding);
     expect(p.supported).toBe(true);
-    return buildValue(p.parts, p.transform);
+    // transformArg MUST travel — without it a `join` silently round-trips to
+    // the default separator and the user's "\n" becomes ", ".
+    return buildValue(p.parts, p.transform, p.transformArg);
 };
 
 describe('parseValue / buildValue', () => {
@@ -46,6 +48,38 @@ describe('parseValue / buildValue', () => {
         expect(p).toMatchObject({ supported: true, transform: 'lower' });
         expect(p.parts).toEqual([{ type: 'data', path: 'item.email' }]);
         expect(roundTrip(b)).toEqual(b);
+    });
+
+    it('the list transforms round-trip: first / last / count', () => {
+        for (const fn of ['first', 'last', 'count']) {
+            const b = { kind: 'expr', value: `${fn}(steps.g.output.results[*].subject)` };
+            const p = parseValue(b);
+            expect(p).toMatchObject({ supported: true, transform: fn });
+            expect(roundTrip(b)).toEqual(b);
+        }
+    });
+
+    it('join round-trips with its separator — comma, newline, and quote-bearing', () => {
+        for (const stored of [
+            'join(steps.g.output.results[*].subject, ", ")',
+            'join(steps.g.output.results[*].subject, "\\n")',
+            'join(steps.g.output.results[*].subject, "a\\"b")',
+            "join(steps.g.output.results[*].subject, '; ')",
+        ]) {
+            const b = { kind: 'expr', value: stored };
+            const p = parseValue(b);
+            expect(p.supported, stored).toBe(true);
+            expect(p.transform).toBe('join');
+            const rebuilt = roundTrip(b);
+            // Always re-emitted double-quoted; the DECODED separator survives.
+            expect(parseValue(rebuilt).transformArg).toEqual(p.transformArg);
+        }
+    });
+
+    it('a join separator survives decode → encode byte-for-byte', () => {
+        const b = buildValue([{ type: 'data', path: 'steps.g.output.items' }], 'join', '\n');
+        expect(b).toEqual({ kind: 'expr', value: 'join(steps.g.output.items, "\\n")' });
+        expect(parseValue(b).transformArg).toBe('\n');
     });
 
     it('a template of text + data round-trips verbatim', () => {

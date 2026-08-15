@@ -1,6 +1,6 @@
 import React from 'react';
 import { lazy } from '../../../utils/lazyWithReload';
-import { Bot, Sparkles, ListChecks, BookOpen, Globe, Bug, Mic, LifeBuoy, Target, LayoutGrid } from 'lucide-react';
+import { Bot, Sparkles, ListChecks, BookOpen, Globe, Mic, LifeBuoy, LayoutGrid } from 'lucide-react';
 
 // Studio app registry — the single source of truth for which apps live inside
 // the unified Studio shell, in what order, behind which gates, and with which
@@ -28,6 +28,8 @@ export const makeCanUse = (user) => (id) =>
 //   labelKey       — i18n key for the tab label
 //   labelFallback  — literal fallback when the key resolves empty (only the
 //                    tabs that historically had one — keeps t() output exact)
+//   descKey        — i18n key for the one-line description shown in the
+//   descFallback     sidebar's Studio flyout panel (see Sidebar.jsx)
 //   Icon           — lucide icon for the tab
 //   moduleId       — informational link to the admin modules registry
 //   gate(ctx)      — tab visibility; ctx = { user, hasLicenseFeature,
@@ -41,6 +43,8 @@ export const STUDIO_APPS = [
         id: 'agents',
         urlSegment: 'agents',
         labelKey: 'studio.tab.agents',
+        descKey: 'studio.tab.agents_desc',
+        descFallback: 'Create and manage your agents',
         Icon: Bot,
         gate: () => true,
         Component: lazy(() => import('../AgentStudio')),
@@ -57,6 +61,8 @@ export const STUDIO_APPS = [
         id: 'skills',
         urlSegment: 'skills',
         labelKey: 'studio.tab.skills',
+        descKey: 'studio.tab.skills_desc',
+        descFallback: 'Reusable abilities for your agents',
         Icon: Sparkles,
         gate: () => true,
         Component: lazy(() => import('./SkillsStudio')),
@@ -71,6 +77,8 @@ export const STUDIO_APPS = [
         id: 'knowledge',
         urlSegment: 'knowledge',
         labelKey: 'studio.tab.knowledge',
+        descKey: 'studio.tab.knowledge_desc',
+        descFallback: 'Knowledge bases your AI can search',
         Icon: BookOpen,
         gate: () => true,
         Component: lazy(() => import('./KBsStudio')),
@@ -82,27 +90,38 @@ export const STUDIO_APPS = [
         }),
     },
     {
+        // The section id stays 'aiTasks': it is the key the whole navigation
+        // layer (studioRoute.section, AgentHub's initialTaskId wiring, the
+        // builder's query state) is written against. Only the name and the URL
+        // change — the tab is the Automations builder and nothing else now that
+        // prompt tasks live in Cowork and agent routines are managed from the
+        // agent that owns them.
         id: 'aiTasks',
-        urlSegment: 'routines',
-        legacySegments: ['ai-tasks'],
-        labelKey: 'studio.tab.ai_tasks',
+        urlSegment: 'automations',
+        legacySegments: ['routines', 'ai-tasks'],
+        labelKey: 'studio.tab.automations',
+        labelFallback: 'Automations',
+        descKey: 'studio.tab.automations_desc',
+        descFallback: 'Multi-step routines that run for you',
         Icon: ListChecks,
-        // BFSF-226: the AI Tasks tab (Routines + Automations) was previously
-        // shown unconditionally, so restricted/Free-tier orgs saw a feature the
-        // backend 403s and the admin panel flags as "Blocked". Gate it like the
-        // siblings: visible when the plan grants *either* routines or
-        // automations. The canUseFeature map is the server-resolved licence ×
-        // beta intersection; hasLicenseFeature re-checks the licence so a stale
-        // session can't keep the tab after a downgrade. AITasksDesigner keeps
-        // its own internal guards.
+        // BFSF-226: this tab was previously shown unconditionally, so
+        // restricted/Free-tier orgs saw a feature the backend 403s and the
+        // admin panel flags as "Blocked". Now that the tab is only the
+        // Automations builder, `automations` is the whole gate: an org with
+        // agent_routines but no automations used to land on the second segment,
+        // and that segment is gone. Their agent routines are managed from the
+        // agent that owns them, and a deep link still renders (the registry
+        // only gates the tab, not the section).
         gate: ({ hasLicenseFeature, canUse }) =>
-            (hasLicenseFeature('agent_routines') && canUse('agent_routines'))
-            || (hasLicenseFeature('automations') && canUse('automations')),
+            hasLicenseFeature('automations') && canUse('automations'),
         Component: lazy(() => import('../AITasksDesigner')),
-        getProps: ({ user, initialTaskId, initialStepId, initialFlowletKey, onClose, onNavigate, modelTiers, setEditing }) => ({
+        getProps: ({ user, initialTaskId, initialStepId, initialFlowletKey, initialBuilderView, initialRunId, initialRunStepId, onClose, onNavigate, modelTiers, setEditing }) => ({
             initialTaskId,
             initialStepId,
             initialFlowletKey,
+            initialBuilderView,
+            initialRunId,
+            initialRunStepId,
             onClose,
             onNavigate,
             modelTiers,
@@ -111,11 +130,17 @@ export const STUDIO_APPS = [
             onEditingChange: setEditing,
         }),
     },
+    // Cowork used to be a tab here, duplicating the sidebar's Work page: one
+    // could edit and show run history, the other could create. It is now a
+    // single top-level page at /app/cowork, and /app/studio/cowork/:id
+    // resolves there (see pageFromPath in AuthedApp).
     {
         id: 'webpages',
         urlSegment: 'webpages',
         labelKey: 'studio.tab.webpages',
         labelFallback: 'Webpages',
+        descKey: 'studio.tab.webpages_desc',
+        descFallback: 'Design and publish public webpages',
         Icon: Globe,
         // Licence feature is authoritative. canUseFeature is the server-derived
         // intersection of licence × beta and includes webpages automatically
@@ -131,22 +156,6 @@ export const STUDIO_APPS = [
             hasPermission,
         }),
     },
-    {
-        id: 'tests',
-        urlSegment: 'tests',
-        labelKey: 'studio.tab.tests',
-        labelFallback: 'Tests',
-        Icon: Bug,
-        // Mirrors the webpages gate — playwright_tests is enterprise-tier +
-        // beta-opt-in. canUseFeature already does the AND on the server side.
-        gate: ({ hasLicenseFeature, canUse }) => hasLicenseFeature('playwright_tests') && canUse('playwright_tests'),
-        Component: lazy(() => import('./TestsStudio')),
-        getProps: ({ user, onNavigate, hasPermission }) => ({
-            user,
-            onNavigate,
-            hasPermission,
-        }),
-    },
     // Security Scan is no longer a built-in Studio app: it ships as a
     // downloadable module (Modules → Marketplace) and its Studio tab is supplied
     // at runtime by the module registry (moduleRuntime/registry.js) after install.
@@ -155,6 +164,8 @@ export const STUDIO_APPS = [
         urlSegment: 'support',
         labelKey: 'studio.tab.support',
         labelFallback: 'Support',
+        descKey: 'studio.tab.support_desc',
+        descFallback: 'Shared inbox for support tickets',
         Icon: LifeBuoy,
         // Support Studio — enterprise + beta opt-in (licence × beta via
         // canUseFeature) AND the org-level support_inbox permission (the inbox
@@ -172,29 +183,12 @@ export const STUDIO_APPS = [
         }),
     },
     {
-        id: 'leadStudio',
-        urlSegment: 'lead-studio',
-        labelKey: 'studio.tab.lead_studio',
-        labelFallback: 'Lead Studio',
-        Icon: Target,
-        // Lead Studio — enterprise + beta opt-in (licence × beta via
-        // canUseFeature). Gated purely on licence × beta like
-        // Security/Tests/Webpages — NO separate per-member permission (enabling
-        // the beta for the org is enough to see it).
-        gate: ({ hasLicenseFeature, canUse }) => hasLicenseFeature('lead_studio') && canUse('lead_studio'),
-        Component: lazy(() => import('./LeadStudio')),
-        getProps: ({ user, onNavigate, hasPermission, modelTiers }) => ({
-            user,
-            onNavigate,
-            hasPermission,
-            modelTiers,
-        }),
-    },
-    {
         id: 'apps',
         urlSegment: 'apps',
         labelKey: 'studio.tab.apps',
         labelFallback: 'Apps',
+        descKey: 'studio.tab.apps_desc',
+        descFallback: 'Build and publish internal apps',
         Icon: LayoutGrid,
         // App Studio — Enterprise, GA (auto-on; org admin may disable), gated
         // like Webpages: licence × capability via canUseFeature, no separate
@@ -215,6 +209,8 @@ export const STUDIO_APPS = [
         urlSegment: 'meeting-notes',
         labelKey: 'studio.tab.meeting_notes',
         labelFallback: 'Meeting Notes',
+        descKey: 'studio.tab.meeting_notes_desc',
+        descFallback: 'Transcripts, speakers and actions',
         Icon: Mic,
         // Meeting Notes is enterprise + beta opt-in (mirrors webpages/tests).
         // We intentionally rely on canUseFeature (server-resolved licence ×

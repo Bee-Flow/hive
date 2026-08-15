@@ -1,9 +1,11 @@
 import { Repeat, ChevronRight, ChevronDown, Check } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import { collectArrayPaths, suggestItemVar } from './upstream';
-import { previewValue } from '../../../../../utils/bindingHelpers';
+import { previewValue, walkPath } from '../../../../../utils/bindingHelpers';
 import { useVariablePickerContext } from './VariablePickerContext';
+import { useTranslation } from '../../../../../hooks/useTranslation';
 import { humanizeExpression } from '../flow/displayHelpers';
+import { describeListPath } from './listShape';
 import { denseInputClass } from '../flow/settings/formStyles';
 
 /**
@@ -23,6 +25,7 @@ export default function LoopOverPicker({
     onFocusField,
 }) {
     const { stepLabelById, previewSample } = useVariablePickerContext();
+    const { t } = useTranslation();
     // Same source as CollectionArrayRefField's quick-picks: group fields
     // (incl. `[*]` children) PLUS arrays present only in real-run/pinned
     // output — so "Lists you can repeat over" and the source-list picker
@@ -58,7 +61,17 @@ export default function LoopOverPicker({
                         </div>
                         {arrayFields.map(f => {
                             const selected = overRef === f.path;
-                            const friendly = humanizeExpression(f.path, stepLabelById).replace(/[‹›]/g, '');
+                            // Column paths read as "step ▸ Field (inside each
+                            // row)"; counts resolve through walkPath — a [*]
+                            // path's f.sample is the first ELEMENT, so its
+                            // length was the first row's size, not the list's.
+                            const friendly = f.path.includes('[*]')
+                                ? describeListPath(f.path, stepLabelById, t)
+                                : humanizeExpression(f.path, stepLabelById).replace(/[‹›]/g, '');
+                            const resolved = previewSample ? walkPath(f.path, previewSample) : undefined;
+                            const preview = Array.isArray(resolved)
+                                ? `${resolved.length} item${resolved.length === 1 ? '' : 's'}`
+                                : previewValue(resolved !== undefined ? resolved : f.sample, 24);
                             return (
                                 <button
                                     key={f.path}
@@ -69,7 +82,7 @@ export default function LoopOverPicker({
                                 >
                                     <Repeat size={12} className="shrink-0 text-[var(--text-tertiary)]" />
                                     <span className="text-[var(--text-primary)] truncate">{friendly}</span>
-                                    <span className="ml-auto text-[10px] text-[var(--text-tertiary)] truncate max-w-[120px]">{previewValue(f.sample, 24)}</span>
+                                    <span className="ml-auto text-[10px] text-[var(--text-tertiary)] truncate max-w-[120px]">{preview}</span>
                                     {selected && <Check size={12} className="shrink-0 text-[var(--accent)]" />}
                                 </button>
                             );

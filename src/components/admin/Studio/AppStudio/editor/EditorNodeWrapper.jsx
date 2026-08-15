@@ -1,7 +1,8 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { useDropHint } from './dropHint';
-import { Copy, GripVertical, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { CheckCircle2, Copy, Eye, GripVertical, Lock, Sigma, Trash2, Zap } from 'lucide-react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import nodeLogicSummary from './nodeLogicSummary';
 import { spanFromDrag, heightFromDrag, HEIGHT_STEPS } from './resize';
 import ConfirmDialog from '../../../../shared/ConfirmDialog';
 import IconButton from '../../../../shared/IconButton';
@@ -55,12 +56,42 @@ function clampSpan(n) {
 // event short — see handlePointerDown.
 const NODE_POINTERDOWN_CLAIM = '__aseNodePointerDown';
 
+/**
+ * The selected ids that have no selected ANCESTOR. Acting on a node and on its
+ * container both is acting on it twice: duplicating the container already
+ * copies what is inside it.
+ */
+function selectionRoots(definition, ids) {
+    const set = new Set(ids);
+    return ids.filter((id) => {
+        let found = findNode(definition, id);
+        while (found && found.parent && found.parent.id !== found.section.id) {
+            if (set.has(found.parent.id)) return false;
+            found = findNode(definition, found.parent.id);
+        }
+        return true;
+    });
+}
+
 /** Claim a pointerdown for this cell; false when a descendant already had it. */
 function claimPointerDown(e) {
     if (e.nativeEvent[NODE_POINTERDOWN_CLAIM]) return false;
     e.nativeEvent[NODE_POINTERDOWN_CLAIM] = true;
     return true;
 }
+
+/**
+ * One glyph per kind of logic a component can carry. Shape, not colour, is what
+ * distinguishes them — the badges sit on top of whatever the app's own theme
+ * paints underneath, and a colour-only code would be unreadable on half of it.
+ */
+const LOGIC_MARK_ICONS = {
+    action: Zap,
+    visibility: Eye,
+    enablement: Lock,
+    validation: CheckCircle2,
+    computed: Sigma,
+};
 
 export default function EditorNodeWrapper({ node, className, style, children, onCommit }) {
     const { definition, mode, streamLock, recentlyAddedIds, dispatch } = useAppEditor();
@@ -109,6 +140,14 @@ export default function EditorNodeWrapper({ node, className, style, children, on
     const currentHeight = HEIGHT_STEPS.includes(node.style?.height) ? node.style.height : 'auto';
     const supportsHeight = getKnobsForType(node.type).includes('height');
     const showHandles = selected && !streamLock;
+
+    // What logic this component carries, for the badge strip below. Only the
+    // primary instance draws it — a node inside a repeater is mounted once per
+    // row and would otherwise wear the same badges N times.
+    const logicMarks = useMemo(
+        () => (editMode && primary ? nodeLogicSummary(node, definition) : []),
+        [editMode, primary, node, definition],
+    );
 
     // Live definition for the pointer-up commit (no reducer writes happen
     // during a drag, but read via ref so an unrelated re-render can't stale it).
@@ -275,7 +314,16 @@ export default function EditorNodeWrapper({ node, className, style, children, on
     };
 
     // --- bulk actions over the whole selection (one history commit each) -------
-    const selectionIds = selectionSet ? [...selectionSet] : (selectedNodeId ? [selectedNodeId] : []);
+    // Only the ROOTS of the selection: a marquee drag collects every element
+    // whose rect intersects, and a container's rect encloses its children, so
+    // a card and the buttons inside it arrive together. Acting on both
+    // duplicated the children twice — once inside the copied card, once again
+    // as new siblings INSIDE THE ORIGINAL — so the card the author never
+    // touched grew extra buttons.
+    const selectionIds = selectionRoots(
+        definition,
+        selectionSet ? [...selectionSet] : (selectedNodeId ? [selectedNodeId] : []),
+    );
     const anyContainerSelected = selectionIds.some((id) => {
         const f = findNode(definition, id);
         return f && Array.isArray(f.node.children) && f.node.children.length > 0;
@@ -391,6 +439,41 @@ export default function EditorNodeWrapper({ node, className, style, children, on
                         <Trash2 />
                     </IconButton>
                 </div>
+            ) : null}
+
+            {/*
+              * What this component DOES, on the component itself.
+              *
+              * Always on in edit mode rather than on hover or on selection:
+              * the point is to be able to sweep a screen and see where the
+              * logic lives without touching anything. Nodes carrying none —
+              * most of them — draw nothing, so the marks stay meaningful.
+              */}
+            {logicMarks.length ? (
+                <div
+                    className="ase-logic-marks"
+                    data-logic-marks={logicMarks.length}
+                    aria-hidden="true"
+                >
+                    {logicMarks.map((mark) => {
+                        const Icon = LOGIC_MARK_ICONS[mark.kind] || Zap;
+                        return (
+                            <span key={mark.key} className="ase-logic-mark" title={mark.text}>
+                                <Icon className="w-3 h-3" />
+                            </span>
+                        );
+                    })}
+                </div>
+            ) : null}
+            {/*
+              * The same thing for a screen reader, and for anyone who cannot
+              * hover a tooltip: one sentence per rule, off-screen, attached to
+              * the cell it describes.
+              */}
+            {logicMarks.length ? (
+                <span className="sr-only">
+                    {`${label} — ${logicMarks.map((m) => m.text).join('. ')}.`}
+                </span>
             ) : null}
 
             {/* WIDTH resize grip — right edge. */}

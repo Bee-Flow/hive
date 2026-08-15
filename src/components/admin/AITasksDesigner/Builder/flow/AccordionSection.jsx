@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import CollapsibleSection from './CollapsibleSection';
-import { isAdvancedSection, useFormDensity } from './settings/formDensity';
+import { hiddenInSimple, resolveMode, useFormDensity } from './settings/formDensity';
 import scopedStorage from '../../../../../utils/scopedStorage';
 
 /**
@@ -16,6 +16,14 @@ import scopedStorage from '../../../../../utils/scopedStorage';
  * the user's own collapsed/expanded choice returns. Sections are
  * independent (multiple may be open at once), matching the existing
  * CollapsibleSection behaviour the AI step already relies on.
+ *
+ * VISIBILITY is decided by the resolved form MODE (Simple / All options —
+ * formDensity.resolveMode), not by density alone: the user's persisted choice
+ * wins, and with no choice the gesture decides exactly as before. In Simple,
+ * a section is left out when the step type's `simpleSections` (nodeDefs.js)
+ * excludes it — UNLESS it holds a validation error (`forceOpen`) or the user
+ * has already configured it (`hasContent`): hiding a thing that is switched
+ * on reads as data loss.
  */
 export default function AccordionSection({
     stepType,
@@ -28,6 +36,11 @@ export default function AccordionSection({
     // FieldHint, a count chip). Never plain text: the button's textContent is
     // how tests locate a section.
     meta = null,
+    // This section already carries user configuration. Never hidden in
+    // Simple, and badged "set" there so it is obvious WHY it stayed.
+    hasContent = false,
+    // Validation errors inside this section — a red count chip on the band.
+    errorCount = 0,
     children,
 }) {
     const storageKey = `collapse.inspector.${stepType}.${sectionKey}`;
@@ -47,14 +60,29 @@ export default function AccordionSection({
         prevForce.current = forceOpen;
     }, [forceOpen]);
 
-    // Quick view: advanced sections are left out entirely (the host offers a
-    // "More options" way in). A section holding a validation ERROR is the one
-    // exception — hiding it would make the problem unreachable.
-    const { density, onHiddenSection } = useFormDensity();
-    const hidden = density === 'quick' && isAdvancedSection(sectionKey) && !forceOpen;
+    const ctx = useFormDensity();
+    const mode = resolveMode(ctx);
+    const { onHiddenSection, onShownSection } = ctx;
+    const hidden = mode === 'simple' && hiddenInSimple(stepType, sectionKey) && !forceOpen && !hasContent;
+
+    // Report both directions so the host's "Show all options (N)" count can
+    // go down as well as up. A visible section's report is a harmless no-op
+    // for hosts that only track hidden ones.
     useEffect(() => {
         if (hidden) onHiddenSection?.(sectionKey);
-    }, [hidden, sectionKey, onHiddenSection]);
+        else onShownSection?.(sectionKey);
+    }, [hidden, sectionKey, onHiddenSection, onShownSection]);
+
+    // A section REVEALED by the hidden→visible transition (the user pressed
+    // "Show all options") opens — revealing it still collapsed would make the
+    // switch look like it did nothing. Never the other way round, and never
+    // written to the persisted preference (only the user's own toggle is).
+    const prevHidden = useRef(hidden);
+    useEffect(() => {
+        if (prevHidden.current && !hidden && !forceOpen) setOpen(true);
+        prevHidden.current = hidden;
+    }, [hidden, forceOpen]);
+
     if (hidden) return null;
 
     const onToggle = (next) => {
@@ -62,8 +90,25 @@ export default function AccordionSection({
         scopedStorage.setItem(storageKey, next ? '1' : '0');
     };
 
+    const errorChip = errorCount > 0 ? (
+        <span
+            title={`${errorCount} problem${errorCount === 1 ? '' : 's'} in this section`}
+            className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/30 tabular-nums"
+        >
+            {errorCount}
+        </span>
+    ) : null;
+
     return (
-        <CollapsibleSection variant="section" title={title} open={open} onToggle={onToggle} badge={badge} meta={meta}>
+        <CollapsibleSection
+            variant="section"
+            title={title}
+            open={open}
+            onToggle={onToggle}
+            // In Simple, say WHY a normally-hidden section is still here.
+            badge={badge ?? (hasContent && mode === 'simple' && hiddenInSimple(stepType, sectionKey) ? 'set' : null)}
+            meta={errorChip || meta ? <>{errorChip}{meta}</> : null}
+        >
             {children}
         </CollapsibleSection>
     );

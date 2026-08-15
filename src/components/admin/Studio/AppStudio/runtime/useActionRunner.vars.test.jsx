@@ -201,3 +201,136 @@ describe('useActionRunner — quota_exceeded surfacing', () => {
         expect(toast.error).toHaveBeenCalledWith('Record not found');
     });
 });
+
+/**
+ * WHAT THE ACTION CAN SEE.
+ *
+ * Two scope roots the runner did not carry, both of which the authoring side
+ * teaches people to use:
+ *
+ *   `item` — the row that triggered the action. Every row-click component hands
+ *     the row over, the binding picker offers `item.<field>`, and the shipped
+ *     templates wire "open THIS record" as a navigate param of `item.id`. The
+ *     runner never set it, so that param resolved to undefined and the detail
+ *     screen opened on nothing.
+ *
+ *   `screen` / `forms` — in every scope the RENDERER builds. A step formula
+ *     reading `screen.params.id` — how a detail screen learns which record it
+ *     is showing — resolved to undefined, so the delete button on that screen
+ *     deleted nothing.
+ */
+describe('useActionRunner — the scope an action runs against', () => {
+    const navAction = (params) => ({
+        schemaVersion: 2,
+        screens: [{ id: 'scr_a', name: 'A', sections: [] }, { id: 'scr_b', name: 'B', sections: [] }],
+        actions: { act_open: { kind: 'navigate', screenId: 'scr_b', params } },
+    });
+
+    it('resolves a navigate param from the row that was clicked', async () => {
+        const onNavigate = vi.fn();
+        const { result } = renderHook(() => useActionRunner('app1', navAction({
+            recordId: { kind: 'formula', expr: 'item.id' },
+        }), { onNavigate }));
+
+        await act(async () => {
+            await result.current.runAction('act_open', { formValues: { id: 42 }, item: { id: 42 } });
+        });
+        expect(onNavigate).toHaveBeenCalledWith('scr_b', { recordId: 42 });
+    });
+
+    it('resolves a navigate param from the screen it is already on', async () => {
+        const onNavigate = vi.fn();
+        const { result } = renderHook(() => useActionRunner('app1', navAction({
+            parentId: { kind: 'formula', expr: 'screen.params.id' },
+        }), { onNavigate, screen: { id: 'scr_a', params: { id: 'ticket-7' } } }));
+
+        await act(async () => {
+            await result.current.runAction('act_open', {});
+        });
+        expect(onNavigate).toHaveBeenCalledWith('scr_b', { parentId: 'ticket-7' });
+    });
+
+    it('resolves a SEQUENCE step against the same roots', async () => {
+        const onNavigate = vi.fn();
+        const def = {
+            schemaVersion: 2,
+            screens: [{ id: 'scr_a', name: 'A', sections: [] }, { id: 'scr_b', name: 'B', sections: [] }],
+            actions: {
+                act_flow: {
+                    kind: 'sequence',
+                    steps: [
+                        { kind: 'set_variable', name: 'picked', value: { kind: 'formula', expr: 'item.id' } },
+                        { kind: 'set_variable', name: 'onScreen', value: { kind: 'formula', expr: 'screen.params.id' } },
+                        { kind: 'navigate', screenId: 'scr_b', params: { a: { kind: 'formula', expr: 'vars.picked' }, b: { kind: 'formula', expr: 'vars.onScreen' } } },
+                    ],
+                },
+            },
+        };
+        const { result } = renderHook(() => useActionRunner('app1', def, {
+            onNavigate,
+            screen: { id: 'scr_a', params: { id: 'ticket-7' } },
+        }));
+
+        await act(async () => {
+            await result.current.runAction('act_flow', { formValues: { id: 9 }, item: { id: 9 } });
+        });
+        expect(onNavigate).toHaveBeenCalledWith('scr_b', { a: 9, b: 'ticket-7' });
+    });
+});
+
+/**
+ * `stepIndex` is never stored: the browser derives it from the definition it
+ * holds and the server from the one it HAS — and with ?draft=1 that is the
+ * SAVED draft. In the editor those are not the same document, because autosave
+ * is debounced, so previewing an action inside that window had the server
+ * resolve the ordinal to a different step than the one on screen. On a
+ * delete_record that is not a cosmetic difference.
+ */
+describe('useActionRunner — a server step waits for the draft to be saved', () => {
+    beforeEach(() => { authFetch.mockReset(); toast.error.mockReset(); });
+
+    const serverSeq = {
+        schemaVersion: 2,
+        screens: [{ id: 'scr_a', name: 'A', sections: [] }],
+        actions: {
+            act_write: { kind: 'sequence', steps: [{ kind: 'create_record', tableId: 'tbl_a', values: {} }] },
+        },
+    };
+    const clientSeq = {
+        schemaVersion: 2,
+        screens: [{ id: 'scr_a', name: 'A', sections: [] }],
+        actions: { act_say: { kind: 'sequence', steps: [{ kind: 'toast', message: 'hi' }] } },
+    };
+
+    it('flushes before dispatching a step the server resolves by ordinal', async () => {
+        const order = [];
+        const beforeServerStep = vi.fn(async () => { order.push('flush'); return { ok: true }; });
+        authFetch.mockImplementation(async () => { order.push('dispatch'); return resp(200, { ok: true, result: {} }); });
+
+        const { result } = renderHook(() => useActionRunner('app1', serverSeq, { beforeServerStep }));
+        await act(async () => { await result.current.runAction('act_write', {}); });
+
+        expect(beforeServerStep).toHaveBeenCalledTimes(1);
+        expect(order[0]).toBe('flush');
+        expect(order).toContain('dispatch');
+    });
+
+    it('does not run the step at all when the draft could not be saved', async () => {
+        const beforeServerStep = vi.fn(async () => ({ ok: false, error: 'Saving failed.' }));
+        authFetch.mockImplementation(async () => resp(200, { ok: true }));
+
+        const { result } = renderHook(() => useActionRunner('app1', serverSeq, { beforeServerStep }));
+        await act(async () => { await result.current.runAction('act_write', {}); });
+
+        // Dispatching against a draft the server has not got is the one thing
+        // that must not happen.
+        expect(authFetch).not.toHaveBeenCalled();
+    });
+
+    it('leaves a purely client-side sequence alone', async () => {
+        const beforeServerStep = vi.fn(async () => ({ ok: true }));
+        const { result } = renderHook(() => useActionRunner('app1', clientSeq, { beforeServerStep }));
+        await act(async () => { await result.current.runAction('act_say', {}); });
+        expect(beforeServerStep).not.toHaveBeenCalled();
+    });
+});

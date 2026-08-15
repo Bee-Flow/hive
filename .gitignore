@@ -1,0 +1,20 @@
+# hive is synced out of the Bee-Flow-AI monorepo, where these paths are
+# covered by the ROOT .gitignore (`**/node_modules/`, `agent-hub/dist/`).
+# Nothing carried that protection into this repo, so a sync run from a
+# directory where someone had built the app once would commit the whole
+# build tree. Keep this file here, not just upstream.
+node_modules/
+dist/
+dist-embed/
+
+# Local env files — the deployed config lives in the image/ingress, never here.
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+
+# Tooling output
+coverage/
+*.log
+.DS_Store

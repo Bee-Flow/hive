@@ -43,7 +43,7 @@ const NESTED = [
     {
         kind: 'switch',
         expr: 'vars.a',
-        cases: [{ name: 'open', steps: [{ kind: 'toast', message: 'open' }] }],
+        cases: [{ value: 'open', steps: [{ kind: 'toast', message: 'open' }] }],
         default: [{ kind: 'toast', message: 'other' }],
     },
 ];
@@ -70,10 +70,38 @@ describe('stepsToGraph', () => {
         expect(sameScope(inThen[0].id, inThen[1].id)).toBe(true);
     });
 
-    it('names a switch scope per case, plus the default', () => {
+    /**
+     * Scope keys are POSITIONAL. They used to be built from `case.name` — a
+     * field canonicalize deletes on the first save (it keeps { value, steps }
+     * only) — so a saved switch came back with every scope key renumbered.
+     * A value is also author-typed: it can repeat, contain a '/', or be blank,
+     * none of which a key that ends up inside a node id can survive.
+     */
+    it('gives each switch case its own scope key, by position, plus the default', () => {
         const { nodes } = stepsToGraph(seq(NESTED));
         const keys = [...new Set(nodes.filter((n) => n.scopeKey?.startsWith('case:')).map((n) => n.scopeKey))];
-        expect(keys.sort()).toEqual(['case:default', 'case:open']);
+        expect(keys.sort()).toEqual(['case:0', 'case:default']);
+    });
+
+    it('labels a case by what it matches, and by position until it matches something', () => {
+        const { nodes } = stepsToGraph(seq([
+            { kind: 'switch', expr: 'vars.a', cases: [{ value: 'paid', steps: [] }, { value: '', steps: [] }], default: [] },
+        ]));
+        const labels = nodes.filter((n) => n.isEntry && n.scopeKey?.startsWith('case:')).map((n) => n.scopeLabel);
+        expect(labels).toEqual(['When it is paid', 'Case 2', 'Otherwise']);
+    });
+
+    it('keeps two cases apart even when they match the same value', () => {
+        // Keying by value would collapse these into one scope and lose a branch.
+        const action = seq([{
+            kind: 'switch', expr: 'vars.a',
+            cases: [{ value: 'x', steps: [{ kind: 'toast', message: 'first' }] }, { value: 'x', steps: [{ kind: 'toast', message: 'second' }] }],
+            default: [],
+        }]);
+        const { nodes, edges } = stepsToGraph(withStepIds(action));
+        const back = graphToSteps(nodes, edges);
+        expect(back[0].cases[0].steps[0].message).toBe('first');
+        expect(back[0].cases[1].steps[0].message).toBe('second');
     });
 
     it('a bare v1 action is an implicit one-step sequence', () => {

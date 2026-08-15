@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 
 /**
  * App Studio runtime — the data-source state provider.
@@ -30,6 +30,8 @@ const DataContext = createContext({
     draft: false,
     setEntry: () => {},
     removeEntry: () => {},
+    retainEntry: () => {},
+    releaseEntry: () => {},
 });
 
 /**
@@ -66,7 +68,30 @@ export function DataProvider({ appId = null, draft = false, initialState = null,
         });
     }, []);
 
-    const removeEntry = useCallback((key) => {
+    /**
+     * How many live fetchers are holding each cache key.
+     *
+     * Eviction used to be unconditional: one fetcher unmounting deleted the
+     * entry every other consumer of that key was reading. That is reachable
+     * without doing anything unusual — AppInputRelation mounts its own loader
+     * outside AppDataScope's deduped scan, so two relation pickers over the
+     * same table build byte-identical bindings and therefore the same key.
+     * Hide one behind a visibleWhen and the other showed "Loading…" for the
+     * rest of the screen's life: its mirror effect does not re-run (its deps
+     * are unchanged and react-query answers from cache), so nothing ever wrote
+     * the entry back.
+     *
+     * A ref rather than state — a holder count is bookkeeping, and rendering on
+     * every mount/unmount of a fetcher would be pure churn.
+     */
+    const holdersRef = useRef(new Map());
+
+    const retainEntry = useCallback((key) => {
+        if (!key) return;
+        holdersRef.current.set(key, (holdersRef.current.get(key) || 0) + 1);
+    }, []);
+
+    const dropEntry = useCallback((key) => {
         setDataState((prev) => {
             if (!key || !Object.prototype.hasOwnProperty.call(prev, key)) return prev;
             const next = { ...prev };
@@ -75,9 +100,24 @@ export function DataProvider({ appId = null, draft = false, initialState = null,
         });
     }, []);
 
+    /** Release one hold; the entry goes only when the last holder does. */
+    const releaseEntry = useCallback((key) => {
+        if (!key) return;
+        const left = (holdersRef.current.get(key) || 0) - 1;
+        if (left > 0) { holdersRef.current.set(key, left); return; }
+        holdersRef.current.delete(key);
+        dropEntry(key);
+    }, [dropEntry]);
+
+    // Kept for callers that own a key outright. The fetchers use retain/release.
+    const removeEntry = useCallback((key) => {
+        holdersRef.current.delete(key);
+        dropEntry(key);
+    }, [dropEntry]);
+
     const value = useMemo(
-        () => ({ dataState, appId, draft, setEntry, removeEntry }),
-        [dataState, appId, draft, setEntry, removeEntry],
+        () => ({ dataState, appId, draft, setEntry, removeEntry, retainEntry, releaseEntry }),
+        [dataState, appId, draft, setEntry, removeEntry, retainEntry, releaseEntry],
     );
 
     return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

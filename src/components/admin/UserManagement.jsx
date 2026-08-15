@@ -24,6 +24,12 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
     // Permission check: full admin can do everything, org-scoped users are limited
     const isFullAdmin = currentUser?.permissions?.includes('all') || currentUser?.isAdmin;
     const canManageUsers = isFullAdmin || (currentUser?.permissions || []).some(p => ['manage_users', 'admin_security'].includes(p));
+    // Platform operator — deliberately NOT isFullAdmin, which counts the 'all'
+    // permission and is obtainable inside a tenant. Moving a user between
+    // organisations is server-side restricted to this exact test
+    // (session.isAdmin || user.role === 'admin'), so the org picker below has to
+    // ask the same question or it offers an action that answers 403.
+    const isPlatformAdmin = currentUser?.isAdmin || currentUser?.role === 'admin';
     const userOrgIds = currentUser?.organizations || [];
     const [users, setUsers] = useState([]);
     const [groups, setGroups] = useState([]);
@@ -171,21 +177,38 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
         }
     };
 
-    const handleUpdateUser = async () => {
+    // `confirmSelfDemotion` is the server's opt-in for an admin stripping their
+    // OWN organisation-admin rights. It is not busywork: the panel PUTs the whole
+    // user row back, so a mis-set role dropdown used to remove the caller's own
+    // access in one click with nothing to confirm and no way back (a pentest did
+    // exactly that and left the tenant unrecoverable). The server answers 409
+    // with the downgrade hint; we turn that into a real confirm and re-send.
+    const handleUpdateUser = async (extra = {}) => {
         try {
             const res = await authFetch(`${API_BASE}/auth/users/${userData.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(userData)
+                body: JSON.stringify({ ...userData, ...extra })
             });
             if (res.ok) {
                 setMessage({ type: 'success', text: 'User updated successfully' });
                 setShowEditUser(false);
                 loadData();
-            } else {
-                const data = await res.json();
-                setMessage({ type: 'error', text: data.error || 'Failed to update user' });
+                return;
             }
+            const data = await res.json();
+            if (res.status === 409 && data.code === 'confirm_self_demotion') {
+                askConfirm({
+                    title: t('admin.sec_self_demote_title', 'Give up your admin rights?'),
+                    description: data.hint?.message
+                        || t('admin.sec_self_demote_desc', 'This removes your own administrator rights over this organisation. Another administrator would have to give them back.'),
+                    confirmLabel: t('admin.sec_self_demote_confirm', 'Yes, step down'),
+                    destructive: true,
+                    onConfirm: () => handleUpdateUser({ confirmSelfDemotion: true }),
+                });
+                return;
+            }
+            setMessage({ type: 'error', text: data.error || 'Failed to update user' });
         } catch (err) {
             setMessage({ type: 'error', text: 'Connection error' });
         }
@@ -599,7 +622,6 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{org.description}</p>
                                                         {org.nc_instance_id && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{t('admin.org_nc_bound_label')}: {org.nc_base_url || org.nc_instance_id}</p>}
                                                         <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{t('admin.org_source_label')}: {t(ORG_SOURCE_KEY[org.registrationSource] || 'admin.org_source_unknown')}</p>
-                                                        {org.registrationSource === 'nextcloud_connector' && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{t('admin.org_terms_channel')}: {t('admin.org_terms_channel_connector')}</p>}
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 opacity-100 xl:opacity-0 xl:group-hover:opacity-100">
@@ -872,7 +894,10 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                             const canSubmit = showEditUser || (userData.username && userData.displayName && userData.password);
                             return (
                                 <button
-                                    onClick={showEditUser ? handleUpdateUser : handleAddUser}
+                                    // Arrow, not a bare reference: handleUpdateUser takes an
+                                    // options object, and React would hand it the click event,
+                                    // which would then be spread into the request body.
+                                    onClick={showEditUser ? () => handleUpdateUser() : handleAddUser}
                                     disabled={!canSubmit}
                                     className="px-4 py-2 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--accent-primary)] text-white"
                                 >
@@ -967,9 +992,20 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                     <label className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Organisation Assignment</label>
                                 </div>
 
-                                {/* Org selector */}
+                                {/* Org selector — operators only. Tenant membership is not an
+                                    org admin's to change (the server answers 403
+                                    cross_org_move_denied), so they see it, they cannot set it. */}
                                 <div className="mb-3">
                                     <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Organisation</label>
+                                    {!isPlatformAdmin ? (
+                                        <div
+                                            className="w-full px-3 py-2 rounded-lg border"
+                                            style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}
+                                        >
+                                            {organizations.find(o => o.id === userData.organizationId)?.name
+                                                || t('admin.sec_no_organisation', '— No organisation —')}
+                                        </div>
+                                    ) : (
                                     <div className="relative">
                                         <select
                                             value={userData.organizationId || ''}
@@ -996,6 +1032,7 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                         </select>
                                         <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
                                     </div>
+                                    )}
                                 </div>
 
                                 {/* Org role selector */}

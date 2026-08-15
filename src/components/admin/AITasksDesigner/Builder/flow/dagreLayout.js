@@ -24,7 +24,7 @@ export function isFinitePos(p) {
         && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
-function layoutCacheKey(allSteps, edges, dims) {
+function layoutCacheKey(allSteps, edges, dims, heightById) {
     // Stable: sort to ignore array order changes that don't affect shape.
     // Includes label/caseName — an edge's REAL identity — so parallel branch
     // edges between the same pair don't collapse into one cache entry.
@@ -34,7 +34,13 @@ function layoutCacheKey(allSteps, edges, dims) {
         .map(e => `${e.from}>${e.to}|${e.label || ''}|${e.caseName ?? ''}`)
         .sort()
         .join('|');
-    return `${dims.width}x${dims.height}#${nodeIds}#${edgeKey}`;
+    // Per-node heights are part of the SHAPE: an AI step that grew a tool row
+    // pushes its vertical neighbours down, so a cached layout from before the
+    // tool was attached is a different graph.
+    const heights = heightById && heightById.size
+        ? [...heightById.entries()].map(([id, h]) => `${id}:${h}`).sort().join(',')
+        : '';
+    return `${dims.width}x${dims.height}#${nodeIds}#${edgeKey}#${heights}`;
 }
 
 function rememberLayout(key, positionById) {
@@ -51,8 +57,8 @@ function rememberLayout(key, positionById) {
  * Lay every node out with dagre and return Map<id, {x, y}> in top-left
  * coordinates. Memoised on graph shape.
  */
-export function runDagre(allSteps, edges, dims) {
-    const key = layoutCacheKey(allSteps, edges, dims);
+export function runDagre(allSteps, edges, dims, heightById = null) {
+    const key = layoutCacheKey(allSteps, edges, dims, heightById);
     const cached = layoutCache.get(key);
     if (cached) {
         // LRU touch: re-insert so the hit promotes to most-recent.
@@ -79,7 +85,14 @@ export function runDagre(allSteps, edges, dims) {
     // shape needs.
     g.setGraph({ rankdir: 'LR', nodesep: 48, ranksep: 120, marginx: 16, marginy: 16 });
     g.setDefaultEdgeLabel(() => ({}));
-    for (const s of allSteps) g.setNode(s.id, { width: dims.width, height: dims.height });
+    // Dagre centres nodes in their rank, so a taller box reserves the space
+    // ABOVE as well as below. The callers that grow a box (an AI step with a
+    // row of tools hanging off it) want the room underneath, so the extra
+    // height is applied here and the top-left conversion below is done against
+    // the node's OWN height — otherwise the card itself would drift upward.
+    for (const s of allSteps) {
+        g.setNode(s.id, { width: dims.width, height: heightById?.get(s.id) ?? dims.height });
+    }
     for (const e of edges) {
         if (!e.from || !e.to) continue;
         g.setEdge(e.from, e.to);
@@ -88,7 +101,7 @@ export function runDagre(allSteps, edges, dims) {
     const out = new Map();
     for (const s of allSteps) {
         const n = g.node(s.id) || { x: 0, y: 0 };
-        out.set(s.id, { x: n.x - dims.width / 2, y: n.y - dims.height / 2 });
+        out.set(s.id, { x: n.x - dims.width / 2, y: n.y - (heightById?.get(s.id) ?? dims.height) / 2 });
     }
     rememberLayout(key, out);
     return out;

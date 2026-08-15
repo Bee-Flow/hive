@@ -12,6 +12,7 @@ import {
     ruleFields,
     valueKindOf,
 } from './rowRuleModel';
+import { optionPairs } from '../tables/rowValues';
 
 /**
  * RowRuleBuilder — the clickable half of a row rule: rows of
@@ -231,13 +232,19 @@ function ValueControl({ kind, field, value, onChange, label, disabled }) {
         );
     }
     if (kind === 'choice') {
-        const options = Array.isArray(field?.options) ? field.options : [];
+        // A select column's options may be plain strings OR {value,label}
+        // objects — the shape optionPairs exists to normalise, and the one the
+        // table designer writes whenever a choice is given a display name.
+        // Rendering the raw entries put an OBJECT in a React child slot, which
+        // throws: opening the row-rule builder on such a column crashed the
+        // Roles & access panel outright.
+        const options = optionPairs(field);
         // A saved value that is no longer one of the choices stays selectable.
-        const extra = v !== '' && !options.includes(v) ? [v] : [];
+        const extra = v !== '' && !options.some((o) => o.value === v) ? [{ value: v, label: v }] : [];
         return (
             <select {...common} value={v}>
                 <option value="">Pick one…</option>
-                {[...options, ...extra].map((o) => <option key={o} value={o}>{o}</option>)}
+                {[...options, ...extra].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
         );
     }

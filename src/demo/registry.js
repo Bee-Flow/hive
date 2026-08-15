@@ -178,27 +178,6 @@ export const DEMO_FEATURES = {
             onNavigate: null,
         },
     },
-    legal: {
-        id: 'legal',
-        label: 'Legal Studio',
-        blurb: 'Five matters with clients, counterparties and deadlines. Invented Dutch civil disputes — no real matter, and research is switched off because the demo has no network.',
-        appPath: '/app/studio/legal',
-        // The matter the demo OPENS, not just one in the sidebar — this is
-        // what proves the dossier loaded, which is the thing that was broken.
-        expectText: 'Kort geding aanbesteding gemeente',
-        Component: lazy(() => import('../pages/legal/LegalStudioPage')),
-        loadFixtures: () => import('./fixtures/legal'),
-        props: {
-            // Open a matter rather than "Kies een dossier". Specifically the
-            // tender one: it is the fullest dossier (six sources) AND one of
-            // the two carrying a draft, so the drafting pane has something in
-            // it. Landing on a matter with no draft leaves the right-hand
-            // half of the screen reading "0 Words". Must exist in
-            // fixtures/legal.js, and must be a key of its DRAFTS map.
-            initialMatterId: 'lm_demo_aanbesteding',
-            onBack: null,
-        },
-    },
     monitoring: {
         id: 'monitoring',
         label: 'Organisation monitoring',

@@ -76,8 +76,10 @@ const SearchableModelSelect = ({
             // Text search
             if (!lowerSearch) return true;
             const meta = getModelMeta(m.id);
-            const name = meta?.name || '';
-            const cat = meta?.cat || '';
+            // Self-hosted models aren't in the bundled metadata table — the
+            // server derives their label and category, so fall back to those.
+            const name = meta?.name || m.name || '';
+            const cat = meta?.cat || m.cat || '';
             return m.id.toLowerCase().includes(lowerSearch)
                 || name.toLowerCase().includes(lowerSearch)
                 || cat.toLowerCase().includes(lowerSearch);
@@ -252,6 +254,8 @@ const SearchableModelSelect = ({
                                         {models.map(m => {
                                             const meta = getModelMeta(m.id);
                                             const displayName = getModelDisplayName(m);
+                                            // Local models carry their category on the model itself.
+                                            const cat = meta?.cat || m.cat || '';
                                             const isSelected = m.id === selectedId
                                                 && (!selectedProviderId || m.providerId === selectedProviderId);
                                             const isHidden = hiddenSet.has(m.id);
@@ -290,12 +294,12 @@ const SearchableModelSelect = ({
                                                             )}
                                                         </div>
                                                         {/* Category badge */}
-                                                        {meta?.cat && (
+                                                        {cat && (
                                                             <span
                                                                 className="text-[10px] px-2 py-1 rounded-full shrink-0 font-medium"
                                                                 style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}
                                                             >
-                                                                {meta.cat}
+                                                                {cat}
                                                             </span>
                                                         )}
                                                     </button>

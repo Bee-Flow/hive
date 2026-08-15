@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import DiagramPane from './DiagramPane';
+import { buildStepLabelMap } from './flow/displayHelpers';
 import OutputView from './OutputView';
 import { tokenFor } from '../../../shared/statusTokens';
 
@@ -27,11 +28,27 @@ export default function RunExecutionView({
     definition,
     steps = [],
     emptyDefinitionMessage = 'Definition unavailable for this run.',
+    // Controlled selection (ExecutionView lifts it so the timeline, the
+    // canvas and the URL's ?step= all agree). Leave undefined for the legacy
+    // self-managed behaviour.
+    selectedStepId: controlledSelectedId = undefined,
+    onSelectStep = null,
 }) {
-    const [selectedStepId, setSelectedStepId] = useState(null);
-    const selectedStepRecord = selectedStepId
-        ? steps.find(s => s.stepId === selectedStepId) || null
-        : null;
+    const [localSelectedId, setLocalSelectedId] = useState(null);
+    const controlled = controlledSelectedId !== undefined;
+    const selectedStepId = controlled ? controlledSelectedId : localSelectedId;
+    const select = (id) => {
+        onSelectStep?.(id);
+        if (!controlled) setLocalSelectedId(id);
+    };
+
+    // ALL attempts for the selected step, latest last. `steps.find` returned
+    // the FIRST record, so a retried step always showed its stale failure.
+    const attempts = useMemo(
+        () => (selectedStepId ? steps.filter(s => s.stepId === selectedStepId) : []),
+        [steps, selectedStepId],
+    );
+    const labelById = useMemo(() => buildStepLabelMap(definition), [definition]);
 
     return (
         <div className="flex-1 min-h-0 flex flex-col">
@@ -40,31 +57,54 @@ export default function RunExecutionView({
                     <DiagramPane
                         definition={definition}
                         runSteps={steps}
-                        onNodeClick={setSelectedStepId}
+                        onNodeClick={select}
                         readOnly
                     />
                 ) : (
                     <div className="p-4 text-xs text-[var(--text-tertiary)]">{emptyDefinitionMessage}</div>
                 )}
             </div>
-            {selectedStepRecord && (
-                <StepDataPanel record={selectedStepRecord} onClose={() => setSelectedStepId(null)} />
+            {attempts.length > 0 && (
+                <StepDataPanel
+                    attempts={attempts}
+                    label={labelById.get(selectedStepId) || selectedStepId}
+                    onClose={() => select(null)}
+                />
             )}
         </div>
     );
 }
 
 /**
- * Bottom panel for the clicked step: a status/identity strip, any error, and
- * the recorded Input + Output side by side as friendly OutputViews.
+ * Bottom panel for the clicked step: a status/identity strip (the step's
+ * NAME, not its internal id — the id stays in the title attribute), an
+ * attempt switcher when the step ran more than once, any error, and the
+ * recorded Input + Output side by side as friendly OutputViews.
  */
-function StepDataPanel({ record, onClose }) {
+function StepDataPanel({ attempts, label, onClose }) {
+    // Latest attempt by default — that is the one whose outcome counted.
+    const [attemptIdx, setAttemptIdx] = useState(-1);
+    const idx = attemptIdx === -1 ? attempts.length - 1 : Math.min(attemptIdx, attempts.length - 1);
+    const record = attempts[idx];
+    if (!record) return null;
     return (
         <div className="flex-shrink-0 border-t border-[var(--border-default)] bg-[var(--bg-secondary)] max-h-[45%] overflow-y-auto p-3">
             <div className="flex items-center gap-2 text-xs mb-2">
                 <StatusIcon status={record.status} />
-                <code className="font-mono text-[var(--text-primary)]">{record.stepId}</code>
+                <span className="font-medium text-[var(--text-primary)] truncate" title={record.stepId}>{label}</span>
                 {record.stepType && <span className="text-[var(--text-tertiary)]">({record.stepType})</span>}
+                {attempts.length > 1 && (
+                    <select
+                        aria-label="Attempt"
+                        value={idx}
+                        onChange={(e) => setAttemptIdx(Number(e.target.value))}
+                        className="px-1.5 py-0.5 rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[11px] text-[var(--text-primary)]"
+                    >
+                        {attempts.map((_, i) => (
+                            <option key={i} value={i}>attempt {i + 1} of {attempts.length}</option>
+                        ))}
+                    </select>
+                )}
                 <button
                     onClick={onClose}
                     className="ml-auto text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"

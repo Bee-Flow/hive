@@ -164,7 +164,7 @@ export default function AppList({ node }) {
                                 className={`${cls} cursor-pointer transition-colors hover:brightness-[1.06]`}
                                 style={style}
                                 aria-current={selected ? 'true' : undefined}
-                                onClick={() => runAction(node.onRowClick, { formValues: item })}
+                                onClick={() => runAction(node.onRowClick, { formValues: item, item })}
                             >
                                 {body}
                             </button>

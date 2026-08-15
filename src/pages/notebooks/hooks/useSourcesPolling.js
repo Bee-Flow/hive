@@ -2,7 +2,7 @@
  * useSourcesPolling — owns a notebook/matter's source list, the add/delete/retry
  * handlers and the "poll while processing" loop.
  *
- * Extracted from NotebooksPage + LegalStudioPage, which both copied this state +
+ * Extracted from NotebooksPage, which copied this state +
  * the 3s processing poll + the identical CRUD handlers (only the API base path
  * differed, and both ultimately hit `/api/notebooks/:id/sources/*`).
  *

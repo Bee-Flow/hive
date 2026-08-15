@@ -28,7 +28,10 @@ export default function NodePurpose({ step }) {
     if (!help) return null;
 
     return (
-        <p className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)]/50 px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-secondary)]">
+        // A quiet left rule, not a filled box: the fill made the ONE piece of
+        // explanatory prose in the editor read like a disabled input, and at
+        // 11px/tertiary it was the least legible text on the panel.
+        <p className="border-l-2 border-[var(--accent-primary-hover)] pl-3 py-1 text-[12px] leading-relaxed text-[var(--text-secondary)]">
             {help}
         </p>
     );

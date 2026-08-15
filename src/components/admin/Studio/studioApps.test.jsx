@@ -24,9 +24,11 @@ describe('studioApps registry shape', () => {
     it('covers the ten built-in Studio apps in tab order', () => {
         // Security Scan is no longer built-in — it ships as a downloadable module
         // and its tab is injected at runtime by moduleRuntime/registry.js.
+        // Cowork is not here either: it was a tab that duplicated the sidebar's
+        // Work page, and is now the standalone /app/cowork page.
         expect(STUDIO_APPS.map((a) => a.id)).toEqual([
             'agents', 'skills', 'knowledge', 'aiTasks', 'webpages',
-            'tests', 'support', 'leadStudio', 'apps', 'meetingNotes',
+            'support', 'apps', 'meetingNotes',
         ]);
     });
 
@@ -74,21 +76,23 @@ describe('gates — legacy canSee* truth tables', () => {
         }
     });
 
-    it('aiTasks: OR over agent_routines and automations (licence AND canUse per leg)', () => {
+    it('aiTasks: automations only — the agent_routines leg is gone with the segment', () => {
+        // The tab used to hold two lists behind a segmented control, so it was
+        // visible on either licence. It is now just the Automations builder;
+        // agent routines are managed from the agent that owns them, and an
+        // agent_routines-only org would have landed on a segment that no
+        // longer exists.
         const gate = app('aiTasks').gate;
-        expect(gate(ctx({ features: ['agent_routines'], canUseIds: ['agent_routines'] }))).toBe(true);
         expect(gate(ctx({ features: ['automations'], canUseIds: ['automations'] }))).toBe(true);
-        // Legs don't cross: routines licence + automations beta grants nothing.
-        expect(gate(ctx({ features: ['agent_routines'], canUseIds: ['automations'] }))).toBe(false);
-        expect(gate(ctx({ features: ['agent_routines', 'automations'], canUseIds: [] }))).toBe(false);
-        expect(gate(ctx({ features: [], canUseIds: ['agent_routines', 'automations'] }))).toBe(false);
+        expect(gate(ctx({ features: ['agent_routines'], canUseIds: ['agent_routines'] }))).toBe(false);
+        // Licence AND canUse — neither alone is enough.
+        expect(gate(ctx({ features: ['automations'], canUseIds: [] }))).toBe(false);
+        expect(gate(ctx({ features: [], canUseIds: ['automations'] }))).toBe(false);
         expect(gate(ctx())).toBe(false);
     });
 
     it.each([
         ['webpages', 'webpages'],
-        ['tests', 'playwright_tests'],
-        ['leadStudio', 'lead_studio'],
         ['meetingNotes', 'meeting_notes'],
     ])('%s: licence AND canUse on %s', (id, feature) => {
         const gate = app(id).gate;

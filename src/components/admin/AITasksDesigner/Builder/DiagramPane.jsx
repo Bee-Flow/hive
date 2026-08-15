@@ -10,6 +10,10 @@ import { NodeRuntimeContext } from './flow/NodeRuntimeContext';
 import { normalizeDefinitionShape, emptyGraph } from './flow/normalizeDefinition';
 import { branchFromHandle, edgeKey, matchesEdgeIdentity } from './flow/branchEdges';
 import { readStepPayload, dropTargetFromPoint, sameDropTarget } from './flow/stepDrag';
+import {
+    attachTool, detachTool, buildAiToolGraph, toolLabelIndex, allCatalogToolNames,
+    isToolNodeId, parseToolNodeId, TOOL_HANDLE_ID,
+} from './flow/aiToolNodes';
 import { defaultFormDeclaration } from './flow/settings/FormTriggerFields';
 import { defaultFormPageDeclaration, defaultFormEndingDeclaration } from './flow/settings/FormBuilderFields';
 import { findNodeDropTarget, sameNodeDropTarget } from './flow/nodeDropTarget';
@@ -35,6 +39,7 @@ import {
 
 import AggregateNode from './flow/nodes/AggregateNode';
 import AiStepNode from './flow/nodes/AiStepNode';
+import AiToolNode from './flow/nodes/AiToolNode';
 import CallFlowletNode from './flow/nodes/CallFlowletNode';
 import CallStepNode from './flow/nodes/CallStepNode';
 import CodeNode from './flow/nodes/CodeNode';
@@ -103,6 +108,9 @@ export const NODE_TYPES = {
     // Canvas-only: the "Each item" pill at the head of an expanded loop. Not a
     // step — see nodeDefs' SYNTHETIC_TYPES.
     loop_item:          LoopItemNode,
+    // Canvas-only: one chip per entry in an AI step's `tools` array, hanging
+    // off its bottom port. Also not a step — see flow/aiToolNodes.js.
+    ai_tool:            AiToolNode,
 };
 
 // Stable default edge options — direction arrowhead at the target end so
@@ -742,7 +750,10 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     // this, ctrl-clicking a second node opened its editor over the canvas.
     const onNodeClickWithSelection = useCallback((evt, node) => {
         if (evt?.ctrlKey || evt?.metaKey || evt?.shiftKey) return;
-        onNodeClick?.(node.id);
+        // A tool chip is not a step — there is no editor for it. Clicking one
+        // opens the AI step it belongs to, where its allowlist lives.
+        const asTool = isToolNodeId(node.id) ? parseToolNodeId(node.id) : null;
+        onNodeClick?.(asTool ? asTool.stepId : node.id);
     }, [onNodeClick]);
 
     const clearSelection = useCallback(() => {
@@ -761,6 +772,11 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     const onConnect = useCallback(({ source, target, sourceHandle }) => {
         if (!editable || structuralEditsBlocked) return;
         if (!source || !target || source === target) return;
+        // The AI step's tools port carries configuration, not flow. An edge
+        // out of it into a step has nowhere to live in the definition, and
+        // branchFromHandle would stamp a label the runtime never routes.
+        if (sourceHandle === TOOL_HANDLE_ID) return;
+        if (isToolNodeId(source) || isToolNodeId(target)) return;
         // A flowlet is a separate graph: an edge from inside one to the flow
         // around it has nowhere to live, and the runtime has no way to follow
         // it. Data crosses that boundary through the flowlet's inputs and its
@@ -955,6 +971,9 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
     const onNodeContextMenu = useCallback((event, node) => {
         if (!editable || structuralEditsBlocked || !node?.id) return;
+        // The step menu (run / duplicate / disconnect / delete) has no meaning
+        // for a tool chip — every entry would act on an id no step has.
+        if (isToolNodeId(node.id)) return;
         event.preventDefault();
         setCtxMenu({ stepId: node.id, x: event.clientX, y: event.clientY });
     }, [editable, structuralEditsBlocked]);
@@ -993,6 +1012,8 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
      */
     const onNodeDoubleClick = useCallback((_evt, node) => {
         if (!node?.id) return;
+        // A tool chip has no editor of its own; open the AI step that owns it.
+        if (isToolNodeId(node.id)) { onNodeExpand?.(parseToolNodeId(node.id).stepId); return; }
         const step = (definition?.steps || []).find(s => s.id === node.id);
         if (step?.type === 'call_layer' && step.layerKey && onOpenLayer) { onOpenLayer(step.layerKey); return; }
         // Double-clicking something drawn INSIDE an expanded flowlet means
@@ -1018,7 +1039,32 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
 
         // Where did it land? Re-hit-test on drop rather than trusting the last
         // dragover — a fast release can outrun the final dragover tick.
-        const hit = dropTargetFromPoint(event.clientX, event.clientY);
+        let hit = dropTargetFromPoint(event.clientX, event.clientY);
+
+        // An app released on an AI step's tools port — or on one of the tool
+        // chips already hanging there — becomes a TOOL of that step rather than
+        // a step of its own.
+        const toolTargetId = hit.kind === 'toolPort'
+            ? hit.id
+            : (hit.kind === 'node' && isToolNodeId(hit.id) ? parseToolNodeId(hit.id).stepId : null);
+        if (toolTargetId) {
+            if (payload.kind === 'integration_action' && payload.tool) {
+                const next = attachTool(definition, toolTargetId, payload.tool, {
+                    allToolNames: allCatalogToolNames(catalog),
+                });
+                // Unchanged = the step already had this tool. Nothing to do,
+                // and adding a duplicate step instead would be a surprise.
+                if (next !== definition) {
+                    onDefinitionChange?.(seedPositions(next));
+                    onStepAdded?.(payload, null);
+                }
+                return;
+            }
+            // Not an app: a Loop is not a tool. Fall through as if the AI step
+            // itself had been the target, so the gesture still adds the step
+            // after it rather than silently doing nothing.
+            hit = { kind: 'node', id: toolTargetId };
+        }
         // …and in WHICH graph. Dropping inside an expanded flowlet adds the
         // step to that flowlet; wiring is only offered to nodes/edges of the
         // same graph, since a connection can't cross the boundary.
@@ -1059,7 +1105,7 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         // degraded `definition` can't produce a shapeless graph here either.
         onDefinitionChange?.(applyAddNode(definition, payload, point));
         onStepAdded?.(payload, null);
-    }, [editable, structuralEditsBlocked, definition, edges, onDropStep, onDefinitionChange, onStepAdded, rf, scopeAtPoint]);
+    }, [editable, structuralEditsBlocked, definition, edges, onDropStep, onDefinitionChange, onStepAdded, rf, scopeAtPoint, catalog]);
 
     // Animate edges whose source has finished but whose target is still
     // running — gives the n8n-style "data is flowing" feedback during a
@@ -1107,12 +1153,37 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         : nodeDropTarget?.kind === 'edge' ? nodeDropTarget.edgeId : null;
     const dropHighlightNodeId = dropTarget?.kind === 'node' ? dropTarget.id
         : nodeDropTarget?.kind === 'node' ? nodeDropTarget.nodeId : null;
+    // ── AI-step tools, as satellite nodes ───────────────────────────────
+    //
+    // Derived from the LIVE `nodes` (not computedNodes) so a tool follows its
+    // AI step while that step is being dragged. Never written to the
+    // definition — see flow/aiToolNodes.js for why that is the whole design.
+    const toolLabels = useMemo(() => toolLabelIndex(catalog), [catalog]);
+    const onDetachTool = useCallback((stepId, tool) => {
+        if (!editable || structuralEditsBlocked) return;
+        const next = detachTool(definition, stepId, tool);
+        if (next === definition) return;
+        onDefinitionChange?.(seedPositions(next));
+    }, [definition, editable, structuralEditsBlocked, onDefinitionChange]);
+    const toolGraph = useMemo(() => buildAiToolGraph(nodes, {
+        labelFor: (t) => toolLabels.get(t) || null,
+        onDetach: onDetachTool,
+        editable: editable && !structuralEditsBlocked,
+    }), [nodes, toolLabels, onDetachTool, editable, structuralEditsBlocked]);
+
+    const activeToolPortId = dropTarget?.kind === 'toolPort' ? dropTarget.id : null;
+
     const nodesWithDropTarget = useMemo(() => {
-        if (!dropHighlightNodeId) return nodes;
-        return nodes.map(n => (n.id === dropHighlightNodeId
-            ? { ...n, style: { ...(n.style || null), outline: '2px solid var(--accent)', outlineOffset: '4px', borderRadius: '12px' } }
-            : n));
-    }, [nodes, dropHighlightNodeId]);
+        const base = toolGraph.nodes.length ? [...nodes, ...toolGraph.nodes] : nodes;
+        if (!dropHighlightNodeId && !activeToolPortId) return base;
+        return base.map((n) => {
+            if (n.id === activeToolPortId) return { ...n, data: { ...(n.data || null), toolPortActive: true } };
+            if (n.id === dropHighlightNodeId) {
+                return { ...n, style: { ...(n.style || null), outline: '2px solid var(--accent)', outlineOffset: '4px', borderRadius: '12px' } };
+            }
+            return n;
+        });
+    }, [nodes, toolGraph, dropHighlightNodeId, activeToolPortId]);
 
     // Identity colours: what each line MEANS — a manual pick (edge.color),
     // or, per the "Colour lines by" mode, its branch case / the source's
@@ -1154,11 +1225,14 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     );
 
     const renderedEdges = useMemo(() => {
-        if (!dropHighlightEdgeId) return decoratedEdges;
-        return decoratedEdges.map(e => (e.id === dropHighlightEdgeId
+        const withHighlight = !dropHighlightEdgeId ? decoratedEdges : decoratedEdges.map(e => (e.id === dropHighlightEdgeId
             ? { ...e, style: { ...(e.style || null), stroke: 'var(--accent)', strokeWidth: 3 } }
             : e));
-    }, [decoratedEdges, dropHighlightEdgeId]);
+        // Tool tethers are appended AFTER every run/identity decorator: they
+        // carry no definition row, so none of those passes have anything to say
+        // about them (and decorateRunEdges would animate them mid-run).
+        return toolGraph.edges.length ? [...withHighlight, ...toolGraph.edges] : withHighlight;
+    }, [decoratedEdges, dropHighlightEdgeId, toolGraph]);
 
     if (!definition || !definition.trigger) {
         // The first screen of a new routine. It used to be a small heading and

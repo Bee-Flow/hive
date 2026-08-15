@@ -21,7 +21,6 @@ import { lazy } from './utils/lazyWithReload';
 const AgentHub = lazy(() => import('./AgentHub'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const MfaSetupGate = lazy(() => import('./pages/login/MfaSetupGate'));
-const ReconsentGate = lazy(() => import('./pages/login/ReconsentGate'));
 const EncryptionSetup = lazy(() => import('./pages/EncryptionSetup'));
 const DlpPreviewModal = lazy(() => import('./components/DlpPreviewModal'));
 const OnboardingTour = lazy(() => import('./components/onboarding/OnboardingTour'));
@@ -61,7 +60,7 @@ const AppsHomePage = lazy(() => import('./pages/apps/AppsHomePage'));
 const AgentDesigner = lazy(() => import('./components/admin/AgentDesigner'));
 
 import { API_BASE, authFetch, setSessionToken } from './utils/helpers';
-import { parseStudioUrl, sectionFromRaw, segmentForSection } from './components/admin/Studio/studioRoutes';
+import { parseStudioUrl, parseStudioQuery, sectionFromRaw, segmentForSection } from './components/admin/Studio/studioRoutes';
 import { parseProjectUrl, projectRoutePath } from './utils/projectRoutes';
 import scopedStorage from './utils/scopedStorage';
 import { queryClient } from './api/queryClient';
@@ -106,6 +105,11 @@ const PAGE_ROUTES = {
     // URL slug renamed from /app/ai-tasks → /app/routines (Aug 2026 rename).
     // Old paths still parse below for one release.
     aiTasks: '/app/routines',
+    // Cowork — the front door for "just do this for me" prompt automation, and
+    // the only place it lives: create, correct and run history in one master-
+    // detail page. /app/routines keeps the flow builder for multi-step work.
+    // Legacy /app/work and /app/studio/cowork/:id resolve here too (below).
+    cowork: '/app/cowork',
     // Consumer directory of published App Studio apps. The run view for a
     // single app lives at /app/apps/:id (page key 'appRun', matched below).
     apps: '/app/apps',
@@ -121,27 +125,22 @@ const PAGE_ROUTES = {
     // the back button, or survive a reload. For a feature whose entire point is
     // "send this to a colleague", that was the sharpest edge in it.
     projects: '/app/projects',
-    legal: '/app/legal',
     webpages: '/app/webpages',
-    ticketAssistant: '/ticket-assistant',
-};
-
-// Legacy page aliases — map old page keys to their new canonical names.
-// Keeps deep links like ?page=emailKB working for one release.
-const LEGACY_PAGE_ALIASES = {
-    emailKB: 'ticketAssistant',
 };
 
 // ── Mobile access control ──────────────────────────────────────
 // Phones (<768px) are a focused view/chat-only surface. Only these page keys
 // are allowed; everything else (studio, admin, org settings, the agent
-// editors/wizard, notebooks, legal, etc.) redirects to /app. Deny-by-default
+// editors/wizard, notebooks, etc.) redirects to /app. Deny-by-default
 // so new desktop-only pages are blocked automatically. 'agents' already covers
 // /app, /app/a/:id (agent chat) and /app/d/:id (direct chat).
 // 'appRun' (published App Studio apps) is deliberately phone-friendly — the
 // runtime stacks sections below 640px. 'apps' (the published-apps directory)
 // stacks its tile grid to a single column, so it's phone-friendly too.
-export const MOBILE_ALLOWED_PAGES = new Set(['agents', 'settings', 'appRun', 'apps']);
+// 'cowork' is phone-friendly by design — delegating a task from your phone and
+// reading the result later is the case Cowork exists for. The page collapses
+// to the list, with a selected item taking the whole screen.
+export const MOBILE_ALLOWED_PAGES = new Set(['agents', 'settings', 'appRun', 'apps', 'cowork']);
 const isPageAllowedOnMobile = (page) => MOBILE_ALLOWED_PAGES.has(page);
 
 // Reduce a navigateToPage() argument (which may be a bare key, a 'studio/agents'
@@ -151,7 +150,6 @@ function mobilePageKey(page) {
     if (!page || page === '/' || page === 'home') return 'agents';
     const head = String(page).split(/[/:]/)[0];
     if (head === 'webpages' || head === 'meetingNotes' || head === 'meeting-notes') return 'studio';
-    if (head === 'emailKB') return 'ticketAssistant';
     return head;
 }
 
@@ -163,9 +161,6 @@ const PATH_TO_PAGE = Object.fromEntries(
 function pageFromPath(pathname) {
     // Root → agents (redirect to /app)
     if (pathname === '/') return 'agents';
-    // Legacy /email-kb → ticketAssistant
-    if (pathname === '/email-kb' || pathname.startsWith('/email-kb/')) return 'ticketAssistant';
-    if (pathname === '/ticket-assistant' || pathname.startsWith('/ticket-assistant/')) return 'ticketAssistant';
     // Exact match for app routes
     if (PATH_TO_PAGE[pathname]) return PATH_TO_PAGE[pathname];
     // /app/admin or /app/admin/* → admin page
@@ -186,18 +181,25 @@ function pageFromPath(pathname) {
     if (pathname === '/app/agent-designer' || pathname.startsWith('/app/agent-designer/')) return 'agentDesigner';
     // /app/agent-wizard → agentWizard
     if (pathname === '/app/agent-wizard' || pathname.startsWith('/app/agent-wizard/')) return 'agentWizard';
+    // Cowork used to be a Studio tab. Its deep links keep working, but they
+    // resolve to the standalone page now — matched BEFORE the generic Studio
+    // rule below, which would otherwise swallow them.
+    if (pathname === '/app/studio/cowork' || pathname.startsWith('/app/studio/cowork/')) return 'cowork';
     // /app/studio (and sub-sections) → unified Studio
     if (pathname === '/app/studio' || pathname.startsWith('/app/studio/')) return 'studio';
     // /app/routines or /app/routines/* → aiTasks (internal page key kept for stability)
     if (pathname === '/app/routines' || pathname.startsWith('/app/routines/')) return 'aiTasks';
     // Backward-compat: legacy /app/ai-tasks paths still resolve to the same page
     if (pathname === '/app/ai-tasks' || pathname.startsWith('/app/ai-tasks/')) return 'aiTasks';
+    // /app/cowork (+ /app/cowork/:id for the detail pane) → Cowork.
+    // /app/work is what this page was called before the rename; kept so
+    // bookmarks and the old sidebar entry still land somewhere.
+    if (pathname === '/app/cowork' || pathname.startsWith('/app/cowork/')) return 'cowork';
+    if (pathname === '/app/work' || pathname.startsWith('/app/work/')) return 'cowork';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
     // /app/projects, /app/projects/:id, /app/projects/:id/:tab
     if (pathname.startsWith('/app/projects')) return 'projects';
-    // /app/legal/:id → Legal Studio (must come before generic /app/*)
-    if (pathname.startsWith('/app/legal')) return 'legal';
     // /app/webpages/:id → unified Studio (Webpages tab)
     if (pathname.startsWith('/app/webpages')) return 'studio';
     // /app/apps → the published-apps directory (consumer gallery). Must be
@@ -263,6 +265,13 @@ function parseAITasksUrl(pathname) {
     return match?.[1] || null;
 }
 
+// Extract the cowork id from /app/cowork/:id, plus the two legacy shapes it
+// used to live at: /app/work/:id and the Studio tab /app/studio/cowork/:id.
+function parseCoworkUrl(pathname) {
+    const match = pathname.match(/^\/app\/(?:studio\/cowork|cowork|work)(?:\/([^/]+))?/);
+    return match?.[1] || null;
+}
+
 // Extract agent ID prefix and conversation ID prefix from URL
 // Supports: /app/a/:shortId, /app/a/:shortId/:shortConvId, /app/agent/:fullId, and legacy bare forms
 function parseAgentUrl(pathname) {
@@ -285,11 +294,22 @@ function parseNotebookUrl(pathname) {
     return match ? match[1] : null;
 }
 
-// Extract matter ID from URL: /app/legal/:id
-function parseLegalUrl(pathname) {
-    const match = pathname.match(/^\/app\/legal\/([a-zA-Z0-9_-]+)/);
-    return match ? match[1] : null;
+// A Studio app opened from its own Nextcloud app-menu entry. The connector's
+// per-entry page script (nextcloud-connector/src/studioAppMenus.js) mounts the
+// SPA iframe at the signed-proxy ROOT with `?ncStudioApp=<appId>` — inside
+// Nextcloud the pathname is the proxy path and never matches /app/apps/:id,
+// so the boot route comes from this query param instead.
+function parseNcStudioAppParam() {
+    try {
+        const id = new URLSearchParams(window.location.search).get('ncStudioApp');
+        // App ids are UUIDs; refuse anything else so a mangled param falls
+        // back to the normal home screen instead of a broken run view.
+        return (id && /^[0-9a-f-]{36}$/i.test(id)) ? id : null;
+    } catch (_) {
+        return null;
+    }
 }
+
 // Reserved top-level paths + CMS slug routing rules live in
 // utils/cmsPublicRouting.js (shared with the CMS editor's slug warnings).
 
@@ -335,11 +355,15 @@ function App() {
     const { isMobile } = useViewport();
     const isMobileRef = useRef(isMobile);
     useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
-    const [currentPage, setCurrentPage] = useState(() => pageFromPath(window.location.pathname));
+    const [currentPage, setCurrentPage] = useState(() => (
+        // Opened from a Nextcloud app-menu entry → boot straight into the
+        // app's own run view (the proxy-root pathname can't express it).
+        parseNcStudioAppParam() ? 'appRun' : pageFromPath(window.location.pathname)
+    ));
     const [adminPath, setAdminPath] = useState(() => parseAdminPath(window.location.pathname));
     const [orgSettingsPath, setOrgSettingsPath] = useState(() => parseOrgSettingsPath(window.location.pathname));
     const [initialNotebookId, setInitialNotebookId] = useState(() => parseNotebookUrl(window.location.pathname));
-    const [initialMatterId, setInitialMatterId] = useState(() => parseLegalUrl(window.location.pathname));
+    const [initialCoworkId, setInitialCoworkId] = useState(() => parseCoworkUrl(window.location.pathname));
     const [user, setUser] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -373,22 +397,35 @@ function App() {
     const [showAgentDesigner, setShowAgentDesigner] = useState(() => pageFromPath(window.location.pathname) === 'agentDesigner');
     const [showAgentWizard, setShowAgentWizard] = useState(() => pageFromPath(window.location.pathname) === 'agentWizard');
     const [showStudio, setShowStudio] = useState(() => pageFromPath(window.location.pathname) === 'studio');
-    const [studioRoute, setStudioRoute] = useState(() => parseStudioUrl(window.location.pathname));
+    // Path = which routine; query = what of it is open (?view/run/step), so a
+    // run deep-link survives a cold load.
+    const [studioRoute, setStudioRoute] = useState(() => ({
+        ...parseStudioUrl(window.location.pathname),
+        ...parseStudioQuery(window.location.search),
+    }));
     const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(() => parseAgentDesignerUrl(window.location.pathname));
     const [showAITasks, setShowAITasks] = useState(() => pageFromPath(window.location.pathname) === 'aiTasks');
     const [initialAITaskId, setInitialAITaskId] = useState(() => parseAITasksUrl(window.location.pathname));
+    // Standalone published-app run view (/app/apps/:id). The id is re-derived
+    // from the URL at render time; this state exists so an in-app 'apps/<id>'
+    // navigation re-renders even when currentPage is already 'appRun' (the
+    // sidebar lists published apps, so app→app switches are one click now).
+    const [appRunId, setAppRunId] = useState(() => {
+        const m = window.location.pathname.match(/^\/app\/apps\/([^/]+)/);
+        // The Nextcloud app-menu embed carries the id in ?ncStudioApp instead
+        // of the pathname (see parseNcStudioAppParam).
+        return m ? m[1] : parseNcStudioAppParam();
+    });
     // Settings panel is rendered inline inside AgentHub when showSettings is true.
     // Keep it in sync with the URL so /app/settings/* on hard-refresh opens the panel
     // and the browser's back/forward buttons toggle it.
     const [showSettings, setShowSettings] = useState(() => pageFromPath(window.location.pathname) === 'settings');
     const [showSkillsPanel, setShowSkillsPanel] = useState(false);
-    const [showEmailKB, setShowEmailKB] = useState(false);
     // Notebooks panel is rendered inline inside AgentHub (same pattern as
     // showSettings / showAgentDesigner) so the left sidebar stays visible.
     // Hard-refreshes on /app/notebooks and /app/notebooks/:id still land the
     // user on the notebook via `initialNotebookId` parsed by pageFromPath.
     const [showNotebooks, setShowNotebooks] = useState(() => pageFromPath(window.location.pathname) === 'notebooks');
-    const [showLegal, setShowLegal] = useState(() => pageFromPath(window.location.pathname) === 'legal');
     // Projects route state. `showProjects` distinguishes "on a projects page"
     // from "not"; `initialProjectRoute.projectId` distinguishes the list from a
     // specific project, so /app/projects and /app/projects/:id are separate
@@ -400,8 +437,6 @@ function App() {
     const [pendingApproval, setPendingApproval] = useState(false);
     // Forced TOTP enrollment for username/password accounts (admin-required).
     const [mfaSetupRequired, setMfaSetupRequired] = useState(false);
-    const [needsReconsent, setNeedsReconsent] = useState(false);
-    const [reconsentDocs, setReconsentDocs] = useState([]);
     // NC App Store onboarding gate: 'admin' renders the 4-step wizard,
     // 'pending' shows the "Setup in progress" screen, null lets the SPA
     // mount normally.
@@ -426,7 +461,7 @@ function App() {
     // Apply the authenticated session from the authoritative /auth/user +
     // /auth/my-permissions responses. Shared by checkAuth (page refresh) and
     // handleLogin (in-app login) so BOTH paths populate identical state —
-    // featureFlags, org branding, capability gates, encryption/MFA/reconsent/NC
+    // featureFlags, org branding, capability gates, encryption/MFA/NC
     // gates. Previously handleLogin built a thin `user` from the login response
     // (no featureFlags, no fresh org) and skipped these gates, so the sidebar
     // and branding showed a stale subset until the next full page refresh.
@@ -448,9 +483,6 @@ function App() {
         if (data.pendingApproval) setPendingApproval(true);
         // Forced MFA enrollment (live from server; self-clears on enrol)
         setMfaSetupRequired(!!data.mfaSetupRequired);
-        // Re-consent to updated legal terms (live + self-clearing)
-        setNeedsReconsent(!!data.needsReconsent);
-        setReconsentDocs(data.reconsentDocs || []);
         // NC App Store onboarding wizard gate
         if (data.ncOnboardingNeeded) setNcOnboardingState('admin');
         else if (data.ncOnboardingPending) setNcOnboardingState('pending');
@@ -472,6 +504,17 @@ function App() {
     // Check auth status on mount
     useEffect(() => {
         const checkAuth = async () => {
+            // Ask the connector why we have no session. Drives the in-app
+            // email-verification screen; connector-owned route, so it 404s
+            // harmlessly in standalone (non-embedded) mode. Admin-only — non-
+            // admins get 401/403 and fall back to the bare login form, which
+            // is fine (they couldn't complete the pairing anyway).
+            const probeBootstrapDiagnostics = async () => {
+                try {
+                    const diagRes = await authFetch(`${API_BASE}/setup/diagnostics`, { cache: 'no-store' });
+                    if (diagRes.ok) setBootstrapDiagnostics(await diagRes.json());
+                } catch (_) { /* not embedded / connector unreachable */ }
+            };
             try {
                 // Fetch deployment mode from setup-status (available without auth)
                 try {
@@ -497,12 +540,7 @@ function App() {
                     // admins get a 401/403 and fall back to the bare
                     // overlay, which is fine (they couldn't fix it anyway).
                     setServerAvailable(false);
-                    try {
-                        const diagRes = await authFetch(`${API_BASE}/setup/diagnostics`, { cache: 'no-store' });
-                        if (diagRes.ok) {
-                            setBootstrapDiagnostics(await diagRes.json());
-                        }
-                    } catch (_) { /* connector itself unreachable — leave bootstrapDiagnostics null */ }
+                    await probeBootstrapDiagnostics();
                     setIsLoading(false);
                     return;
                 }
@@ -532,13 +570,18 @@ function App() {
                         // mean bootstrap hasn't finished (no tenant key yet) —
                         // ask the connector for diagnostics so we can show the
                         // in-app email-verification screen instead of a dead
-                        // login form. Connector-owned route; 404s harmlessly in
-                        // standalone (non-embedded) mode.
-                        try {
-                            const diagRes = await authFetch(`${API_BASE}/setup/diagnostics`, { cache: 'no-store' });
-                            if (diagRes.ok) setBootstrapDiagnostics(await diagRes.json());
-                        } catch (_) { /* not embedded / connector unreachable */ }
+                        // login form.
+                        await probeBootstrapDiagnostics();
                     }
+                } else {
+                    // Non-OK, non-throwing: until bootstrap completes, the
+                    // embedded connector answers every SaaS-bound call with
+                    // 502 "Tenant key not configured". fetch() doesn't throw on
+                    // that, so the catch above never fired, and it isn't a 200
+                    // either, so the branch above never ran — the pairing
+                    // screen was unreachable and the admin got a dead login
+                    // form on the one screen that could have fixed it.
+                    await probeBootstrapDiagnostics();
                 }
             } catch (err) {
                 console.error('Auth check failed:', err);
@@ -557,6 +600,7 @@ function App() {
             setAdminPath(parseAdminPath(window.location.pathname));
             setOrgSettingsPath(parseOrgSettingsPath(window.location.pathname));
             setInitialNotebookId(parseNotebookUrl(window.location.pathname));
+            if (page === 'cowork') setInitialCoworkId(parseCoworkUrl(window.location.pathname));
             // Sync inline-rendered panels with the URL so back/forward opens or closes them.
             setShowSettings(page === 'settings');
             const isDesigner = page === 'agentDesigner';
@@ -564,14 +608,12 @@ function App() {
             setShowAgentWizard(page === 'agentWizard');
             const isStudio = page === 'studio';
             setShowStudio(isStudio);
-            if (isStudio) setStudioRoute(parseStudioUrl(window.location.pathname));
+            if (isStudio) setStudioRoute({ ...parseStudioUrl(window.location.pathname), ...parseStudioQuery(window.location.search) });
             if (isDesigner) setInitialDesignerAgentId(parseAgentDesignerUrl(window.location.pathname));
             const isAITasks = page === 'aiTasks';
             setShowAITasks(isAITasks);
             if (isAITasks) setInitialAITaskId(parseAITasksUrl(window.location.pathname));
             setShowNotebooks(page === 'notebooks');
-            setShowLegal(page === 'legal');
-            if (page === 'legal') setInitialMatterId(parseLegalUrl(window.location.pathname));
             // Back/forward now moves between the project list and individual
             // projects, which it could not do while this was local state.
             const isProjects = page === 'projects';
@@ -591,7 +633,7 @@ function App() {
         }
     }, []);
 
-    const navigateToPage = useCallback((page) => {
+    const navigateToPage = useCallback((page, { replace = false } = {}) => {
         // Mobile access control: on phones, any destination that isn't chat or
         // user-settings bounces to the app home. Belt-and-suspenders with
         // MobileRouteGuard (which catches deep-links/refresh + resize). Close
@@ -603,9 +645,7 @@ function App() {
             setShowAgentWizard(false);
             setShowAITasks(false);
             setShowSkillsPanel(false);
-            setShowEmailKB(false);
             setShowNotebooks(false);
-            setShowLegal(false);
             setShowProfileMenu(false);
             setCurrentPage('agents');
             if (window.location.pathname !== '/app') {
@@ -613,10 +653,6 @@ function App() {
             }
             return;
         }
-        // Close the Legal Studio panel whenever we navigate elsewhere. The panel
-        // is rendered first in AgentHub's ternary, so it must be reset here for
-        // any non-legal destination (mirrors how showNotebooks is managed).
-        if (page !== 'legal' && !page.startsWith('legal/')) setShowLegal(false);
         // Root / home → redirect to /app
         if (page === '/' || page === 'home') {
             setCurrentPage('agents');
@@ -638,20 +674,36 @@ function App() {
         // Accepts: 'studio', 'studio/agents', 'studio/skills', 'studio/routines', 'studio/knowledge',
         // and 'studio/<section>/<id>' for deep links. 'studio/ai-tasks' kept as legacy alias.
         if (page === 'studio' || page.startsWith('studio/') || page.startsWith('studio:')) {
+            // Split off the query FIRST — ?view/run/step is builder state and
+            // must not be chopped up by the path split below.
+            const qIndex = page.indexOf('?');
+            const pagePath = qIndex >= 0 ? page.slice(0, qIndex) : page;
+            const search = qIndex >= 0 ? page.slice(qIndex) : '';
             // Normalise: 'studio:agents:<id>' or 'studio/agents/<id>'.
-            const raw = page.replace(/^studio[/:]?/, '');
+            const raw = pagePath.replace(/^studio[/:]?/, '');
             const parts = raw.split(/[/:]/).filter(Boolean);
             const sectionRaw = parts[0] || 'agents';
-            const id = parts[1] || null;
+            let id = parts[1] || null;
             // Third segment — currently only Routines uses it, to address a
             // flowlet (layer) inside an automation: studio/routines/<id>/<flowlet>.
-            const sub = parts[2] || null;
+            let sub = parts[2] || null;
+            // Reserved routines "steps" segment — same rule as parseStudioUrl.
+            // In-app navigation used to drop it, so a Reusable-Step deep link
+            // mis-resolved to an automation named "steps".
+            let routineKind = null;
+            if ((sectionRaw === 'automations' || sectionRaw === 'routines' || sectionRaw === 'ai-tasks') && id === 'steps') {
+                routineKind = 'step';
+                id = parts[2] || null;
+                sub = parts[3] || null;
+            }
             const section = sectionFromRaw(sectionRaw);
             const pathSegment = segmentForSection(section);
-            const path = id
-                ? (sub ? `/app/studio/${pathSegment}/${id}/${sub}` : `/app/studio/${pathSegment}/${id}`)
+            const stepsSeg = routineKind === 'step' ? '/steps' : '';
+            const basePath = id
+                ? (sub ? `/app/studio/${pathSegment}${stepsSeg}/${id}/${sub}` : `/app/studio/${pathSegment}${stepsSeg}/${id}`)
                 : `/app/studio/${pathSegment}`;
-            setStudioRoute({ section, id, sub });
+            const query = parseStudioQuery(search);
+            setStudioRoute({ section, id, sub, routineKind, ...query });
             setShowStudio(true);
             setShowAgentDesigner(false);
             setShowAgentWizard(false);
@@ -659,8 +711,15 @@ function App() {
             setShowSkillsPanel(false);
             setShowAITasks(false);
             setShowNotebooks(false);
-            if (window.location.pathname !== path) {
-                window.history.pushState({ page: 'studio' }, '', path);
+            // Compare pathname + search — Editor→Runs inside one routine
+            // changes only the query, and comparing the pathname alone meant
+            // that transition never wrote the URL at all.
+            if (window.location.pathname + window.location.search !== basePath + search) {
+                // `beeflowRunOpen` lets the runs panel prefer history.back()
+                // when closing a run IT pushed, so Back stays symmetric.
+                const state = { page: 'studio', beeflowRunOpen: query.runId || null };
+                if (replace) window.history.replaceState(state, '', basePath + search);
+                else window.history.pushState(state, '', basePath + search);
             }
             setCurrentPage('studio');
             return;
@@ -704,7 +763,6 @@ function App() {
             setShowSettings(false);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
-            setShowEmailKB(false);
             setShowNotebooks(false);
             setShowStudio(false);
             const path = taskId ? `/app/routines/${taskId}` : '/app/routines';
@@ -748,18 +806,6 @@ function App() {
             setShowSkillsPanel(true);
             setShowSettings(false);
             setShowAgentDesigner(false);
-            setShowEmailKB(false);
-            setShowAITasks(false);
-            setShowStudio(false);
-            return;
-        }
-        // Ticket Assistant (formerly Email KB) renders inline in conversation area.
-        // Accept legacy 'emailKB' page key for one release.
-        if (page === 'ticketAssistant' || page === 'emailKB') {
-            setShowEmailKB(true);
-            setShowSettings(false);
-            setShowAgentDesigner(false);
-            setShowSkillsPanel(false);
             setShowAITasks(false);
             setShowStudio(false);
             return;
@@ -796,7 +842,6 @@ function App() {
             setShowSettings(false);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
-            setShowEmailKB(false);
             setShowAITasks(false);
             setShowStudio(false);
             setCurrentPage('notebooks');
@@ -807,25 +852,51 @@ function App() {
             }
             return;
         }
-        // Legal Studio — rendered inline inside AgentHub (same pattern as
-        // Notebooks). Bare 'legal' → dossier list; 'legal/:id' deep-links a matter.
-        if (page === 'legal' || page.startsWith('legal/')) {
-            const matterId = page.startsWith('legal/') ? page.slice('legal/'.length) : null;
-            setInitialMatterId(matterId);
-            setShowLegal(true);
+        // Cowork — a top-level page with a selectable detail pane. Bare
+        // 'cowork' → the list with the welcome pane; 'cowork/:id' deep-links a
+        // single item, which is what selecting a row and what a run
+        // notification's link both produce.
+        if (page === 'cowork' || page.startsWith('cowork/')) {
+            const coworkId = page.startsWith('cowork/') ? page.slice('cowork/'.length) : null;
+            setInitialCoworkId(coworkId);
+            setShowStudio(false);
             setShowNotebooks(false);
             setShowSettings(false);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
-            setShowEmailKB(false);
             setShowAITasks(false);
-            setShowStudio(false);
-            setCurrentPage('legal');
+            setCurrentPage('cowork');
             setShowProfileMenu(false);
-            const path = matterId ? `/app/legal/${matterId}` : '/app/legal';
+            const path = coworkId ? `/app/cowork/${coworkId}` : '/app/cowork';
             if (window.location.pathname !== path) {
-                window.history.pushState({ page: 'legal', matterId }, '', path);
+                // Selecting a row is a filter, not a destination — replacing
+                // keeps Back meaning "leave Cowork" rather than walking the
+                // user through every item they clicked.
+                const state = { page: 'cowork', coworkId };
+                if (replace || coworkId) window.history.replaceState(state, '', path);
+                else window.history.pushState(state, '', path);
             }
+            return;
+        }
+        // Published-app run view — 'apps/<id>' opens /app/apps/<id> (page key
+        // 'appRun'). Bare 'apps' (the directory) falls through to the generic
+        // branch below like any other top-level page.
+        if (page.startsWith('apps/')) {
+            const appId = page.slice('apps/'.length);
+            setAppRunId(appId);
+            setShowStudio(false);
+            setShowNotebooks(false);
+            setShowSettings(false);
+            setShowAgentDesigner(false);
+            setShowAgentWizard(false);
+            setShowAITasks(false);
+            setShowSkillsPanel(false);
+            setShowProfileMenu(false);
+            const path = `/app/apps/${appId}`;
+            if (window.location.pathname !== path) {
+                window.history.pushState({ page: 'appRun' }, '', path);
+            }
+            setCurrentPage('appRun');
             return;
         }
         // Webpages — now lives inside Studio under /app/studio/webpages.
@@ -839,7 +910,6 @@ function App() {
             setShowSettings(false);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
-            setShowEmailKB(false);
             setShowAITasks(false);
             const path = webpageId ? `/app/studio/webpages/${webpageId}` : '/app/studio/webpages';
             if (window.location.pathname !== path) {
@@ -862,9 +932,7 @@ function App() {
         setShowAgentWizard(false);
         setShowAITasks(false);
         setShowSkillsPanel(false);
-        setShowEmailKB(false);
         setShowNotebooks(false);
-        setShowLegal(false);
         const path = PAGE_ROUTES[page] || '/';
         window.history.pushState({ page }, '', path);
     }, []);
@@ -886,7 +954,7 @@ function App() {
     useEffect(() => {
         const onModulesChanged = () => {
             if (pageFromPath(window.location.pathname) === 'studio') {
-                setStudioRoute(parseStudioUrl(window.location.pathname));
+                setStudioRoute({ ...parseStudioUrl(window.location.pathname), ...parseStudioQuery(window.location.search) });
             }
         };
         window.addEventListener('beeflow:modules-changed', onModulesChanged);
@@ -1247,28 +1315,6 @@ function App() {
         );
     }
 
-    // Re-consent gate — blocks the app until the user accepts updated legal
-    // documents. Same gate row as MfaSetupGate; server-derived + self-clearing.
-    if (needsReconsent) {
-        return (
-            <ReconsentGate
-                docs={reconsentDocs}
-                onLogout={handleLogout}
-                onDone={async () => {
-                    setNeedsReconsent(false);
-                    try {
-                        const res = await authFetch(`${API_BASE}/auth/user`, { cache: 'no-store' });
-                        if (res.ok) {
-                            const data = await res.json();
-                            setNeedsReconsent(!!data.needsReconsent);
-                            setReconsentDocs(data.reconsentDocs || []);
-                        }
-                    } catch (_) { /* leave cleared */ }
-                }}
-            />
-        );
-    }
-
     // Per-route wrapper — a crash inside one panel surfaces only its own
     // boundary, leaving the rest of the app usable. Each lazy() chunk is
     // also wrapped so a network failure during code-split download falls
@@ -1308,7 +1354,7 @@ function App() {
             // working draft (the server enforces owner-only on that flag).
             const appMatch = window.location.pathname.match(/^\/app\/apps\/([^/]+)/);
             const isDraftPreview = new URLSearchParams(window.location.search).get('draft') === '1';
-            return routed('appRun', <AppRunPage appId={appMatch?.[1] || null} draft={isDraftPreview} />);
+            return routed('appRun', <AppRunPage appId={appMatch?.[1] || appRunId || null} draft={isDraftPreview} />);
         }
 
         if (currentPage === 'agentDesignerAdvanced') {
@@ -1378,7 +1424,7 @@ function App() {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }
-        }} initialAITaskId={initialAITaskId} showProjects={showProjects} initialProjectRoute={initialProjectRoute} onProjectRouteChange={(projectId, tab) => {
+        }} initialAITaskId={initialAITaskId} initialCoworkId={initialCoworkId} showProjects={showProjects} initialProjectRoute={initialProjectRoute} onProjectRouteChange={(projectId, tab) => {
             // Drives the URL from the app, so a project view can be linked,
             // bookmarked and reached with the back button. Before this, the
             // active project lived only in AgentHub state and a reload dropped
@@ -1409,7 +1455,7 @@ function App() {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }
-        }} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} showEmailKB={showEmailKB} onCloseEmailKB={() => setShowEmailKB(false)} showNotebooks={showNotebooks && user?.featureFlags?.notebooks !== false} initialNotebookId={initialNotebookId} onNotebookChange={(id) => {
+        }} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} showNotebooks={showNotebooks && user?.featureFlags?.notebooks !== false} initialNotebookId={initialNotebookId} onNotebookChange={(id) => {
             setInitialNotebookId(id);
             const path = id ? `/app/notebooks/${id}` : '/app/notebooks';
             window.history.replaceState({ page: 'notebooks', notebookId: id }, '', path);
@@ -1419,17 +1465,6 @@ function App() {
             // Mirror the Settings / Agent Designer close pattern — rewrite the
             // URL back to the app root so /app/notebooks doesn't linger.
             if (window.location.pathname.startsWith('/app/notebooks')) {
-                setCurrentPage('agents');
-                window.history.pushState({ page: 'agents' }, '', '/app');
-            }
-        }} showLegal={showLegal} initialMatterId={initialMatterId} onMatterChange={(id) => {
-            setInitialMatterId(id);
-            const path = id ? `/app/legal/${id}` : '/app/legal';
-            window.history.replaceState({ page: 'legal', matterId: id }, '', path);
-        }} onCloseLegal={() => {
-            setShowLegal(false);
-            setInitialMatterId(null);
-            if (window.location.pathname.startsWith('/app/legal')) {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }

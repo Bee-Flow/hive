@@ -18,8 +18,10 @@ import { themeVars } from './themeVars';
  *
  * v2 adds formula-driven behaviour, all evaluated against the shared
  * expression scope (buildScope) and always tolerant of half-configured state:
- *   - visibility — node.visible (boolean) OR node.visibleWhen (formula string).
- *   - enablement — node.enabledWhen (formula) / node.readOnly disables the node
+ *   - visibility — node.visible OR node.visibleWhen, each a boolean or a
+ *     {kind:'formula',expr} (the only shapes canonicalize.js keeps).
+ *   - enablement — node.enabledWhen / node.readOnly, same two shapes, disable
+ *     the node
  *     via an inert wrapper (no per-component wiring; works for any node).
  *   - computed   — node.computed[propKey] (formula string or binding) overrides
  *     props[propKey] at render.
@@ -142,32 +144,64 @@ function nodeSignature(node) {
 
 // ── Formula evaluation (never throws — tryEvaluate degrades) ────────────────
 
-/** { hidden, error }. visibleWhen formula wins; else boolean/binding `visible`. */
+/**
+ * Resolve a boolean-or-formula flag against the live scope.
+ * → { set:false } when the flag is absent, else { set:true, value, error }.
+ *
+ * ── WHY THIS TAKES THREE SHAPES ─────────────────────────────────────
+ * These flags reach the renderer as `{kind:'formula', expr}`. That is the ONLY
+ * expression shape that survives a save: canonicalize.cleanBoolOrFormula keeps
+ * a boolean or a formula OBJECT and drops a bare string, and builderTools
+ * .normalizeLogicValue wraps the AI's string into the same object before it is
+ * ever stored. So both authoring paths — the Logic inspector and the AI builder
+ * — persist the object.
+ *
+ * This function used to accept only the bare STRING, which meant every "Only
+ * show when" and "Enabled when" rule in every saved app did nothing at all: the
+ * component stayed visible and enabled for everybody, including the rules
+ * written to hide things from people who should not see them. Every test
+ * covering these used the string form, so the gap was invisible from both
+ * sides. The string is still accepted — a definition held in memory before its
+ * first save can carry one — but the object is the shape that matters.
+ */
+function evalBoolFlag(raw, scope) {
+    if (raw === undefined || raw === null) return { set: false };
+    if (typeof raw === 'boolean') return { set: true, value: raw, error: null };
+    const expr = (raw && typeof raw === 'object') ? (raw.expr ?? raw.value) : raw;
+    if (typeof expr === 'string' && expr.trim()) {
+        const r = tryEvaluate(expr, scope);
+        return { set: true, value: !!r.value, error: r.error };
+    }
+    return { set: false };
+}
+
+/** { hidden, error }. visibleWhen wins; else boolean/formula `visible`. */
 function evalVisibility(node, scope) {
-    if (typeof node.visibleWhen === 'string' && node.visibleWhen.trim()) {
-        const r = tryEvaluate(node.visibleWhen, scope);
-        return { hidden: !r.value, error: r.error };
-    }
-    const v = node.visible;
-    if (v === false) return { hidden: true, error: null };
-    if (v && typeof v === 'object') {
-        const expr = v.expr ?? v.value;
-        if (typeof expr === 'string' && expr.trim()) {
-            const r = tryEvaluate(expr, scope);
-            return { hidden: !r.value, error: r.error };
-        }
-    }
+    const when = evalBoolFlag(node.visibleWhen, scope);
+    if (when.set) return { hidden: !when.value, error: when.error };
+    const v = evalBoolFlag(node.visible, scope);
+    if (v.set) return { hidden: !v.value, error: v.error };
     return { hidden: false, error: null };
 }
 
-/** { disabled, error }. enabledWhen:false / readOnly / disabled → disabled. */
+/** { disabled, error }. enabledWhen falsy / readOnly / disabled → disabled. */
 function evalEnabled(node, scope) {
-    let disabled = node.readOnly === true || node.disabled === true;
+    let disabled = node.disabled === true;
     let error = null;
-    if (typeof node.enabledWhen === 'string' && node.enabledWhen.trim()) {
-        const r = tryEvaluate(node.enabledWhen, scope);
-        if (r.error) error = r.error;
-        if (!r.value) disabled = true;
+
+    // readOnly is a boolean-or-formula flag too (canonicalize cleans all three
+    // together), so a computed "read-only while the order is locked" has to be
+    // evaluated rather than compared against `true`.
+    const ro = evalBoolFlag(node.readOnly, scope);
+    if (ro.set) {
+        if (ro.error) error = ro.error;
+        if (ro.value) disabled = true;
+    }
+
+    const when = evalBoolFlag(node.enabledWhen, scope);
+    if (when.set) {
+        if (when.error) error = error || when.error;
+        if (!when.value) disabled = true;
     }
     return { disabled, error };
 }
@@ -334,6 +368,21 @@ function RenderNode({ node, scope, NodeWrapper, mode }) {
             mode,
         });
         content = <Component node={effectiveNode}>{children}</Component>;
+    }
+
+    // A modal renders no inline box in run mode — closed it is null, open its
+    // dialog portals to the body. Emitting the usual grid cell for it painted
+    // an EMPTY padded span-12 row (plus the section's row gap) into every
+    // section hosting one: on the merged work screens that was a visible dead
+    // band between the header and the content. Edit mode keeps the cell so the
+    // canvas still has a box to select.
+    if (node.type === 'modal' && mode !== 'edit') {
+        const bare = (
+            <NodeErrorBoundary type={node.type} signature={nodeSignature(node)}>
+                {content}
+            </NodeErrorBoundary>
+        );
+        return nodeScope === runtime.scope ? bare : <ScopeProvider scope={nodeScope}>{bare}</ScopeProvider>;
     }
 
     const { className, style } = resolveNodeStyle(node);

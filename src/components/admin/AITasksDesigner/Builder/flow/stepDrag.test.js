@@ -73,8 +73,17 @@ describe('dropTargetFromPoint', () => {
     it('prefers the connection when an edge and a node overlap', () => {
         // An edge's fat hit-path sits above the node it terminates on; the
         // splice is the more specific intent.
-        const both = { closest: (sel) => ({ getAttribute: () => (sel === '.react-flow__edge' ? 'e9' : 'n9') }) };
+        const ids = { '.react-flow__edge': 'e9', '.react-flow__node': 'n9' };
+        const both = { closest: (sel) => (sel in ids ? { getAttribute: () => ids[sel] } : null) };
         expect(dropTargetFromPoint(0, 0, docWith(both))).toEqual({ kind: 'edge', id: 'e9' });
+    });
+
+    it('prefers an AI step\'s tools port over the node it sits on', () => {
+        // The port is INSIDE the card, so both always match. "Give the AI this
+        // tool" is the more specific intent than "add a step after it".
+        const ids = { '[data-tool-port]': 'ai1', '.react-flow__node': 'ai1' };
+        const both = { closest: (sel) => (sel in ids ? { getAttribute: () => ids[sel] } : null) };
+        expect(dropTargetFromPoint(0, 0, docWith(both))).toEqual({ kind: 'toolPort', id: 'ai1' });
     });
 });
 

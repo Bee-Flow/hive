@@ -32,7 +32,16 @@ export function effectiveRunByStep(definition, runSteps) {
     for (const r of (runSteps || [])) {
         if (!r?.stepId) continue;
         if (r.parentStepId && !(isInlineId(r.stepId) && nodeIds.has(r.stepId))) continue;
-        if (!m.has(r.stepId)) m.set(r.stepId, r);
+        const cur = m.get(r.stepId);
+        if (!cur) { m.set(r.stepId, r); continue; }
+        // LATEST attempt wins — first-wins showed a retried step's stale
+        // failure forever. STRICT comparisons (`>`, never `>=`) keep the
+        // first record on equal keys, so ordering stays stable.
+        const attempts = Number(r.attempts || 0);
+        const curAttempts = Number(cur.attempts || 0);
+        const at = r.startedAt ? Date.parse(r.startedAt) || 0 : 0;
+        const curAt = cur.startedAt ? Date.parse(cur.startedAt) || 0 : 0;
+        if (attempts > curAttempts || (attempts === curAttempts && at > curAt)) m.set(r.stepId, r);
     }
     for (const node of nodes) {
         if (m.has(node.id)) continue;

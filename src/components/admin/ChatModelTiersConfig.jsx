@@ -171,7 +171,6 @@ const CLAUDE_REC_TIER_ORDER = ['fast', 'standard', 'swarm', 'thinking', 'writer'
 const TASK_TYPES = [
     { key: 'direct_chat', label: 'Direct Chat' },
     { key: 'agent_chat', label: 'Agent Chat' },
-    { key: 'email_kb', label: 'Email Knowledge Base' },
 ];
 
 // Convert a free-form label into a stable custom tier id (slug, namespaced).
@@ -512,7 +511,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                 temperature: CUSTOM_TIER_DEFAULTS.temperature,
                 reasoningEffort: undefined,
                 reasoningSummary: false,
-                allowedTaskTypes: ['direct_chat', 'agent_chat', 'email_kb'],
+                allowedTaskTypes: ['direct_chat', 'agent_chat'],
                 _isNew: true, // local-only flag: show the label/id editor pre-expanded
             },
         ]);
@@ -584,9 +583,22 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     // Filter to only chat-compatible models
     const chatModels = allModels.filter(m => {
         const meta = getModelMeta(m.id);
-        if (!meta) return true; // Unknown models are shown
+        // Self-hosted models aren't in the bundled metadata table, so the
+        // server-derived category is the only one we have — use it to keep
+        // embedding models out of the chat-tier picker the same way.
+        if (!meta) return !['Embedding', 'OCR', 'Moderation', 'Audio'].includes(m.cat || '');
         return !['Embedding', 'OCR', 'Moderation', 'Audio'].includes(meta.cat);
     });
+
+    // Self-hosted reasoning models (Qwen3, DeepSeek-R1, gpt-oss, …) take the
+    // same none/low/medium/high effort scale: the local adapter maps it onto
+    // Ollama's `think` levels and vLLM's `enable_thinking`. The bundled regex
+    // tables only know cloud model ids, so the flags the server stamped on the
+    // model are what tells us here.
+    const localModelIds = new Set(chatModels.filter(m => m.local).map(m => m.id));
+    const localReasoningIds = new Set(chatModels.filter(m => m.local && m.reasoning).map(m => m.id));
+    const isLocal = (id) => localModelIds.has(id);
+    const reasoningCapable = (id) => isReasoningCapable(id) || localReasoningIds.has(id);
 
     const updateTier = (tierKey, field, value) => {
         setConfig(prev => ({
@@ -735,7 +747,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                         : `0 = deterministic, 1 = creative. Default: ${defaults.temperature}`}
                                 </p>
                             </div>
-                            {isReasoningCapable(tierConfig.modelId) && (
+                            {reasoningCapable(tierConfig.modelId) && (
                                 <>
                                     <div className="flex-1 min-w-[180px]">
                                         <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 {isClaudeReasoning(tierConfig.modelId) ? 'Thinking Effort' : 'Reasoning Effort'}</label>
@@ -784,7 +796,9 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                                     ? 'How deep Claude thinks before answering. Default: Medium.'
                                                     : isGpt5(tierConfig.modelId)
                                                         ? 'How much the model reasons. Minimal is the fast/cheap GPT-5 tier.'
-                                                        : 'Controls how much the model reasons before responding.'}
+                                                        : isLocal(tierConfig.modelId)
+                                                            ? 'Sent to the runtime as Ollama\'s thinking level, or as enable_thinking on vLLM/SGLang.'
+                                                            : 'Controls how much the model reasons before responding.'}
                                         </p>
                                     </div>
                                     {!isClaudeReasoning(tierConfig.modelId) && (
@@ -1028,7 +1042,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                 style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                             />
                         </div>
-                        {isReasoningCapable(tier.modelId) && (
+                        {reasoningCapable(tier.modelId) && (
                             <div className="flex-1 min-w-[180px]">
                                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 {isClaudeReasoning(tier.modelId) ? 'Thinking Effort' : 'Reasoning Effort'}</label>
                                 <select

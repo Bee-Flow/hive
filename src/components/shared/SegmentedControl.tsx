@@ -72,7 +72,10 @@ export default function SegmentedControl<TValue extends string | number>({
                         }
                         style={{
                             background: active ? 'var(--bg-card)' : 'transparent',
-                            color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                            // Inactive segments are still choices the user is
+                            // being offered — tertiary made them read as
+                            // disabled next to the one active pill.
+                            color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
                             boxShadow: active
                                 ? '0 1px 2px rgba(0,0,0,0.06), 0 0 0 1px var(--border-default) inset'
                                 : 'none',

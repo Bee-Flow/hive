@@ -4,7 +4,6 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 const TASK_TYPES = [
     { key: 'direct_chat', label: 'Direct Chat' },
     { key: 'agent_chat', label: 'Agent Chat' },
-    { key: 'email_kb', label: 'Email Knowledge Base' },
 ];
 
 const slugifyTierLabel = (label) => {
@@ -88,7 +87,7 @@ const OrgCustomTiersPanel = () => {
                 euModelId: '',
                 maxTokens: 16384,
                 temperature: 0.7,
-                allowedTaskTypes: ['direct_chat', 'agent_chat', 'email_kb'],
+                allowedTaskTypes: ['direct_chat', 'agent_chat'],
             },
         ];
         setOrgTiers(next);

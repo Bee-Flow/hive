@@ -176,3 +176,64 @@ describe('write-name lockstep with the server collector', () => {
             .toEqual([...collectVariableWrites(def).names].sort());
     });
 });
+
+/**
+ * visibleWhen / enabledWhen / visible / readOnly reach this walk as
+ * {kind:'formula',expr} — the only expression shape canonicalize keeps. They
+ * were read as plain strings, so they found nothing: a variable used ONLY to
+ * decide what is shown counted as unused, the manager offered to delete it with
+ * no confirmation at all, and every rule built on it silently stopped working.
+ */
+describe('collectVariableUsage — logic flags are reads too', () => {
+    const withNode = (node) => ({
+        screens: [{ id: 'scr_a', name: 'Home', sections: [{ id: 'sec_a', children: [{ id: 'cmp_a', type: 'card', ...node }] }] }],
+        actions: {},
+    });
+
+    it.each([
+        ['visibleWhen', 'when it is shown'],
+        ['enabledWhen', 'when it is enabled'],
+        ['readOnly', 'when it is read-only'],
+        ['visible', 'when it is shown'],
+    ])('counts a variable read by %s', (flag, label) => {
+        const usage = collectVariableUsage(withNode({ [flag]: { kind: 'formula', expr: "vars.statusFilter == 'open'" } }));
+        const sites = usage.reads.get('statusFilter') || [];
+        expect(sites).toHaveLength(1);
+        expect(sites[0].label).toBe(label);
+        expect(usage.countOf('statusFilter')).toBe(1);
+    });
+
+    it('still reads the legacy bare string', () => {
+        const usage = collectVariableUsage(withNode({ visibleWhen: 'vars.legacy == true' }));
+        expect(usage.countOf('legacy')).toBe(1);
+    });
+
+    it('is not fooled by a boolean flag', () => {
+        const usage = collectVariableUsage(withNode({ visible: false, enabledWhen: true }));
+        expect([...usage.reads.keys()]).toEqual([]);
+    });
+});
+
+/**
+ * A bare action is walked as a one-step sequence, which already records its
+ * resultVar. Adding it again at the top counted one write twice: "used 2x" for
+ * a single action, and the same site listed on two rows of the delete dialog.
+ */
+describe('collectVariableUsage — a result variable is counted once', () => {
+    it('counts a bare action’s resultVar exactly once', () => {
+        const usage = collectVariableUsage({
+            screens: [],
+            actions: { act_b: { kind: 'kb_query', resultVar: 'hits', query: { kind: 'static', value: 'x' }, knowledgeBaseIds: [] } },
+        });
+        expect(usage.countOf('hits')).toBe(1);
+        expect(usage.writes.get('hits')).toHaveLength(1);
+    });
+
+    it('still counts a step’s resultVar inside a sequence once', () => {
+        const usage = collectVariableUsage({
+            screens: [],
+            actions: { act_c: { kind: 'sequence', steps: [{ kind: 'kb_query', resultVar: 'hits' }] } },
+        });
+        expect(usage.countOf('hits')).toBe(1);
+    });
+});

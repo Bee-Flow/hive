@@ -1,5 +1,5 @@
 import { Plus, Trash2, Sparkles, Workflow } from 'lucide-react';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import BindingField from './BindingField';
 import { onBindingDragOver, getBindingDropPath } from './bindingDnd';
 import { partitionInputs, isEmptyBinding } from './partitionInputs';
@@ -8,8 +8,10 @@ import ValueBuilder from './ValueBuilder';
 import VariablePicker from './VariablePicker';
 import { useVariablePickerContext } from './VariablePickerContext';
 import CollapsibleSection from '../flow/CollapsibleSection';
+import { useFormMode } from '../flow/settings/formDensity';
+import { expectedShapeFor } from './listShape';
 import { suggestKeyFromPath } from '../../../../../utils/bindingHelpers';
-import { cardClass, rowInputClass, subLabelClass, FOCUS_RING } from '../flow/settings/formStyles';
+import { actionButtonClass, cardClass, rowInputClass, subLabelClass } from '../flow/settings/formStyles';
 
 /**
  * Schema-driven inputs editor for a step's `inputs` map.
@@ -55,9 +57,26 @@ export default function ToolInputForm({
     valuePlaceholder = 'value',
     // Offer the "write it as a formula" escape up front (full density only).
     allowRawValues = true,
+    // (forEach|null) => void — lets a list pick offer "run once per row".
+    // Threaded per parameter with the schema-derived expectShape; custom rows
+    // have no schema, so expectedShapeFor(undefined) === 'unknown' and the
+    // chooser never fires there.
+    onRequestForEach = null,
 }) {
     const properties = inputSchema?.properties || null;
     const required = useMemo(() => new Set(inputSchema?.required || []), [inputSchema]);
+
+    // The advanced-fields disclosure follows the form MODE: switching to All
+    // options opens it (on the transition, not at mount), so "show me
+    // everything" means everything — not "everything except the fields behind
+    // this second click". The user's own toggle still works both ways.
+    const formMode = useFormMode();
+    const [advFieldsOpen, setAdvFieldsOpen] = useState(false);
+    const prevModeRef = useRef(formMode);
+    useEffect(() => {
+        if (prevModeRef.current === 'simple' && formMode === 'advanced') setAdvFieldsOpen(true);
+        prevModeRef.current = formMode;
+    }, [formMode]);
 
     // Locally suppress the "auto" pill once the user edits that field. Resets
     // when the step changes (SettingsForm re-keys this subtree by step.id).
@@ -192,7 +211,7 @@ export default function ToolInputForm({
             type="button"
             onClick={onAutoMap}
             title="Auto-map empty inputs from upstream steps"
-            className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition ${FOCUS_RING}`}
+            className={actionButtonClass()}
         >
             <Sparkles size={12} /> Auto-map
         </button>
@@ -217,6 +236,8 @@ export default function ToolInputForm({
                 previewSample={previewSample}
                 multiline={isMultilineProp(properties[key])}
                 autoMapped={isAuto(key)}
+                expectShape={expectedShapeFor(properties[key])}
+                onRequestForEach={onRequestForEach}
             />
         );
 
@@ -228,7 +249,10 @@ export default function ToolInputForm({
                     <CollapsibleSection
                         variant="disclosure"
                         count={advancedKeys.length}
+                        countNoun="field"
                         badge={advAutoCount > 0 ? `${advAutoCount} auto` : null}
+                        open={advFieldsOpen}
+                        onToggle={setAdvFieldsOpen}
                     >
                         {advancedKeys.map(renderField)}
                     </CollapsibleSection>

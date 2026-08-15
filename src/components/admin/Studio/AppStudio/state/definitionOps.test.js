@@ -796,3 +796,100 @@ describe('immutability', () => {
         expect(Object.keys(KITCHEN_SINK.actions)).toHaveLength(5);
     });
 });
+
+/**
+ * A `modal` node is also an ACTION TARGET. Deleting one used to leave every
+ * open_modal/close_modal reference behind, and a dangling modalId is a hard
+ * validation error server-side — so the save 422s, useAppAutosave never
+ * advances its baseline, every later keystroke re-fires the same rejected save,
+ * and the editor refuses to close because closing flushes. Deleting a dialog
+ * jammed the editor on an error about a component that no longer existed.
+ */
+describe('removeNode — a deleted dialog takes its wiring with it', () => {
+    const requireServer = createRequire(import.meta.url);
+    const { validateAppDefinition } = requireServer('../../../../../../../server/appStudio/validate.js');
+    const { canonicalizeAppDefinition } = requireServer('../../../../../../../server/appStudio/canonicalize.js');
+
+    /** Would the server accept this definition? */
+    const serverErrors = (def) => validateAppDefinition(canonicalizeAppDefinition(def).def).errors;
+
+    function defWithModal(extra = {}) {
+        return {
+            schemaVersion: 2,
+            meta: { name: 'T' },
+            theme: {},
+            homeScreenId: 'scr_aaaaaa',
+            screens: [{
+                id: 'scr_aaaaaa', name: 'T', showInNav: true, maxWidth: 'medium',
+                sections: [{
+                    id: 'sec_aaaaaa',
+                    style: { padding: 4, gap: 3, background: 'none' },
+                    children: [
+                        { id: 'cmp_dialog', type: 'modal', props: { title: 'Confirm' }, style: {}, children: [] },
+                        { id: 'cmp_button', type: 'button', props: { label: 'Open', variant: 'primary', role: 'button' }, style: {}, onClick: 'act_open0' },
+                    ],
+                }],
+            }],
+            actions: { act_open0: { kind: 'open_modal', modalId: 'cmp_dialog' } },
+            ...extra,
+        };
+    }
+
+    it('the wedge is real: the server rejects a dangling modalId', () => {
+        const orphaned = defWithModal();
+        // Delete the dialog the way the old code did — the node only.
+        orphaned.screens[0].sections[0].children = orphaned.screens[0].sections[0].children.slice(1);
+        expect(serverErrors(orphaned).some((e) => e.code === 'action.modal_unresolved')).toBe(true);
+    });
+
+    it('removes the action that pointed at it, and unhooks the button', () => {
+        const next = removeNode(defWithModal(), 'cmp_dialog');
+        expect(next.actions.act_open0).toBeUndefined();
+        expect(findNode(next, 'cmp_button').node.onClick).toBeUndefined();
+        expect(serverErrors(next)).toEqual([]);
+    });
+
+    it('strips modal steps out of a sequence rather than deleting the flow', () => {
+        const def = defWithModal({
+            actions: {
+                act_save00: {
+                    kind: 'sequence',
+                    steps: [
+                        { kind: 'toast', message: 'Saved' },
+                        { kind: 'close_modal', modalId: 'cmp_dialog' },
+                        { kind: 'condition', expr: 'vars.ok', then: [{ kind: 'open_modal', modalId: 'cmp_dialog' }], else: [] },
+                    ],
+                },
+            },
+        });
+        const next = removeNode(def, 'cmp_dialog');
+        expect(next.actions.act_save00.steps.map((s) => s.kind)).toEqual(['toast', 'condition']);
+        expect(next.actions.act_save00.steps[1].then).toEqual([]);
+        expect(serverErrors(next)).toEqual([]);
+    });
+
+    it('cleans up dialogs nested inside a deleted container', () => {
+        const def = defWithModal();
+        // Wrap the dialog in a card and delete the card.
+        def.screens[0].sections[0].children = [
+            { id: 'cmp_card00', type: 'card', props: {}, style: {}, children: [def.screens[0].sections[0].children[0]] },
+            def.screens[0].sections[0].children[1],
+        ];
+        const next = removeNode(def, 'cmp_card00');
+        expect(next.actions.act_open0).toBeUndefined();
+        expect(serverErrors(next)).toEqual([]);
+    });
+
+    it('leaves an action aimed at a DIFFERENT dialog alone', () => {
+        const def = defWithModal();
+        def.screens[0].sections[0].children.push({ id: 'cmp_other0', type: 'modal', props: { title: 'Other' }, style: {}, children: [] });
+        def.actions.act_othr0 = { kind: 'open_modal', modalId: 'cmp_other0' };
+        const next = removeNode(def, 'cmp_dialog');
+        expect(next.actions.act_othr0).toEqual({ kind: 'open_modal', modalId: 'cmp_other0' });
+    });
+
+    it('returns the same definition when nothing was removed', () => {
+        const def = defWithModal();
+        expect(removeNode(def, 'cmp_nope00')).toBe(def);
+    });
+});

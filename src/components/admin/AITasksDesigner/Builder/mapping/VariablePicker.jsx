@@ -2,8 +2,11 @@ import { ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { previewValue, walkPath } from '../../../../../utils/bindingHelpers';
+import { useTranslation } from '../../../../../hooks/useTranslation';
+import { listBadgeClass } from '../flow/settings/formStyles';
 import { filterFields } from './filterFields';
 import { startPathDrag } from './bindingDnd';
+import { fieldListShape } from './listShape';
 
 /**
  * Portal-rendered popover that lists upstream variables, filterable by
@@ -139,6 +142,7 @@ export default function VariablePicker({
                         group={group}
                         onPick={onPick}
                         onHoverField={setHoverField}
+                        previewSample={previewSample}
                     />
                 ))}
             </div>
@@ -162,7 +166,7 @@ export default function VariablePicker({
     );
 }
 
-function PickerGroup({ group, onPick, onHoverField }) {
+function PickerGroup({ group, onPick, onHoverField, previewSample = null }) {
     const [open, setOpen] = useState(true);
     return (
         <div className="border-b border-[var(--border-default)] last:border-b-0">
@@ -192,23 +196,29 @@ function PickerGroup({ group, onPick, onHoverField }) {
                     depth={1}
                     onPick={onPick}
                     onHoverField={onHoverField}
+                    previewSample={previewSample}
                 />
             ))}
         </div>
     );
 }
 
-function PickerLeaf({ field, depth, onPick, onHoverField }) {
+function PickerLeaf({ field, depth, onPick, onHoverField, previewSample = null }) {
     const [expanded, setExpanded] = useState(false);
+    const { t } = useTranslation();
     const hasChildren = Array.isArray(field.children) && field.children.length > 0;
     const indent = 12 + depth * 14;
+    // Announce a list before it is picked, with the TRUE flattened count —
+    // `field.sample` for a `[*]` path is the first ELEMENT, so counts read
+    // from it were simply wrong.
+    const shape = fieldListShape(field, previewSample);
 
     const handleClick = (e) => {
         if (hasChildren && e.target.closest('[data-expand-btn]')) {
             setExpanded(o => !o);
             return;
         }
-        onPick?.(field.path);
+        onPick?.(field.path, { raw: e.altKey });
     };
 
     return (
@@ -231,7 +241,7 @@ function PickerLeaf({ field, depth, onPick, onHoverField }) {
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        onPick?.(field.path);
+                        onPick?.(field.path, { raw: e.altKey });
                     }
                 }}
                 className="group flex items-center gap-2 py-1 text-[11px] cursor-pointer select-none hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-secondary)] focus:outline-none"
@@ -252,8 +262,15 @@ function PickerLeaf({ field, depth, onPick, onHoverField }) {
                     <span className="shrink-0 w-3" />
                 )}
                 <span className="text-[var(--text-primary)] truncate min-w-0">{field.key}</span>
+                {shape && (
+                    <span className={listBadgeClass()} title={t(shape.explainKey, shape.explainEn, shape.explainParams)}>
+                        {shape.count != null ? `${t('routines.builder.list_word', 'list')} · ${shape.count}` : t('routines.builder.list_word', 'list')}
+                    </span>
+                )}
                 <span className="ml-auto text-[10px] text-[var(--text-tertiary)] truncate max-w-[120px] font-mono">
-                    {previewValue(field.sample, 24)}
+                    {/* A [*] path resolves through walkPath — field.sample is
+                        the first element, not the column. */}
+                    {previewValue(resolveLeafSample(field, previewSample), 24)}
                 </span>
             </div>
             {hasChildren && expanded && field.children.map(c => (
@@ -263,6 +280,7 @@ function PickerLeaf({ field, depth, onPick, onHoverField }) {
                     depth={depth + 1}
                     onPick={onPick}
                     onHoverField={onHoverField}
+                    previewSample={previewSample}
                 />
             ))}
         </>
@@ -280,14 +298,31 @@ function resolveLeafPreview(field, sampleRoot) {
 }
 
 /**
+ * The value a row's inline preview shows. For a `[*]` column path the stored
+ * `field.sample` is the FIRST ELEMENT (collectionItemsFields convention), so
+ * resolving through walkPath is the only honest source; plain paths keep the
+ * cheap field.sample fallback.
+ */
+function resolveLeafSample(field, sampleRoot) {
+    if (sampleRoot && String(field.path || '').includes('[*]')) {
+        const v = walkPath(field.path, sampleRoot);
+        if (v !== undefined) return v;
+    }
+    return field.sample;
+}
+
+/**
  * Place the popover against its anchor. Same rules AnchoredMenu applies to the
  * field dropdowns (BFSF-328): prefer below, flip only when it truly does not
  * fit AND above is roomier, then cap the height to the room that is actually
  * there so the panel is always fully reachable. It is not AnchoredMenu itself
  * because this popover is a flex column with a sticky search header and a
  * preview footer — it owns its own inner scroller.
+ *
+ * Exported: ListPickChooser anchors and flips with the same rules, so the two
+ * popovers a field can open never behave differently.
  */
-function usePopoverPosition(anchorEl, open) {
+export function usePopoverPosition(anchorEl, open) {
     const [pos, setPos] = useState({ left: 0, top: 0, maxHeight: 420 });
     useEffect(() => {
         if (!open || !anchorEl) return undefined;

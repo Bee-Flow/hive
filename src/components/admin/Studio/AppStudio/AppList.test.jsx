@@ -10,6 +10,7 @@ vi.mock('./studioAppsApi', () => {
         createApp: vi.fn(),
         updateApp: vi.fn(),
         deleteApp: vi.fn(),
+        templateUpgrade: vi.fn(),
     };
     return { studioAppsApi, default: studioAppsApi };
 });
@@ -273,6 +274,44 @@ describe('AppList', () => {
         });
         fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
         expect(await screen.findByText('Ticket tracker')).toBeInTheDocument();
+    });
+
+    it('shows "Update beschikbaar" on an upgradable owned card, confirms in Dutch, then upgrades and reloads', async () => {
+        studioAppsApi.listMine.mockResolvedValue({
+            apps: [
+                { ...OWNED_APP, templateUpgrade: { available: true, fromVersion: 1, toVersion: 2 } },
+                { ...OWNED_APP, id: 'app-current', name: 'Up to date', templateUpgrade: { available: false } },
+            ],
+        });
+        studioAppsApi.listAccessible.mockResolvedValue({ apps: [] });
+        studioAppsApi.templateUpgrade.mockResolvedValue({ ok: true, fromVersion: 1, toVersion: 2 });
+
+        const onOpen = vi.fn();
+        render(<AppList onOpen={onOpen} />);
+        await screen.findByText('My tracker');
+
+        // Only the upgradable card carries the pill.
+        expect(screen.getAllByRole('button', { name: 'Update beschikbaar' })).toHaveLength(1);
+
+        // Clicking the pill opens the Dutch confirm dialog — it must NOT open
+        // the editor (the whole card is a click target) and nothing runs yet.
+        fireEvent.click(screen.getByRole('button', { name: 'Update beschikbaar' }));
+        expect(onOpen).not.toHaveBeenCalled();
+        expect(studioAppsApi.templateUpgrade).not.toHaveBeenCalled();
+        expect(await screen.findByText('De app wordt bijgewerkt naar de nieuwste templateversie. Je gegevens blijven staan.')).toBeInTheDocument();
+
+        // Confirming calls the upgrade route and reloads the list.
+        fireEvent.click(screen.getByRole('button', { name: 'Bijwerken' }));
+        await waitFor(() => expect(studioAppsApi.templateUpgrade).toHaveBeenCalledWith('app-owned'));
+        await waitFor(() => expect(toast.success).toHaveBeenCalled());
+        // load() ran once on mount and once after the upgrade.
+        expect(studioAppsApi.listMine).toHaveBeenCalledTimes(2);
+    });
+
+    it('renders no update pill on shared cards or when templateUpgrade is absent', async () => {
+        render(<AppList onOpen={vi.fn()} />);
+        await screen.findByText('My tracker');
+        expect(screen.queryByRole('button', { name: 'Update beschikbaar' })).not.toBeInTheDocument();
     });
 
     it('renders the empty state with the AI note when there are no apps', async () => {

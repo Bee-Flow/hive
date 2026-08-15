@@ -104,7 +104,7 @@ export default function TalkImportPanel({ onComplete }) {
                             <div className="flex items-center gap-2 px-1">
                                 <MessageSquare className="w-3.5 h-3.5" style={{ color: NC_BLUE }} />
                                 <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                                    Conversation {room.token}
+                                    {room.name || `Conversation ${room.token}`}
                                 </span>
                             </div>
                             <div className="flex flex-col gap-1.5">

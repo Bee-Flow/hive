@@ -74,3 +74,49 @@ describe('newStep — a fresh step is valid the moment it lands', () => {
         }
     });
 });
+
+/**
+ * A "Depending on…" step built on the canvas has to be able to TAKE a case.
+ *
+ * The seed used to be `cases: [{ name: 'first', steps: [] }]`. canonicalize
+ * keeps exactly { value, steps } and drops everything else, and the runner
+ * compares against `case.value` — so the field the editor filled in was deleted
+ * on the first save and the field the runner reads was never set. Every
+ * hand-built switch fell through to "Otherwise", for every input, silently.
+ */
+describe('newStep(switch) — a case the runtime can actually match', () => {
+    const { canonicalizeAppDefinition } = require('../../../../../../../server/appStudio/canonicalize.js');
+
+    /** One switch action, through the real canonicalizer, back out again. */
+    function stored(step) {
+        const def = {
+            schemaVersion: 2,
+            meta: { name: 'T' },
+            homeScreenId: 'scr_t',
+            screens: [{ id: 'scr_t', name: 'T', sections: [{ id: 'sec_t', children: [] }] }],
+            actions: { act_a: { kind: 'sequence', steps: [step] } },
+        };
+        // canonicalize regenerates ids that do not match its format, so read
+        // the one action back by position rather than by the key we gave it.
+        return Object.values(canonicalizeAppDefinition(def).def.actions)[0].steps[0];
+    }
+
+    it('seeds a case keyed on `value`, the field the runner reads', () => {
+        const step = newStep('switch', {});
+        expect(step.cases[0]).toHaveProperty('value');
+        expect(step.cases[0]).not.toHaveProperty('name');
+    });
+
+    it('the case survives a save with its value intact', () => {
+        const step = { ...newStep('switch', {}), expr: 'vars.status' };
+        step.cases = [{ value: 'paid', steps: [] }];
+        expect(stored(step).cases).toEqual([{ value: 'paid', steps: [] }]);
+    });
+
+    it('a `name`-keyed case is exactly what the server throws away', () => {
+        // The shape the editor used to produce, for the record.
+        const step = { kind: 'switch', expr: 'vars.status', cases: [{ name: 'paid', steps: [] }], default: [] };
+        expect(stored(step).cases[0]).not.toHaveProperty('name');
+        expect(stored(step).cases[0].value).toBeUndefined();
+    });
+});

@@ -21,6 +21,31 @@ import { createContext, useContext, useEffect, useState } from 'react';
 
 export const FormContext = createContext(null);
 
+// ── reset_form bus ──────────────────────────────────────────────────────────
+// Module-level registry formName → Set<resetFn>, mirroring AppModal's opener
+// bus: the `reset_form` action step must reach a mounted form from OUTSIDE the
+// React tree (the action runner). Exists because valueFrom deliberately cannot
+// clear a field — pushing '' twice is a no-op by design — so on a single-screen
+// app "switch context" had no way to empty a half-typed composer.
+const resetters = new Map();
+
+/** AppForm calls this on mount; returns the unregister cleanup. */
+export function registerFormReset(name, fn) {
+    if (!name || typeof fn !== 'function') return () => {};
+    let set = resetters.get(name);
+    if (!set) { set = new Set(); resetters.set(name, set); }
+    set.add(fn);
+    return () => {
+        set.delete(fn);
+        if (set.size === 0) resetters.delete(name);
+    };
+}
+
+/** Clear every mounted form registered under this name back to its defaults. */
+export function resetAppForm(name) {
+    (resetters.get(name) || []).forEach((fn) => fn());
+}
+
 /**
  * "The node around me is switched off."
  *
@@ -40,19 +65,29 @@ export function useFormContext() {
  * useFormField({ name, defaultValue, required, label })
  *   → { value, setValue, error, pending }
  */
-export function useFormField({ name, defaultValue = null, required = false, label = '' }) {
+export function useFormField({
+    name, defaultValue = null, required = false, label = '',
+    // "The browser refused what was typed." A number box holding "12e" reports
+    // an empty value while still showing the text, so the input knew the field
+    // was wrong and the FORM did not — an optional one submitted empty under a
+    // visible error. Carried into the registration so AppForm can block it.
+    invalid = false, invalidMessage = null,
+}) {
     const form = useContext(FormContext);
     const disabled = useContext(FieldDisabledContext);
     const [local, setLocal] = useState(defaultValue);
 
     useEffect(() => {
         if (!form || !name) return undefined;
-        form.register(name, { required: !!required, label, defaultValue, disabled: !!disabled });
+        form.register(name, {
+            required: !!required, label, defaultValue, disabled: !!disabled,
+            invalid: !!invalid, invalidMessage,
+        });
         return () => form.unregister(name);
         // register/unregister are stable (useCallback in AppForm); defaultValue
         // is schema data and only changes alongside the node itself.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [form, name, required, label, disabled]);
+    }, [form, name, required, label, disabled, invalid, invalidMessage]);
 
     if (!form || !name) {
         return { value: local, setValue: setLocal, error: null, pending: false };

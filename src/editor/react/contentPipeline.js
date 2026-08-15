@@ -1,19 +1,13 @@
 /**
  * contentPipeline.js — turn an incoming `content` prop (legacy HTML or Markdown)
- * into an AST doc, applying the same import-time transforms the old editor did
- * (legal-citation linkifying). Mermaid fences/divs are handled natively by the
- * md/html parsers, so the legacy preprocessMermaidContent string pass is no
- * longer needed.
+ * into an AST doc. Mermaid fences/divs are handled natively by the md/html
+ * parsers, so the legacy preprocessMermaidContent string pass is no longer
+ * needed.
  */
 import { markdownToAst } from '../serialization/mdToAst.js';
 import { htmlToAst } from '../serialization/htmlToAst.js';
 import { looksLikeHtml } from '../serialization/util.js';
-import { linkifyLegalCitations } from '../../utils/legalCitations.js';
 import { API_BASE } from '../../utils/helpers';
-
-function safeLinkify(s) {
-  try { return linkifyLegalCitations(s) ?? s; } catch { return s; }
-}
 
 // Resolve relative /api/storage image URLs → full API_BASE URLs when loading
 // saved content. Production (nginx): API_BASE='', no-op. Dev: prepends the backend
@@ -32,10 +26,10 @@ export function contentToDoc(content) {
     if (content && content.type === 'doc') return content;
     return markdownToAst('');
   }
-  const linked = safeLinkify(resolveContentUrls(content));
-  return looksLikeHtml(linked) ? htmlToAst(linked) : markdownToAst(linked);
+  const resolved = resolveContentUrls(content);
+  return looksLikeHtml(resolved) ? htmlToAst(resolved) : markdownToAst(resolved);
 }
 
 export function markdownToDoc(md) {
-  return markdownToAst(safeLinkify(resolveContentUrls(md || '')));
+  return markdownToAst(resolveContentUrls(md || ''));
 }

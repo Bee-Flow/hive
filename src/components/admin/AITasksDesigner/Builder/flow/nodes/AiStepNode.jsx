@@ -1,13 +1,15 @@
 import React from 'react';
 import { Sparkles, Hammer } from 'lucide-react';
 import { nodeHelp, nodeTypeLabel } from '../nodeDefs';
+import { TOOL_HANDLE_ID, toolStateOf } from '../aiToolNodes';
 import StepNodeBase, { NodeChip, renderInputsPreview, ForEachBadge } from './StepNodeBase';
 
 export default function AiStepNode({ id, data }) {
-    const { step, runStep, issues, onAddAfter } = data;
+    const { step, runStep, issues, onAddAfter, toolPortActive = false } = data;
     const tier = step.modelTier || 'auto';
     const allowTools = !!step.allowTools;
     const toolCount = Array.isArray(step.tools) ? step.tools.length : 0;
+    const toolState = toolStateOf(step);
 
     // First two lines of the prompt for the inline body.
     const promptPreview = (step.prompt || '')
@@ -60,6 +62,15 @@ export default function AiStepNode({ id, data }) {
             issues={issues}
             nodeId={id}
             onAddAfter={onAddAfter}
+            // The tools port. An AI step is the one node whose capabilities are
+            // configuration rather than flow, so it gets a second output that
+            // says so — and accepts an app dragged straight from the ribbon.
+            bottomPort={{
+                handleId: TOOL_HANDLE_ID,
+                label: toolState.mode === 'none' ? 'Drop an app here to give it a tool' : 'Tools',
+                hint: 'Drag an app from the ribbon onto this port to let the AI use it.',
+                active: toolPortActive,
+            }}
         />
     );
 }

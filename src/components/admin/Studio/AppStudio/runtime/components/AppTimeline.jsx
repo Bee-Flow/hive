@@ -89,7 +89,7 @@ export default function AppTimeline({ node }) {
                             <button
                                 type="button"
                                 className="min-w-0 flex-1 text-left cursor-pointer"
-                                onClick={() => runAction(node.onRowClick, { formValues: row })}
+                                onClick={() => runAction(node.onRowClick, { formValues: row, item: row })}
                             >
                                 {body}
                             </button>

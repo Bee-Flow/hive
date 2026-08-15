@@ -85,7 +85,9 @@ export function resolveRadius(value) {
 const ALIGN_VALUES = { start: 'left', center: 'center', end: 'right' };
 const WEIGHT_VALUES = { regular: 400, medium: 500, semibold: 600 };
 const SIZE_FONT = { sm: '0.875em', md: null, lg: '1.125em' };
-export const HEIGHT_PX = { sm: '120px', md: '200px', lg: '320px' };
+// 'xl' is the document-viewer tier: a PDF at 320px is a postage stamp, and
+// 'fill' collapses inside a tab whose ancestors are not full-height.
+export const HEIGHT_PX = { sm: '120px', md: '200px', lg: '320px', xl: '620px' };
 
 /**
  * `flex: 1 1 0` — as LONGHANDS, deliberately.

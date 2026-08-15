@@ -34,23 +34,66 @@ const PATH_RE = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z0-9_$]+|\[[^\]]*\])*$/;
 const TEMPLATE_TOKEN = /\{\{([^}]*)\}\}/g;
 
 // `parseJson(<source path>)` / `parseJson(<source path>, "<path in the json>")`
-// — the exact shape JsonExtractSection writes. The expression language has no
-// backslash escapes, so the quoted argument can never contain its own quote.
+// — the exact shape JsonExtractSection writes. NOTE: the expression language
+// DOES decode backslash escapes inside string literals (engine.mjs tokenizer:
+// \n → newline, \t → tab, \<any> → that char) — an earlier version of this
+// comment claimed otherwise. This regex still accepts only escape-free
+// arguments, which is fine: JsonExtractSection never writes escapes into a
+// JSON path. join()'s separator DOES need them — see JOIN_CALL below.
 const JSON_CALL = /^parseJson\(\s*([^,()]+?)\s*(?:,\s*(["'])([^"']*)\2\s*)?\)$/;
+
+// `join(<path>, "<separator>")` — the one transform that carries an argument.
+// The separator is an engine string literal, escapes and all (a newline
+// separator is stored as `join(p, "\n")`).
+const JOIN_CALL = /^join\(\s*([^,()]+?)\s*,\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')\s*\)$/;
+
+/** Encode a separator as an engine double-quoted string literal's body. */
+export function escapeExprString(s) {
+    return String(s ?? '')
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\t/g, '\\t');
+}
+
+/** Mirror of the engine tokenizer's escape decoding (engine.mjs). */
+function decodeExprString(s) {
+    let out = '';
+    const src = String(s ?? '');
+    for (let i = 0; i < src.length; i++) {
+        if (src[i] === '\\' && i + 1 < src.length) {
+            const n = src[i + 1];
+            out += n === 'n' ? '\n' : n === 't' ? '\t' : n;
+            i++;
+        } else {
+            out += src[i];
+        }
+    }
+    return out;
+}
 
 /**
  * The one-click value transforms. Each is a single-argument call in the shared
- * expression language, so a transformed pick stays a plain `fn(path)` — round
- * trippable, and readable in the raw editor for whoever opens it later.
+ * expression language (join carries a second, string argument), so a
+ * transformed pick stays a plain `fn(path)` — round trippable, and readable in
+ * the raw editor for whoever opens it later.
+ *
+ * `for` says what SHAPE the transform is about ('text' | 'list' | 'any') —
+ * used for ORDERING AND ANNOTATION in the dropdown only, never to remove an
+ * entry: sample data is often missing or wrong about shapes, and a transform
+ * the user can see is a transform they can still reach.
  */
 export const VALUE_TRANSFORMS = [
-    { id: 'lower', label: 'lowercase', hint: 'Make the text lowercase' },
-    { id: 'upper', label: 'UPPERCASE', hint: 'Make the text uppercase' },
-    { id: 'trim', label: 'trim spaces', hint: 'Remove spaces around the text' },
-    { id: 'number', label: 'as a number', hint: 'Read the value as a number' },
-    { id: 'round', label: 'rounded', hint: 'Round to a whole number' },
-    { id: 'toStr', label: 'as text', hint: 'Read the value as text' },
-    { id: 'count', label: 'count of items', hint: 'How many items the list has' },
+    { id: 'lower', label: 'lowercase', hint: 'Make the text lowercase', for: 'text' },
+    { id: 'upper', label: 'UPPERCASE', hint: 'Make the text uppercase', for: 'text' },
+    { id: 'trim', label: 'trim spaces', hint: 'Remove spaces around the text', for: 'text' },
+    { id: 'number', label: 'as a number', hint: 'Read the value as a number', for: 'any' },
+    { id: 'round', label: 'rounded', hint: 'Round to a whole number', for: 'any' },
+    { id: 'toStr', label: 'as text', hint: 'Read the value as text', for: 'any' },
+    { id: 'first', label: 'just the first one', hint: 'The first item of the list', for: 'list' },
+    { id: 'last', label: 'just the last one', hint: 'The last item of the list', for: 'list' },
+    { id: 'join', label: 'all of them, joined into text', hint: 'Every value in one piece of text, with a separator', for: 'list', arg: 'separator' },
+    { id: 'count', label: 'count of items', hint: 'How many items the list has', for: 'list' },
 ];
 
 const TRANSFORM_IDS = new Set(VALUE_TRANSFORMS.map(t => t.id));
@@ -70,8 +113,8 @@ export function isDataPath(s) {
  * transform: null, text }` where `text` is the raw source for display.
  */
 export function parseValue(binding) {
-    const no = (text = '') => ({ supported: false, parts: [], transform: null, text });
-    const yes = (parts, transform = null) => ({ supported: true, parts, transform, text: '' });
+    const no = (text = '') => ({ supported: false, parts: [], transform: null, transformArg: null, text });
+    const yes = (parts, transform = null, transformArg = null) => ({ supported: true, parts, transform, transformArg, text: '' });
 
     if (binding == null) return yes([]);
     if (typeof binding !== 'object') return yes(textParts(String(binding)));
@@ -97,6 +140,12 @@ export function parseValue(binding) {
         const json = JSON_CALL.exec(src);
         if (json && isDataPath(json[1])) {
             return yes([{ type: 'json', path: json[1].trim(), jsonPath: json[3] ?? '' }]);
+        }
+        // join(path, "sep") first — its second argument would trip the
+        // single-argument matcher below.
+        const join = JOIN_CALL.exec(src);
+        if (join && isDataPath(join[1])) {
+            return yes([{ type: 'data', path: join[1].trim() }], 'join', decodeExprString(join[2] ?? join[3] ?? ''));
         }
         const call = /^([A-Za-z_$][A-Za-z0-9_$]*)\(([^()]*)\)$/.exec(src);
         if (call && TRANSFORM_IDS.has(call[1]) && isDataPath(call[2])) {
@@ -146,8 +195,11 @@ function safeJson(v) {
  *
  * A transform on a mixed value is dropped — the editor only offers it while
  * exactly one data part is present, so this only ever fires on stale state.
+ *
+ * `transformArg` is join's separator (default ', '); other transforms ignore
+ * it.
  */
-export function buildValue(parts, transform = null) {
+export function buildValue(parts, transform = null, transformArg = null) {
     const kept = (Array.isArray(parts) ? parts : []).filter(
         p => p && (p.type === 'text' ? p.text !== '' : !!p.path),
     );
@@ -166,6 +218,9 @@ export function buildValue(parts, transform = null) {
     if (kept.length === 1) {
         const only = kept[0];
         if (only.type === 'text') return { kind: 'literal', value: only.text };
+        if (transform === 'join') {
+            return { kind: 'expr', value: `join(${only.path}, "${escapeExprString(transformArg ?? ', ')}")` };
+        }
         if (transform && TRANSFORM_IDS.has(transform)) {
             return { kind: 'expr', value: `${transform}(${only.path})` };
         }

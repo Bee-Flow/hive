@@ -117,7 +117,7 @@ export default function AppCalendar({ node }) {
 
     const isRun = mode === 'run';
     const clickable = isRun && !!node.onRowClick;
-    const fireRow = (row) => { if (clickable) runAction(node.onRowClick, { formValues: row }); };
+    const fireRow = (row) => { if (clickable) runAction(node.onRowClick, { formValues: row, item: row }); };
 
     const chip = (entry, i) => {
         const roleRaw = colorKey ? walkPath(entry.row, colorKey) : null;

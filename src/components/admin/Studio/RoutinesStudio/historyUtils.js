@@ -88,3 +88,29 @@ export function startedWithinHours(run, hours) {
     if (Number.isNaN(t)) return false;
     return t >= Date.now() - hours * 3600 * 1000;
 }
+
+/**
+ * Absolute timestamp in the APP locale (the product auto-selects nl/de/fr) —
+ * for title attributes behind relative times, so "3h ago" can always be
+ * pinned down to a real clock time.
+ */
+export function absoluteTime(iso, locale = undefined) {
+    if (!iso) return '';
+    try {
+        return new Date(iso).toLocaleString(locale, {
+            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+        });
+    } catch {
+        return String(iso);
+    }
+}
+
+/** Just the clock time, locale-aware — for dense per-day listings. */
+export function shortClock(iso, locale = undefined) {
+    if (!iso) return '';
+    try {
+        return new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+    } catch {
+        return String(iso);
+    }
+}

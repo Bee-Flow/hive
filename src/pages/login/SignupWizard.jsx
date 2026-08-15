@@ -46,6 +46,7 @@ const SignupWizard = ({
     availableLocales = [], locale, setLocale,
     availablePlans = [], selectedPlanId = null,
     inputClass, inputClassSimple, labelClass,
+    captchaConfig = null, onCaptchaToken,
 }) => {
     const { t } = useTranslation();
     const [stepIdx, setStepIdx] = useState(0);
@@ -279,6 +280,7 @@ const SignupWizard = ({
                             signupOrgs={signupOrgs} handleSignup={handleSignup}
                             isLoading={isLoading} setIsLoading={setIsLoading}
                             setError={setError}
+                            captchaConfig={captchaConfig} onCaptchaToken={onCaptchaToken}
                             inputClass={inputClass} inputClassSimple={inputClassSimple} labelClass={labelClass}
                         />
                     )}

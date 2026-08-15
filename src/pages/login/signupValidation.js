@@ -15,6 +15,48 @@
  */
 export const MIN_PASSWORD_LENGTH = 8;
 
+/**
+ * A deliberately small echo of server/auth/passwordPolicy.js.
+ *
+ * The server owns the real policy — an 800-entry deny-list, canonicalisation of
+ * leet/suffix variants, identity-derived-password detection and an optional
+ * breach lookup — and it re-checks everything sent to it. Mirroring all of that
+ * here would double the maintenance for no security gain, since anyone can skip
+ * the browser entirely.
+ *
+ * What this DOES buy is the difference between "your password is refused before
+ * you press the button" and "your password is refused after a round-trip", for
+ * the handful of passwords people genuinely try first. A pentest signed up with
+ * `password`; that one should never reach the network.
+ */
+const OBVIOUSLY_WEAK = new Set([
+    'password', 'password1', 'password123', 'passw0rd', 'p@ssword', 'p@ssw0rd',
+    '12345678', '123456789', '1234567890', 'qwerty123', 'qwertyui', 'qwertyuiop',
+    'welcome1', 'welcome123', 'letmein1', 'iloveyou1', 'admin123', 'administrator',
+    'welkom01', 'welkom123', 'wachtwoord', 'wachtwoord1', 'geheim123', 'voetbal1',
+    'beeflow', 'beeflow123', 'changeme1', 'secret123', 'sunshine1', 'football1',
+]);
+
+export function isObviouslyWeakPassword(value) {
+    const raw = String(value || '');
+    if (!raw) return false;
+    const lower = raw.toLowerCase();
+    // Same canonical forms the server checks, minus the exhaustive list.
+    const deleet = lower.replace(/[4@31!05$7+]/g, (c) => ({ 4: 'a', '@': 'a', 3: 'e', 1: 'i', '!': 'i', 0: 'o', 5: 's', $: 's', 7: 't', '+': 't' }[c] || c));
+    const alnum = deleet.replace(/[^a-z0-9]/g, '');
+    const core = alnum.replace(/^[0-9]+/, '').replace(/[0-9]+$/, '');
+    if ([lower, deleet, alnum, core].some((f) => OBVIOUSLY_WEAK.has(f))) return true;
+
+    // One character, or one short unit, repeated to fill the length
+    // requirement. Bounded at 4 for the same reason as the server's copy:
+    // `hunter2hunter2` is a repeat too, and rejecting it buys nothing.
+    for (let unit = 1; unit <= Math.min(4, Math.floor(raw.length / 2)); unit++) {
+        if (raw.length % unit !== 0) continue;
+        if (raw.slice(0, unit).repeat(raw.length / unit) === raw) return true;
+    }
+    return false;
+}
+
 /** Countries whose company registration we collect at signup. */
 const REGISTRATION_REQUIRED_COUNTRIES = ['nl'];
 
@@ -110,6 +152,13 @@ export function validateSubmit(signupData = {}, { locale = '', isInvite = false,
             reason: 'password_too_short',
             error: t('signup.err_password_length', 'Password must be at least {n} characters.')
                 .replace('{n}', String(MIN_PASSWORD_LENGTH)),
+        };
+    }
+    if (isObviouslyWeakPassword(signupData.password)) {
+        return {
+            ok: false,
+            reason: 'password_too_common',
+            error: t('signup.err_password_common', 'This password is too easy to guess. Please choose a different one.'),
         };
     }
     if (isNonEmpty(signupData.email) && !isPlausibleEmail(signupData.email)) {

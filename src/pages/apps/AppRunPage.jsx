@@ -14,7 +14,7 @@ import useConfirmDialog from '../../components/admin/Studio/AppStudio/runtime/us
 import { studioAppsApi } from '../../components/admin/Studio/AppStudio/studioAppsApi';
 import EmptyState from '../../components/shared/EmptyState';
 import RequiredConnectionsBanner from '../../components/shared/RequiredConnectionsBanner';
-import { API_BASE, authFetch } from '../../utils/helpers';
+import { API_BASE, authFetch, isNextcloudEmbed } from '../../utils/helpers';
 
 // Stands in for "this viewer has no role in this app" so role gating stays
 // closed instead of falling back to the ungated full view.
@@ -129,13 +129,17 @@ function RunBody({
  * runner's own data inputs (dataState for sequence formulas, refresh for
  * refresh steps) are mirrored back up by RunBody; see there.
  */
-function RunSurface({ appId, draft, definition, screenId, viewer, onNavigate, versionBanner = null }) {
+function RunSurface({ appId, draft, definition, screenId, viewer, onNavigate, versionBanner = null, hideExit = false }) {
     const { confirm, dialog } = useConfirmDialog();
     const [forms, setForms] = useState({});
     const [screenParams, setScreenParams] = useState({});
 
     // "Alle apps" in the shell's user menu → the published-apps directory.
     // Plain full navigation, the same mechanism as AppsHomePage's card links.
+    // Suppressed (onExit=null hides the menu entry) when the app runs as its
+    // own Nextcloud page: /app/apps is not a navigable URL inside that iframe,
+    // and "leave the app" there means picking another icon in Nextcloud's own
+    // top bar.
     const handleExit = useCallback(() => {
         window.location.assign('/app/apps');
     }, []);
@@ -162,6 +166,11 @@ function RunSurface({ appId, draft, definition, screenId, viewer, onNavigate, ve
         dataState: runnerDataState,
         currentUser: viewer,
         onRefresh: handleRefresh,
+        // The same two roots the renderer's scope carries. Without them a step
+        // formula reading screen.params.<name> — how a detail screen learns
+        // which record it is showing — resolved to undefined.
+        forms,
+        screen: { id: screenId, params: screenParams },
     });
 
     // Role gating mirrors the editor's view-as-role: the owner sees everything.
@@ -205,7 +214,7 @@ function RunSurface({ appId, draft, definition, screenId, viewer, onNavigate, ve
                         definition={definition}
                         screenId={screenId}
                         onNavigate={handleNavigate}
-                        onExit={handleExit}
+                        onExit={hideExit ? null : handleExit}
                         viewer={viewer}
                         previewRole={previewRole}
                         actionState={actionState}
@@ -245,6 +254,15 @@ function RunSurface({ appId, draft, definition, screenId, viewer, onNavigate, ve
 export default function AppRunPage({ appId, draft = false }) {
     const [state, setState] = useState({ status: 'loading', payload: null, error: null });
     const [screenId, setScreenId] = useState(null);
+
+    // Opened from the app's own entry in Nextcloud's app menu (the connector
+    // mounts the iframe with ?ncStudioApp=<id>). Computed once — the param is
+    // part of the iframe URL and never changes while the page is mounted.
+    const [ncAppMenuEmbed] = useState(() => {
+        if (!isNextcloudEmbed()) return false;
+        try { return !!new URLSearchParams(window.location.search).get('ncStudioApp'); }
+        catch { return false; }
+    });
 
     const load = useCallback(async () => {
         setState({ status: 'loading', payload: null, error: null });
@@ -350,6 +368,7 @@ export default function AppRunPage({ appId, draft = false }) {
                 viewer={state.payload?.viewer || null}
                 onNavigate={setScreenId}
                 versionBanner={staleVersion ? <AppVersionBanner onReload={load} /> : null}
+                hideExit={ncAppMenuEmbed}
             />
         </div>
     );

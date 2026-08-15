@@ -121,7 +121,9 @@ export default function BuilderHeader({
                 <button
                     onClick={onBack}
                     className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition"
-                    title="Back to list"
+                    // Say WHERE back goes — "Back to list" named no destination.
+                    title="Back to Routines"
+                    aria-label="Back to Routines"
                 >
                     <ArrowLeft size={18} />
                 </button>
@@ -220,7 +222,10 @@ export default function BuilderHeader({
                                     type="button"
                                     onClick={onUndo}
                                     disabled={!canUndo}
-                                    title="Undo (⌘Z)"
+                                    // Three things in this product are "history";
+                                    // this one is the canvas undo, and saying so
+                                    // stops it being read as Saved versions.
+                                    title="Undo your last canvas change (⌘Z) — this is not a saved version"
                                     aria-label="Undo"
                                     className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition disabled:opacity-40 disabled:hover:bg-transparent"
                                 >
@@ -230,7 +235,7 @@ export default function BuilderHeader({
                                     type="button"
                                     onClick={onRedo}
                                     disabled={!canRedo}
-                                    title="Redo (⌘⇧Z)"
+                                    title="Redo your last undone canvas change (⌘⇧Z)"
                                     aria-label="Redo"
                                     className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition disabled:opacity-40 disabled:hover:bg-transparent"
                                 >
@@ -481,11 +486,15 @@ function RunFlowMenu({ busy, onDryRun, onRunLive }) {
  * Settings: buried there it was hard to find and hard to read, and it kept
  * Settings from growing into what it is for (BFSF-344/341/342).
  */
+// Two of the four views were both called "history" — and the undo buttons sat
+// beside them as a third. Runs = what happened when it ran; Saved versions =
+// earlier versions you can go back to. The ids stay ('history' is a persisted
+// initialTab value, BFSF-343); only the words change.
 const VIEWS = [
-    { id: 'build', label: 'Editor' },
-    { id: 'settings', label: 'Settings' },
-    { id: 'history', label: 'Run history' },
-    { id: 'versions', label: 'Version history' },
+    { id: 'build', label: 'Editor', desc: 'Design the routine on the canvas' },
+    { id: 'settings', label: 'Settings', desc: 'Name, sharing and behaviour' },
+    { id: 'history', label: 'Runs', desc: 'What happened each time this routine ran' },
+    { id: 'versions', label: 'Saved versions', desc: 'Earlier versions of the routine you can go back to' },
 ];
 function ViewMenu({ tab, onTabChange }) {
     const [open, setOpen] = useState(false);
@@ -516,15 +525,22 @@ function ViewMenu({ tab, onTabChange }) {
                             key={v.id}
                             role="menuitemradio"
                             aria-checked={v.id === tab}
+                            // The accessible name is the LABEL alone — the desc
+                            // below is display-only (aria-hidden), so name
+                            // queries and screen readers stay concise.
+                            aria-label={v.label}
                             onClick={() => { onTabChange(v.id); setOpen(false); }}
-                            className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 transition ${
+                            className={`w-full text-left px-3 py-1.5 text-sm flex items-start gap-2 transition ${
                                 v.id === tab
                                     ? 'text-[var(--text-primary)] bg-[var(--bg-secondary)]'
                                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]'
                             }`}
                         >
-                            <Check size={13} className={v.id === tab ? 'opacity-100' : 'opacity-0'} />
-                            {v.label}
+                            <Check size={13} className={`mt-0.5 ${v.id === tab ? 'opacity-100' : 'opacity-0'}`} />
+                            <span className="min-w-0">
+                                <span className="block">{v.label}</span>
+                                <span aria-hidden="true" className="block text-[10px] text-[var(--text-tertiary)] leading-snug">{v.desc}</span>
+                            </span>
                         </button>
                     ))}
                 </div>

@@ -1,5 +1,9 @@
-# Build stage
-FROM node:22-alpine AS build
+# Shared source stage. Both Vite builds below (main + Nextcloud-embed) branch
+# off this ONE stage instead of running back-to-back in a single stage, so
+# BuildKit schedules them CONCURRENTLY — the embed build no longer adds its full
+# duration to the wall clock (~104s → overlapped with the ~74s main build on a
+# multi-core box). npm ci and the context copy still happen exactly once.
+FROM node:22-alpine AS src
 
 WORKDIR /app
 
@@ -46,8 +50,11 @@ ENV VITE_OPENOBSERVE_ENABLE=$VITE_OPENOBSERVE_ENABLE \
     VITE_OPENOBSERVE_REPLAY_SAMPLE_RATE=$VITE_OPENOBSERVE_REPLAY_SAMPLE_RATE \
     VITE_OPENOBSERVE_SESSION_SAMPLE_RATE=$VITE_OPENOBSERVE_SESSION_SAMPLE_RATE
 
-# Build the app — bump Node heap; default ~2GB OOMs during Rollup chunk render.
+# Bump Node heap; default ~2GB OOMs during Rollup chunk render.
 ENV NODE_OPTIONS=--max-old-space-size=4096
+
+# ── Main build ───────────────────────────────────────────────────────────────
+FROM src AS build
 RUN npm run build
 
 # ── Embed-flavored second build (Nextcloud connector shell) ──────────────────
@@ -56,22 +63,25 @@ RUN npm run build
 # view without a connector release. Build flags MUST match what the connector
 # Dockerfile used to bake: VITE_API_URL + --base point at NC's signed-proxy
 # path so every asset/API URL routes back through NC → connector. APP_ID is
-# stable (bee_flow), so one build serves all tenants. Costs a second full Vite
-# build (~minutes) — the dominant cost of rebuilding this image.
+# stable (bee_flow), so one build serves all tenants.
+#
+# Its own stage (branching off `src`, NOT off `build`) so BuildKit runs it in
+# parallel with the main build instead of after it. That also isolates the sed
+# rewrite below: it can no longer touch the tree the main build compiles from.
 #
 # BUILD_EMBED=false skips this entirely (dist-embed ends up empty) for fast
 # local iteration when you don't need the NC-embedded shell fresh, e.g.:
 #   docker build --build-arg BUILD_EMBED=false -t ... ./agent-hub
 # Defaults to true so every existing build path (CI, scripts/build-images.sh,
 # a plain `docker build` with no args) keeps producing a working /embed/ shell.
+FROM src AS embed
 ARG APP_ID=bee_flow
 ARG BUILD_EMBED=true
 
 # Hardcoded absolute asset paths (e.g. <img src="/bee-flow-logo.svg" />) bypass
 # Vite's --base rewrite. Strip the leading slash so they resolve relative to the
-# <base href> Vite injects (which routes through NC's proxy). Done AFTER the
-# main build so it can't affect it. Build into a SEPARATE outDir so the main
-# dist/ (copied to the nginx root below) stays intact.
+# <base href> Vite injects (which routes through NC's proxy). Build into a
+# SEPARATE outDir so the ref stays the same one the nginx stage copies.
 RUN if [ "$BUILD_EMBED" = "true" ]; then \
         find . -path ./node_modules -prune -o \( -name '*.jsx' -o -name '*.js' -o -name '*.html' \) -print \
             | xargs sed -i \
@@ -100,7 +110,7 @@ FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 # Embed-flavored shell for the Nextcloud connector, served at /embed/ (see
 # nginx.conf.template). The connector proxies its embedded SPA shell here.
-COPY --from=build /app/dist-embed /usr/share/nginx/html/embed
+COPY --from=embed /app/dist-embed /usr/share/nginx/html/embed
 RUN find /usr/share/nginx/html -name '*.map' -type f -delete
 
 # Copy custom nginx config template

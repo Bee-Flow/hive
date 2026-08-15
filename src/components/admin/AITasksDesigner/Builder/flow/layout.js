@@ -1,3 +1,4 @@
+import { toolLayoutHeights } from './aiToolNodes';
 import { edgeKey as defEdgeKey } from './branchEdges';
 import { isFinitePos, runDagre } from './dagreLayout';
 import { summariseEdgeData } from './dataSummary';
@@ -72,7 +73,7 @@ export function buildLayout(def, { runByStep, issuesByStep, onAddAfter = null, o
             : (def.edges || []);
         // Copy: runDagre hands back its cached Map, and the inline positions
         // below would otherwise be written into the shared LRU entry.
-        positionById = new Map(runDagre(topSteps, topEdges, dims));
+        positionById = new Map(runDagre(topSteps, topEdges, dims, toolLayoutHeights(topSteps, dims.height)));
     }
     if (hasInline) {
         for (const s of allSteps) {
@@ -285,6 +286,7 @@ export function seedPositions(def, dims = { width: 240, height: 96 }) {
         allSteps,
         (def.edges || []).filter(e => !isInlineId(e.from) && !isInlineId(e.to)),
         dims,
+        toolLayoutHeights(allSteps, dims.height),
     );
     const apply = (s) => isFinitePos(s.position) ? s : { ...s, position: positionById.get(s.id) || { x: 0, y: 0 } };
     return {

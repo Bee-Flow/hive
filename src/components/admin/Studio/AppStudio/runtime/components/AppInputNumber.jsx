@@ -18,13 +18,19 @@ export default function AppInputNumber({ node }) {
         name, label = 'Amount', min = null, max = null, step = 1,
         required = false, defaultValue = null,
     } = node.props || {};
-    const { value, setValue, error } = useFormField({ name, defaultValue, required, label });
     // A number input reports value '' for anything the browser calls BAD INPUT
     // ('3,5' in a dot locale, '1e', '1.2.3'), while the box visibly still holds
     // the typed text. Storing that '' silently emptied the field: a required
     // field then said "This field is required." under a control with content in
-    // it, and an optional one submitted nothing at all.
+    // it, and an optional one submitted nothing at all — under a visible
+    // "Enter a number", because the message was local to this input and the
+    // form never saw it. It travels into the registration now, so the form
+    // refuses the submit for the reason already on screen.
     const [badInput, setBadInput] = useState(false);
+    const { value, setValue, error } = useFormField({
+        name, defaultValue, required, label,
+        invalid: badInput, invalidMessage: BAD_INPUT_MESSAGE,
+    });
     const shownError = error || (badInput ? BAD_INPUT_MESSAGE : null);
     const id = `${node.id}-input`;
     return (

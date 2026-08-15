@@ -1,7 +1,7 @@
 /**
  * useDocumentAutosave — owns the editor document content + save lifecycle.
  *
- * Extracted from NotebooksPage + LegalStudioPage (both copied the same three
+ * Extracted from NotebooksPage (it copied the same three
  * save states, the retry-once timer, the beforeunload guard and the Cmd/Ctrl+S
  * shortcut). It also adds the cross-entity guard the standalone copies lacked: a
  * save scheduled for notebook A can never write into notebook B after a switch.

@@ -17,13 +17,15 @@ import { flowPosition } from './flow/flowOrder';
 import { nodeTypeLabel } from './flow/nodeDefs';
 import { normalizeDefinitionShape } from './flow/normalizeDefinition';
 import { mergeStepPatchIntoDefinition } from './flow/switchCaseOps';
-import { FormDensityContext } from './flow/settings/formDensity';
+import { FormDensityContext, resolveMode } from './flow/settings/formDensity';
+import FormModeToggle from './flow/settings/FormModeToggle';
 import SettingsHost from './flow/settings/SettingsHost';
 import InputDataPanel from './mapping/InputDataPanel';
 import { buildRealOutputMap, buildSampleRoot, isTruncatedOutput } from './mapping/realOutputs';
 import { VariablePickerProvider } from './mapping/VariablePickerContext';
 import SaveStatus from '../../../shared/SaveStatus';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
+import { useTranslation } from '../../../../hooks/useTranslation';
 import useSavingState from '../../../../hooks/useSavingState';
 import useUpstreamVariables from '../../../../hooks/useUpstreamVariables';
 import { walkPath } from '../../../../utils/bindingHelpers';
@@ -83,10 +85,16 @@ export default function NodeDetailView({
     step, runStep, runSteps = [], definition, rootDefinition = null, blocksCatalog = [], onSaveStep,
     validation, modelTiers = {}, onExecuteStep, onRetryFromStep,
     runInFlight = false, executingStep = false, onClose,
-    // 'quick' | 'full' — owned by the shell so the canvas gestures can set it
-    // (click vs double-click) and the choice persists per user.
+    // 'quick' | 'full' — how BIG the window is. Owned by the shell so the
+    // canvas gestures can set it (click vs double-click); deliberately never
+    // remembered (formDensity.densityForOpen).
     density = 'full',
     onDensityChange = null,
+    // 'simple' | 'advanced' | null — how MUCH of the form exists. The user's
+    // persisted choice (useFormModePreference); null = never touched, and the
+    // gesture decides via resolveMode. Orthogonal to density on purpose.
+    mode = null,
+    onModeChange = null,
     // The persisted automation row. Only the webhook trigger's settings need
     // it (to list/create this node's webhook URLs — BFSF-320); null before the
     // routine has been saved for the first time.
@@ -112,6 +120,7 @@ export default function NodeDetailView({
 }) {
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
+    const { t } = useTranslation();
     // This chip is the ONLY lasting signal that an auto-save landed: the Save
     // button simply greys out, which looks identical whether the save
     // succeeded or failed silently in the background (BFSF-338). So it keeps
@@ -177,7 +186,9 @@ export default function NodeDetailView({
     const activeFieldRef = useRef(null);
     const [activeLabel, setActiveLabel] = useState(null);
     const onFocusField = (handle) => { activeFieldRef.current = handle; setActiveLabel(handle?.label || null); };
-    const onInsertFromTree = (path) => { activeFieldRef.current?.insert?.(path); };
+    // `opts` rides along so an Alt-click in the Input tree can bypass the
+    // list chooser ({ raw: true }) — see mapping/listShape.js.
+    const onInsertFromTree = (path, opts) => { activeFieldRef.current?.insert?.(path, opts); };
 
     const stepIssues = useMemo(() => matchValidationToStep(validation, step?.id), [step, validation]);
 
@@ -185,16 +196,20 @@ export default function NodeDetailView({
     const quick = density === 'quick';
     const goFull = useCallback(() => onDensityChange?.('full'), [onDensityChange]);
     const goQuick = useCallback(() => onDensityChange?.('quick'), [onDensityChange]);
+    // The mode the form actually renders in (user's choice, else the gesture).
+    const effectiveMode = resolveMode({ mode, density });
 
-    // Sections the quick view is holding back, reported by AccordionSection so
-    // the button can name a real number instead of promising something that
-    // may not exist for this step type.
+    // Sections Simple mode is holding back, reported by AccordionSection so
+    // the "Show all options" control can name a real number instead of
+    // promising something that may not exist for this step type. Symmetric:
+    // sections report becoming VISIBLE too, so the count goes down again
+    // (a section kept visible by content or an error is not "hidden").
     //
-    // Keyed by step+density rather than reset in an effect: child effects run
-    // BEFORE the parent's, so a reset here would wipe what the sections just
-    // reported on the very render that mounted them. The callback identity
-    // stays stable — every section subscribes to it through a context.
-    const hiddenKey = `${step?.id || ''}:${density}`;
+    // Keyed by step+density+mode rather than reset in an effect: child effects
+    // run BEFORE the parent's, so a reset here would wipe what the sections
+    // just reported on the very render that mounted them. The callback
+    // identities stay stable — every section subscribes through a context.
+    const hiddenKey = `${step?.id || ''}:${density}:${mode ?? 'gesture'}`;
     const hiddenKeyRef = useRef(hiddenKey);
     hiddenKeyRef.current = hiddenKey;
     const [hiddenByKey, setHiddenByKey] = useState({});
@@ -208,8 +223,21 @@ export default function NodeDetailView({
             return { ...prev, [k]: next };
         });
     }, []);
+    const onShownSection = useCallback((sectionKey) => {
+        setHiddenByKey((prev) => {
+            const k = hiddenKeyRef.current;
+            const cur = prev[k];
+            if (!cur?.has(sectionKey)) return prev;
+            const next = new Set(cur);
+            next.delete(sectionKey);
+            return { ...prev, [k]: next };
+        });
+    }, []);
     const hiddenCount = hiddenByKey[hiddenKey]?.size || 0;
-    const densityValue = useMemo(() => ({ density, onHiddenSection }), [density, onHiddenSection]);
+    const densityValue = useMemo(
+        () => ({ density, mode, onHiddenSection, onShownSection }),
+        [density, mode, onHiddenSection, onShownSection],
+    );
 
     // "What goes in, what comes out" — the quick view's one line of data, and
     // the header of the full view's Output column.
@@ -394,14 +422,17 @@ export default function NodeDetailView({
 
     // The one line of data the small dialog shows, plus the way into everything
     // it left out. Rendered by SettingsForm on the left of its action bar (see
-    // footerLeft) so the dialog ends in a single footer. Both buttons open the
-    // full view, so nothing here is a dead end.
+    // footerLeft) so the dialog ends in a single footer. The In→Out button
+    // opens the full view (that is where the data lives); the mode link
+    // reveals the hidden sections IN THIS dialog — "More options" used to do
+    // the first while promising the second (it swapped a 640px dialog for the
+    // three-column workspace and STILL hid the advanced sections).
     const quickFooterInfo = (
         <>
             <button
                 type="button"
                 onClick={goFull}
-                title="Open the full view to see the data"
+                title={t('routines.builder.see_data_in_out', 'See the data going in and coming out')}
                 className="inline-flex items-center gap-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] min-w-0"
             >
                 <span className="text-[var(--text-tertiary)]">In</span>
@@ -410,13 +441,17 @@ export default function NodeDetailView({
                 <span className="text-[var(--text-tertiary)]">Out</span>
                 <span className="truncate">{outSummary?.label || (isTrigger ? '—' : 'not run yet')}</span>
             </button>
-            <button
-                type="button"
-                onClick={goFull}
-                className="inline-flex items-center gap-1 shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium"
-            >
-                {hiddenCount > 0 ? `More options (${hiddenCount})` : 'More options'} <ChevronRight size={12} />
-            </button>
+            {onModeChange ? (
+                <FormModeToggle variant="link" mode={effectiveMode} onChange={onModeChange} hiddenCount={hiddenCount} />
+            ) : (
+                <button
+                    type="button"
+                    onClick={goFull}
+                    className="inline-flex items-center gap-1 shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium"
+                >
+                    {hiddenCount > 0 ? `More options (${hiddenCount})` : 'More options'} <ChevronRight size={12} />
+                </button>
+            )}
         </>
     );
 
@@ -430,7 +465,10 @@ export default function NodeDetailView({
                 data-surface="default"
                 role="dialog"
                 aria-modal="true"
-                aria-label={`Edit ${step.label || step.type}`}
+                // The human name, not the raw type — a screen reader announcing
+                // "Edit integration_action" names the implementation, not the
+                // step the user opened.
+                aria-label={`Edit ${headerTitle(step, catalog)}`}
                 // Quick is a small dialog that grows with its content; full is
                 // the wide three-column workspace.
                 //
@@ -439,7 +477,7 @@ export default function NodeDetailView({
                 // solid themes, a frosted tier under glass) which wins over a
                 // Tailwind utility. Setting one here only looks like it works.
                 className={`relative flex flex-col rounded-xl border border-[var(--border-default)] shadow-2xl overflow-hidden ${
-                    quick ? 'w-full max-w-[640px] max-h-[80vh]' : 'w-full max-w-[1600px] h-[88vh]'
+                    quick ? 'w-full max-w-[960px] max-h-[80vh]' : 'w-full max-w-[1600px] h-[88vh]'
                 }`}
             >
                 {/* Header — identity + per-step actions + column toggles + close.
@@ -456,7 +494,7 @@ export default function NodeDetailView({
                             <span className="shrink-0 inline-flex"><IntegrationLogo tool={step.tool} size={22} /></span>
                         )}
                         <div className="min-w-0">
-                            <div className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">{stepTypeLabel(step)}</div>
+                            <div className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">{stepTypeLabel(step, t)}</div>
                             <div data-testid="ndv-title" className="text-base font-semibold text-[var(--text-primary)] truncate leading-tight" title={step.tool || undefined}>
                                 {headerTitle(step, catalog)}
                             </div>
@@ -535,6 +573,11 @@ export default function NodeDetailView({
                                     <Trash2 size={11} /> Delete
                                 </button>
                             )}
+                            </>)}
+                            {/* Retry renders at BOTH densities — a failed step
+                                is the most likely reason the compact dialog is
+                                open, and the way to try again used to live only
+                                in the full view. */}
                             {typeof onRetryFromStep === 'function' && runStep?.status === 'error' && (
                                 <button
                                     onClick={() => onRetryFromStep(step.id)}
@@ -545,11 +588,20 @@ export default function NodeDetailView({
                                     <RotateCw size={11} /> Retry
                                 </button>
                             )}
-                            </>)}
                         </div>
                     )}
 
                     <div className="ml-auto flex items-center gap-1">
+                        {/* Simple / All options — the user's standing choice of
+                            how much form exists, at BOTH densities. The words
+                            "Simple" and "all options" belong to this control
+                            alone; the density buttons below talk only about
+                            window size. */}
+                        {onModeChange && !isTrigger && (
+                            <span className="mr-1">
+                                <FormModeToggle mode={effectiveMode} onChange={onModeChange} size="sm" />
+                            </span>
+                        )}
                         {/* Page through the flow in execution order, and say
                             where you are while doing it (BFSF-332). Full view
                             only — the quick dialog is a one-node glance. */}
@@ -579,13 +631,13 @@ export default function NodeDetailView({
                             </div>
                         )}
                         {quick ? (
-                            <button onClick={goFull} title="Show everything — input data, all options, output" aria-label="Expand to the full view" className={iconBtn}>
+                            <button onClick={goFull} title="Open the full view — input data and output side by side" aria-label="Expand to the full view" className={iconBtn}>
                                 <Maximize2 size={15} />
                             </button>
                         ) : (
                             <>
                                 {onDensityChange && (
-                                    <button onClick={goQuick} title="Simple view — just the settings this step needs" aria-label="Simple view" className={iconBtn}>
+                                    <button onClick={goQuick} title="Shrink to the small dialog" aria-label="Shrink to the small dialog" className={iconBtn}>
                                         <Minimize2 size={15} />
                                     </button>
                                 )}

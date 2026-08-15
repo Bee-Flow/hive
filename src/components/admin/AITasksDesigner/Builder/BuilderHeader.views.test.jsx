@@ -21,7 +21,7 @@ const props = (over = {}) => ({
     ...over,
 });
 
-const openMenu = () => fireEvent.click(screen.getByRole('button', { expanded: false, name: /Editor|Settings|Run history|Version history/ }));
+const openMenu = () => fireEvent.click(screen.getByRole('button', { expanded: false, name: /Editor|Settings|Runs|Saved versions/ }));
 
 beforeEach(() => cleanup());
 
@@ -34,18 +34,20 @@ describe('BuilderHeader — view switcher', () => {
         expect(p.onTabChange).toHaveBeenCalledWith('build');
     });
 
-    it('offers Version history as a view of its own', () => {
+    it('offers Saved versions as a view of its own, described but named by its label', () => {
         const p = props();
         render(<BuilderHeader {...p} />);
         openMenu();
-        expect(screen.getAllByRole('menuitemradio').map(el => el.textContent.trim()))
-            .toEqual(['Editor', 'Settings', 'Run history', 'Version history']);
-        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Version history' }));
+        // Accessible NAMES are the labels alone (the descriptions under them
+        // are aria-hidden display copy).
+        expect(screen.getAllByRole('menuitemradio').map(el => el.getAttribute('aria-label')))
+            .toEqual(['Editor', 'Settings', 'Runs', 'Saved versions']);
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Saved versions' }));
         expect(p.onTabChange).toHaveBeenCalledWith('versions');
     });
 
     it('shows the current view on the closed button', () => {
         render(<BuilderHeader {...props({ tab: 'versions' })} />);
-        expect(screen.getByRole('button', { name: 'Version history' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Saved versions' })).toBeTruthy();
     });
 });

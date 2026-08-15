@@ -401,7 +401,7 @@ export const APP_COMPONENT_TYPES = {
         Component: AppKanban, label: 'Kanban', icon: SquareKanban, category: 'Data',
         defaultProps: {
             source: { kind: 'static', value: [] }, groupByField: 'status', columns: [],
-            titleKey: 'title', subtitleKey: null, badgeKey: null, allowDrag: true,
+            titleKey: 'title', subtitleKey: null, badgeKey: null, badgeToneMap: [], allowDrag: true,
         },
         defaultStyle: { span: 12 },
     },

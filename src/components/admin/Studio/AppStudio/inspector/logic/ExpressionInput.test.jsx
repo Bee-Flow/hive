@@ -92,8 +92,33 @@ describe('ExpressionInput — the condition builder is offered only where a bool
         node: { id: 'cmp_a', type: 'text' },
     };
 
-    it('offers it when expectsBoolean is set', () => {
+    /**
+     * The clickable builder is what OPENS where a boolean is wanted. It used to
+     * be the other way round — a monospace textarea first, the builder behind a
+     * link underneath — so the first thing somebody met when asked "when should
+     * this show?" was an empty code box.
+     */
+    it('opens on the condition builder when a boolean is wanted', () => {
         renderInput({ value: 'form.quantity > 0', expectsBoolean: true, ...withNode });
+        expect(screen.getByText('Write a formula')).toBeTruthy();
+        expect(screen.queryByText('Use the condition builder')).toBeNull();
+    });
+
+    it('opens on the builder for an unset boolean field too', () => {
+        renderInput({ value: '', expectsBoolean: true, ...withNode });
+        expect(screen.getByText('Write a formula')).toBeTruthy();
+    });
+
+    it('leaves an expression the builder cannot hold in the formula box', () => {
+        // Mixed AND/OR is not a flat list of rows joined one way, so the row
+        // model refuses it. Opening the builder on it would only strand the
+        // author in the builder's OWN raw textarea, a click further from the
+        // picker and the live preview this one has.
+        renderInput({
+            value: "form.a == 1 && form.b == 2 || form.c == 3",
+            expectsBoolean: true,
+            ...withNode,
+        });
         expect(screen.getByText('Use the condition builder')).toBeTruthy();
     });
 

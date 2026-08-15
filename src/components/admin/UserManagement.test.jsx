@@ -143,7 +143,6 @@ describe('UserManagement', () => {
         expect(screen.getAllByText(/admin\.org_source_label/)).toHaveLength(2);
         expect(screen.getByText(/admin\.org_source_nextcloud_connector/)).toBeInTheDocument();
         expect(screen.getByText(/admin\.org_source_unknown/)).toBeInTheDocument();
-        expect(screen.getByText(/admin\.org_terms_channel_connector/)).toBeInTheDocument();
     });
 
     it('reports a load failure rather than rendering an empty table', async () => {

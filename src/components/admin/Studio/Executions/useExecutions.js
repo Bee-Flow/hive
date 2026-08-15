@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
+import scopedStorage from '../../../../utils/scopedStorage';
 
 // Date-range chip → hours (0 = all time).
 export const RANGE_HOURS = { '24h': 24, '7d': 168, '30d': 720, all: 0 };
@@ -8,9 +9,12 @@ export const RANGE_HOURS = { '24h': 24, '7d': 168, '30d': 720, all: 0 };
 export function statusFilterToServer(status) {
     if (!status || status === 'all') return undefined;
     if (status === 'running') return ['running', 'queued'];
-    if (status === 'awaiting') return ['awaiting_approval', 'awaiting_confirm'];
+    if (status === 'awaiting') return ['awaiting_approval', 'awaiting_confirm', 'awaiting_form'];
+    if (status === 'cancelled') return ['cancelled'];
     return [status]; // 'error' | 'success'
 }
+
+const DEFAULT_FILTERS = { status: 'all', range: '24h', trigger: null, automationId: null, mode: 'live' };
 
 /**
  * List-data hook for the executions table: cursor pagination, server-side
@@ -20,7 +24,7 @@ export function statusFilterToServer(status) {
  * scope: 'global' | 'automation' | 'step'. For automation/step the list is
  * fixed to that id; for global the user can filter by automation.
  */
-export default function useExecutions({ scope, automationId, stepId, pageSize = 50 }) {
+export default function useExecutions({ scope, automationId, stepId, pageSize = 50, enabled = true }) {
     const api = useAutomationApi();
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -28,7 +32,30 @@ export default function useExecutions({ scope, automationId, stepId, pageSize = 
     const [error, setError] = useState(null);
     const [hasMore, setHasMore] = useState(false);
     const [facets, setFacets] = useState(null);
-    const [filters, setFilters] = useState({ status: 'all', range: '24h', trigger: null, automationId: null });
+    const [filters, setFiltersState] = useState(DEFAULT_FILTERS);
+
+    // Filters persist per scope — closing a run must not reset a
+    // failures-last-7-days view someone set up. Rehydrated in an EFFECT, not
+    // the lazy initializer: scopedStorage is a no-op until setCurrentUser has
+    // run, and child effects fire before the parent's on first hydration.
+    const hydratedRef = useRef(false);
+    useEffect(() => {
+        if (hydratedRef.current) return;
+        hydratedRef.current = true;
+        const stored = scopedStorage.getJSON?.(`runsFilters.${scope}`, null)
+            ?? (() => { try { return JSON.parse(scopedStorage.getItem(`runsFilters.${scope}`) || 'null'); } catch { return null; } })();
+        if (stored && typeof stored === 'object') {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- adopt-once cold-load sync
+            setFiltersState(prev => ({ ...prev, ...stored }));
+        }
+    }, [scope]);
+    const setFilters = useCallback((updater) => {
+        setFiltersState(prev => {
+            const next = typeof updater === 'function' ? updater(prev) : updater;
+            try { scopedStorage.setItem(`runsFilters.${scope}`, JSON.stringify(next)); } catch { /* quota */ }
+            return next;
+        });
+    }, [scope]);
 
     const cursorRef = useRef(null);
     const reqIdRef = useRef(0); // guards against out-of-order responses
@@ -45,9 +72,11 @@ export default function useExecutions({ scope, automationId, stepId, pageSize = 
         if (scopedAutomationId) q.automationId = scopedAutomationId;
         const hrs = RANGE_HOURS[filters.range] ?? 24;
         if (hrs > 0) q.since = new Date(Date.now() - hrs * 3600 * 1000).toISOString();
-        // The live table is production runs only; Steps show everything (their
-        // test runs are dry-runs and there's nothing else to show).
-        if (scope !== 'step') q.mode = 'live';
+        // Default to production runs, with "Tests only" / "Live runs and
+        // tests" one select away. THE STEP EXEMPTION IS LOAD-BEARING: a
+        // Reusable Step's runs are ALL dry-runs — defaulting it to live
+        // would empty the list entirely.
+        if (scope !== 'step' && filters.mode !== 'both') q.mode = filters.mode || 'live';
         return q;
     }, [filters, scopedAutomationId, scope, pageSize]);
 
@@ -97,21 +126,32 @@ export default function useExecutions({ scope, automationId, stepId, pageSize = 
         finally { if (myReq === reqIdRef.current) setLoadingMore(false); }
     }, [fetchPage, queryFor, loadingMore]);
 
-    // Reload when filters / scope change.
-    useEffect(() => { refresh(); }, [refresh]);
+    // Reload when filters / scope change — but never while inactive: a
+    // hidden-mounted panel (the builder keeps it mounted behind other views)
+    // must not fetch until its first activation.
+    const wasEnabledRef = useRef(false);
+    useEffect(() => {
+        if (!enabled) return;
+        wasEnabledRef.current = true;
+        refresh();
+    }, [refresh, enabled]);
 
     // Facet counts for the chips (status/trigger breakdown within the date +
     // automation context). Best-effort — chips fall back to no counts on error.
+    // NOT keyed on rows.length: that re-ran an unbounded server scan on every
+    // appended page. The server clamps `range` to 720h — sending more is a
+    // silent no-op, so the "All" chip keeps 720 and the bar labels it.
     useEffect(() => {
+        if (!enabled) return undefined;
         let alive = true;
         const range = RANGE_HOURS[filters.range] ?? 24;
         api.getRunFacets({
             range: range || 720,
             automationId: scopedAutomationId,
-            mode: scope !== 'step' ? 'live' : undefined,
+            mode: scope !== 'step' && filters.mode !== 'both' ? (filters.mode || 'live') : undefined,
         }).then(r => { if (alive) setFacets(r.facets || null); }).catch(() => {});
         return () => { alive = false; };
-    }, [api, filters.range, scopedAutomationId, scope, rows.length]);
+    }, [api, filters.range, filters.mode, scopedAutomationId, scope, enabled]);
 
     // Merge a live SSE event into the list. Respects the active filters so a
     // just-started run that doesn't match the status filter isn't injected.

@@ -1,7 +1,7 @@
 import { AlertTriangle, Braces, FunctionSquare, SlidersHorizontal } from 'lucide-react';
 import React from 'react';
 import ConditionField from './ConditionField';
-import useExpressionEditing, { useConditionToggle } from './useExpressionEditing';
+import useExpressionEditing, { conditionCanHold, useConditionToggle } from './useExpressionEditing';
 import VariablePicker from '../../../../AITasksDesigner/Builder/mapping/VariablePicker';
 import { FORMULA_SCOPE_ROOTS } from '../styleKnobMeta';
 
@@ -63,8 +63,18 @@ export default function ExpressionInput({
         openPicker, closePicker, insertPath, handleInput, handleDragOver, handleDrop,
     } = useExpressionEditing({ value, onChange, previewSample, roots, disabled });
 
-    const { asCondition, setAsCondition } = useConditionToggle(false);
     const canUseCondition = expectsBoolean && !!(definition && node) && variant === 'block';
+    // Where a boolean is wanted and the clickable builder can hold what is
+    // already there, that is what opens. It used to open on the monospace
+    // textarea every time, with the builder behind a link at the bottom — so
+    // the first thing a bookkeeper met when asked "when should this show?" was
+    // an empty code box, and the answer to "can I do this without writing
+    // code" was no until they found the link. The escape to a formula stays one
+    // click away, and an expression the builder CANNOT hold still opens raw
+    // rather than being mangled into rows.
+    const { asCondition, setAsCondition } = useConditionToggle(
+        () => canUseCondition && conditionCanHold(value),
+    );
     const name = ariaLabel || label || 'Formula';
 
     if (asCondition && canUseCondition) {

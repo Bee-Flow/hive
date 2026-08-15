@@ -8,7 +8,7 @@ import beeFlowLogo from '../assets/bee-flow-logo.svg';
 // for each `planType` so organisation and consumer plans stay visually
 // separate. Reachable when the admin flips "Visible on public pricing
 // page" on a plan in the admin Plans panel. Visual chrome mirrors
-// HomePage and LegalPage so the three public pages feel like one site.
+// HomePage so the public pages feel like one site.
 
 // Order matters: teams first (B2B-positioned product), individuals
 // second. Anything missing a known planType is treated as an

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 import { API_BASE, authFetch } from '../../../../../utils/helpers';
 
 /**
@@ -65,6 +66,9 @@ export const APP_MEMBERS_KEY = (appId) => ['studio-app-members', appId];
  */
 export default function useAppRoles(appId) {
     const qc = useQueryClient();
+    // The model version the SERVER last reported, kept out of the cached data so
+    // it is never confused with one the client made up. null = not known yet.
+    const serverVersionRef = useRef(null);
     const schemaKey = APP_SCHEMA_KEY(appId);
     const membersKey = APP_MEMBERS_KEY(appId);
 
@@ -72,6 +76,11 @@ export default function useAppRoles(appId) {
         queryKey: schemaKey,
         queryFn: async () => {
             const body = await request(`${base}/${enc(appId)}/schema`);
+            // The version lives BESIDE the model on the wire, and it is the ROW's
+            // version — not whatever `modelVersion` the stored model happens to
+            // carry. Held apart from the data so it can never be confused with
+            // one the client invented.
+            serverVersionRef.current = Number.isInteger(body?.modelVersion) ? body.modelVersion : null;
             return body && body.model && typeof body.model === 'object' ? body.model : null;
         },
         enabled: !!appId,
@@ -105,11 +114,48 @@ export default function useAppRoles(appId) {
         return (cached && typeof cached === 'object') ? cached : (model || emptyModel());
     };
 
+    /**
+     * Save the WHOLE data model.
+     *
+     * Every writer here merges into a cached model and PUTs the result, and the
+     * cache is 30s stale — so this used to be a blind last-write-wins overwrite
+     * of everything. Add a column in Tables, then save a row rule in Roles &
+     * access, and the column was gone: the rule's PUT carried the model as it
+     * had been read before the column existed, and nothing anywhere said so.
+     *
+     * `expectedVersion` is the guard the server has always offered (409 with
+     * its current model). It is sent ONLY when the server actually reported a
+     * version — an app with no data model yet is at version 0, and inventing a
+     * number for it would make the very first save conflict with nothing.
+     */
     const putModel = async (nextModel) => {
-        const body = await request(`${base}/${enc(appId)}/schema`, {
-            method: 'PUT',
-            body: JSON.stringify({ model: nextModel }),
-        });
+        const expected = serverVersionRef.current;
+        let body;
+        try {
+            body = await request(`${base}/${enc(appId)}/schema`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    model: nextModel,
+                    ...(Number.isInteger(expected) ? { expectedVersion: expected } : {}),
+                }),
+            });
+        } catch (err) {
+            if (err.status === 409) {
+                serverVersionRef.current = Number.isInteger(err.body?.currentVersion)
+                    ? err.body.currentVersion
+                    : null;
+                if (err.body?.model && typeof err.body.model === 'object') {
+                    qc.setQueryData(schemaKey, err.body.model);
+                }
+                qc.invalidateQueries({ queryKey: schemaKey });
+                const conflict = new Error("The app's data changed somewhere else while this panel was open — it has been reloaded, so try again.");
+                conflict.status = 409;
+                conflict.conflict = true;
+                throw conflict;
+            }
+            throw err;
+        }
+        if (Number.isInteger(body?.modelVersion)) serverVersionRef.current = body.modelVersion;
         // Optimistically adopt the model we just persisted, then refetch to pick
         // up the server's canonical version.
         qc.setQueryData(schemaKey, nextModel);

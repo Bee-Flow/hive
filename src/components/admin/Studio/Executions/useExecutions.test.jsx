@@ -30,7 +30,8 @@ describe('statusFilterToServer', () => {
     it('maps each filter to its server status set', () => {
         expect(statusFilterToServer('all')).toBeUndefined();
         expect(statusFilterToServer('running')).toEqual(['running', 'queued']);
-        expect(statusFilterToServer('awaiting')).toEqual(['awaiting_approval', 'awaiting_confirm']);
+        expect(statusFilterToServer('awaiting')).toEqual(['awaiting_approval', 'awaiting_confirm', 'awaiting_form']);
+        expect(statusFilterToServer('cancelled')).toEqual(['cancelled']);
         expect(statusFilterToServer('error')).toEqual(['error']);
         expect(statusFilterToServer('success')).toEqual(['success']);
     });

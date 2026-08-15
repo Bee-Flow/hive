@@ -70,6 +70,7 @@ export const PALETTE_ABSENT = {
  */
 export const SYNTHETIC_TYPES = {
     loop_item: 'the "Each item" pill at the head of an expanded loop; never part of a definition',
+    ai_tool: 'one tool chip under an AI step, drawn from its tools[] array; never a step of its own',
 };
 
 const K = 'routines.node';
@@ -82,6 +83,14 @@ const K = 'routines.node';
  * @property {string}   desc          the one-line palette description
  * @property {string}   help          "what does this node do?", 1-2 sentences
  * @property {string[]} sectionKeys   accordion sections this type's editor renders
+ * @property {string[]} [simpleSections] the subset shown in Simple mode — the
+ *                      sections that make this step type WORK. Every entry must
+ *                      also appear in sectionKeys. Omitted (approval, parallel,
+ *                      anything new): Simple falls back to the global
+ *                      ADVANCED_SECTION_KEYS rule in formDensity.js — a
+ *                      documented default, not an omission. Sections holding a
+ *                      validation error, or already configured (hasContent),
+ *                      are shown regardless.
  * @property {object}   issueSections {fallback, map} — validation path → section
  */
 export const NODE_DEFS = {
@@ -92,6 +101,7 @@ export const NODE_DEFS = {
         typeLabel: 'Trigger', defaultLabel: 'Trigger',
         help: 'What starts this routine. Every routine has exactly one.',
         sectionKeys: ['inputs', 'config'],
+        simpleSections: ['inputs', 'config'],
         issueSections: {
             fallback: 'config',
             // All the kind-specific forms — schedule builder, app-event picker,
@@ -110,6 +120,7 @@ export const NODE_DEFS = {
         label: 'AI step', desc: 'Reason and call tools with AI',
         help: 'Hands the run to an AI model with your instructions, and passes on what it produces.',
         sectionKeys: ['inputs', 'advanced', 'output'],
+        simpleSections: ['inputs'],
         issueSections: {
             fallback: 'advanced',
             map: {
@@ -123,6 +134,7 @@ export const NODE_DEFS = {
         typeLabel: 'Action', defaultLabel: 'Integration',
         help: 'Does one thing in a connected app — send the email, create the file, update the row.',
         sectionKeys: ['basics', 'inputs', 'advanced'],
+        simpleSections: ['basics', 'inputs'],
         issueSections: {
             fallback: 'basics',
             map: { label: FLAT, tool: 'basics', operation: 'basics', inputs: 'inputs', forEach: 'advanced' },
@@ -137,6 +149,7 @@ export const NODE_DEFS = {
         label: 'Condition', desc: 'Keep, split or branch — one rule or many',
         help: 'Asks a yes/no question about your data and sends the run out of the matching side.',
         sectionKeys: ['rules', 'advanced'],
+        simpleSections: ['rules'],
         issueSections: {
             fallback: 'rules',
             map: { label: FLAT, expr: 'rules', cases: 'rules', arrayRef: 'advanced', maxItems: 'advanced', defaultBranch: 'advanced' },
@@ -146,6 +159,7 @@ export const NODE_DEFS = {
         typeLabel: 'Condition', defaultLabel: 'Condition',
         help: 'Asks a yes/no question about your data and sends the run out of the matching side.',
         sectionKeys: ['rules', 'advanced'],
+        simpleSections: ['rules'],
         issueSections: {
             fallback: 'rules',
             // arrayRef/maxItems used to map to a section called 'source' that
@@ -161,6 +175,7 @@ export const NODE_DEFS = {
         typeLabel: 'Condition', defaultLabel: 'Condition',
         help: 'Asks a yes/no question about your data and sends the run out of the matching side.',
         sectionKeys: ['rules', 'advanced'],
+        simpleSections: ['rules'],
         issueSections: {
             fallback: 'rules',
             map: { label: FLAT, expr: 'rules', arrayRef: 'advanced', maxItems: 'advanced' },
@@ -171,6 +186,7 @@ export const NODE_DEFS = {
         label: 'Repeat for each', desc: 'Run the steps inside once for every item in a list',
         help: 'Takes a list and runs the steps inside it once per item. Each item is available to those steps as loop.item.',
         sectionKeys: ['loop', 'body'],
+        simpleSections: ['loop', 'body'],
         issueSections: {
             fallback: 'loop',
             map: { label: FLAT, overRef: 'loop', itemVar: 'loop', maxIterations: 'loop', batchSize: 'loop', body: 'body' },
@@ -181,6 +197,7 @@ export const NODE_DEFS = {
         label: 'Wait', desc: 'Pause before the next step — seconds, minutes or hours',
         help: 'Holds the run here for a set time, then carries on. Up to 24 hours.',
         sectionKeys: ['config'],
+        simpleSections: ['config'],
         issueSections: { fallback: 'config', map: { label: FLAT, seconds: 'config' } },
     },
     stop_error: {
@@ -188,6 +205,7 @@ export const NODE_DEFS = {
         label: 'Stop with an error', desc: 'End the run now and record why',
         help: 'Ends the run immediately and records your message as the reason. Nothing after this node ever runs.',
         sectionKeys: ['config'],
+        simpleSections: ['config'],
         issueSections: { fallback: 'config', map: { label: FLAT, message: 'config' } },
     },
     notification: {
@@ -195,6 +213,7 @@ export const NODE_DEFS = {
         label: 'Notification', desc: 'Send a message or alert',
         help: 'Sends a message to you or your team while the run is going — by in-app notification or email.',
         sectionKeys: ['message', 'advanced'],
+        simpleSections: ['message'],
         issueSections: {
             fallback: 'message',
             map: { label: FLAT, title: 'message', body: 'message', inputs: 'message', channels: 'message', forEach: 'advanced' },
@@ -204,6 +223,7 @@ export const NODE_DEFS = {
         typeLabel: 'Form page', defaultLabel: 'Ask for more info',
         help: 'Pauses the run and shows another page on the routine’s own form link, then continues with the answers.',
         sectionKeys: ['config', 'waiting'],
+        simpleSections: ['config', 'waiting'],
         issueSections: {
             fallback: 'config',
             map: { label: FLAT, mode: 'config', form: 'config', waitSeconds: 'waiting' },
@@ -218,6 +238,7 @@ export const NODE_DEFS = {
         label: 'Find personal data', desc: 'Scan a value and branch on whether it holds personal data',
         help: 'Looks through a value for names, addresses, ID numbers and the like, then sends the run out of the "personal data" or "clean" side.',
         sectionKeys: ['config', 'advanced'],
+        simpleSections: ['config'],
         issueSections: {
             fallback: 'config',
             map: { label: FLAT, sourceRef: 'config', onFound: 'config', categories: 'advanced', confidence: 'advanced', forEach: 'advanced' },
@@ -228,6 +249,7 @@ export const NODE_DEFS = {
         label: 'Hide personal data', desc: 'Swap personal data for placeholders; the real values come back on their own',
         help: 'Replaces personal data with placeholders before the value travels on — to an AI model, say. The real values are put back automatically wherever the run uses them again.',
         sectionKeys: ['config', 'advanced'],
+        simpleSections: ['config'],
         issueSections: {
             fallback: 'config',
             map: { label: FLAT, sourceRef: 'config', categories: 'advanced', confidence: 'advanced', forEach: 'advanced' },
@@ -238,6 +260,7 @@ export const NODE_DEFS = {
         label: 'Show real values again', desc: 'Put the real values back where a step still holds placeholders',
         help: 'Puts the real values back in place of any placeholders left in a value. Only needed where they did not already come back on their own.',
         sectionKeys: ['config'],
+        simpleSections: ['config'],
         issueSections: { fallback: 'config', map: { label: FLAT, sourceRef: 'config' } },
     },
 
@@ -249,6 +272,7 @@ export const NODE_DEFS = {
         label: 'Edit data', desc: 'Add, rename and organise fields — for one record or a whole table',
         help: 'Builds the exact set of fields the next step needs — adding, renaming and reorganising what came before.',
         sectionKeys: ['fields', 'table', 'advanced'],
+        simpleSections: ['fields', 'table'],
         issueSections: {
             fallback: 'fields',
             map: { label: FLAT, fields: 'fields', inputs: 'fields', forEach: 'advanced', arrayRef: 'advanced', maxItems: 'advanced', operations: 'table' },
@@ -259,6 +283,7 @@ export const NODE_DEFS = {
         label: 'Date & time', desc: 'Get today’s date, reformat one, add days, or compare two',
         help: 'Works with dates and times: today’s date, reading one out of text, reformatting it, shifting it, or measuring the gap between two.',
         sectionKeys: ['config'],
+        simpleSections: ['config'],
         issueSections: {
             fallback: 'config',
             map: { label: FLAT, op: 'config', input: 'config', input2: 'config', amount: 'config', format: 'config', part: 'config', unit: 'config' },
@@ -269,6 +294,7 @@ export const NODE_DEFS = {
         label: 'Call a web service', desc: 'Send a request to a system that has no ready-made action here',
         help: 'Sends a request straight to another system’s web address and passes on what it sends back. For systems with no ready-made action in the Action list.',
         sectionKeys: ['request', 'auth', 'headers', 'body', 'options'],
+        simpleSections: ['request', 'auth', 'body'],
         issueSections: {
             fallback: 'request',
             map: { label: FLAT, url: 'request', method: 'request', headers: 'headers', body: 'body', timeoutMs: 'options', blockPrivateTargets: 'options', auth: 'auth' },
@@ -278,6 +304,7 @@ export const NODE_DEFS = {
         typeLabel: 'Parse JSON', defaultLabel: 'Parse JSON',
         help: 'Pulls named fields out of a block of JSON text. Retired — Edit data does this now.',
         sectionKeys: ['source', 'fields', 'options'],
+        simpleSections: ['source', 'fields'],
         issueSections: {
             fallback: 'fields',
             map: { label: FLAT, sourceRef: 'source', itemsRef: 'source', mode: 'fields', fields: 'fields' },
@@ -288,6 +315,7 @@ export const NODE_DEFS = {
         label: 'Code', desc: 'Run custom JavaScript',
         help: 'Runs a snippet of JavaScript in a sandbox and passes on whatever it returns.',
         sectionKeys: ['code', 'advanced'],
+        simpleSections: ['code'],
         issueSections: {
             fallback: 'code',
             map: { label: FLAT, code: 'code', language: 'code', forEach: 'advanced' },
@@ -300,6 +328,7 @@ export const NODE_DEFS = {
         label: 'Shorten list', desc: 'Keep only the first — or last — few items',
         help: 'Cuts a list down to the first or last few items and passes the shorter list on.',
         sectionKeys: ['config'],
+        simpleSections: ['config'],
         issueSections: {
             fallback: 'config',
             map: { label: FLAT, arrayRef: 'config', count: 'config', mode: 'config', maxItems: 'config' },
@@ -310,6 +339,7 @@ export const NODE_DEFS = {
         label: 'Remove duplicates', desc: 'Keep one of each — matching the whole item, or one field',
         help: 'Keeps one of each item and drops the repeats. Match on one field, or on the whole item.',
         sectionKeys: ['config'],
+        simpleSections: ['config'],
         issueSections: {
             fallback: 'config',
             map: { label: FLAT, arrayRef: 'config', field: 'config', keyField: 'config', maxItems: 'config' },
@@ -320,6 +350,7 @@ export const NODE_DEFS = {
         label: 'Collect one field', desc: 'Take the same field from every item — every email address, say',
         help: 'Reads one field from every item in a list and hands back a plain list of just those values.',
         sectionKeys: ['config'],
+        simpleSections: ['config'],
         issueSections: {
             fallback: 'config',
             map: { label: FLAT, arrayRef: 'config', field: 'config', maxItems: 'config' },
@@ -330,6 +361,7 @@ export const NODE_DEFS = {
         label: 'Add up or count', desc: 'Total, count, average, lowest or highest — across one field',
         help: 'Turns a list into a single number: the total, the count, the average, or the lowest or highest value of one field.',
         sectionKeys: ['config'],
+        simpleSections: ['config'],
         issueSections: {
             fallback: 'config',
             map: { label: FLAT, arrayRef: 'config', field: 'config', op: 'config', maxItems: 'config' },
@@ -341,6 +373,7 @@ export const NODE_DEFS = {
         typeLabel: 'Flowlet', defaultLabel: 'Flowlet',
         help: 'Runs a group of steps you built once and can reuse, then carries on with what it returns.',
         sectionKeys: ['flowlet', 'inputs', 'returns'],
+        simpleSections: ['flowlet', 'inputs', 'returns'],
         issueSections: {
             fallback: 'inputs',
             map: { label: FLAT, layerKey: 'flowlet', layerId: 'flowlet', inputs: 'inputs' },
@@ -351,6 +384,7 @@ export const NODE_DEFS = {
         help: 'Runs a reusable Step from your library, then carries on with what it returns.',
         // Had no issue map at all, so a bad input binding opened nothing.
         sectionKeys: ['step', 'inputs', 'returns'],
+        simpleSections: ['step', 'inputs', 'returns'],
         issueSections: {
             fallback: 'inputs',
             map: { label: FLAT, blockId: 'step', inputs: 'inputs' },
@@ -361,6 +395,7 @@ export const NODE_DEFS = {
         label: 'Flowlet output', desc: 'Return data from this flowlet to its caller',
         help: 'Ends a flowlet and hands the fields you name back to whatever called it.',
         sectionKeys: ['fields'],
+        simpleSections: ['fields'],
         issueSections: { fallback: 'fields', map: { label: FLAT, fields: 'fields' } },
     },
 
@@ -382,6 +417,10 @@ export const NODE_DEFS = {
     loop_item: {
         typeLabel: 'Each item',
         help: 'Where every step inside the loop starts. One item of the list at a time, available to those steps as loop.item.',
+    },
+    ai_tool: {
+        typeLabel: 'Tool',
+        help: 'Something the AI step above is allowed to use on its own — it decides whether to, and with what.',
     },
 };
 

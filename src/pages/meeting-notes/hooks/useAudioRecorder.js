@@ -7,6 +7,26 @@ function pickMimeType() {
     return 'audio/mp4';
 }
 
+// This is speech headed for an ASR engine, not music. MediaRecorder's default
+// is ~128 kbps, which is where the long-meeting failures came from: 90 minutes
+// at 128 kbps is ~86 MB, and the nginx in front of the API caps a request body
+// at 100 MB, so a 1.5-hour recording was rejected with a bare "HTTP 413" —
+// after the whole meeting had been recorded, with nothing salvageable.
+//
+// Opus is a speech codec first: 32 kbps mono is transparent for transcription
+// and diarisation, and puts that same meeting at ~22 MB. AAC (Safari's
+// audio/mp4 path) is far less efficient down there, so it gets 64 kbps —
+// ~43 MB for 90 minutes, still comfortably inside the limit.
+export const OPUS_BITS_PER_SECOND = 32000;
+export const AAC_BITS_PER_SECOND = 64000;
+
+/** The MediaRecorder constructor options: container + a speech-grade bitrate. */
+export function pickRecorderOptions() {
+    const mimeType = pickMimeType();
+    const isOpus = mimeType.includes('webm'); // webm here always means Opus
+    return { mimeType, audioBitsPerSecond: isOpus ? OPUS_BITS_PER_SECOND : AAC_BITS_PER_SECOND };
+}
+
 /**
  * MediaRecorder wrapper. Exposes state, elapsed time, mic level (0..1) and
  * resolves to a File when stopped. Safe to use in a component that may unmount
@@ -60,14 +80,20 @@ export default function useAudioRecorder({ onStopped } = {}) {
         startingRef.current = true;
         setError(null);
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // `channelCount: ideal 1` — a meeting is one room, not a stereo
+            // image, and a stereo capture splits the same bitrate over two
+            // channels for no transcription benefit. `ideal` (not `exact`) so a
+            // device that can only do stereo still records.
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: { channelCount: { ideal: 1 } },
+            });
             // Belt and braces: never abandon a live stream.
             if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
             streamRef.current = stream;
             chunksRef.current = [];
-            const mimeType = pickMimeType();
-            mimeRef.current = mimeType;
-            const recorder = new MediaRecorder(stream, { mimeType });
+            const options = pickRecorderOptions();
+            mimeRef.current = options.mimeType;
+            const recorder = new MediaRecorder(stream, options);
             recorderRef.current = recorder;
 
             recorder.ondataavailable = (e) => {

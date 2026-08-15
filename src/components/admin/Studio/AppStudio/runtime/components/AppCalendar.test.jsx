@@ -81,7 +81,9 @@ describe('AppCalendar — month view', () => {
         );
         const chip = container.querySelector('[data-app-calendar-day="2026-03-03"] [data-app-calendar-event]');
         fireEvent.click(chip);
-        expect(runAction).toHaveBeenCalledWith('act_row001', { formValues: ROWS[0] });
+        // The row goes out as `item` too — that is the name every picker and
+        // template teaches for it, and navigate params read `item.<field>`.
+        expect(runAction).toHaveBeenCalledWith('act_row001', { formValues: ROWS[0], item: ROWS[0] });
     });
 });
 

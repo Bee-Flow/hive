@@ -45,6 +45,10 @@ export default function CollapsibleSection({
     badge = null,
     variant = null,
     meta = null,
+    // What the counted things ARE ("Show 7 more fields"). Default keeps the
+    // historic wording, so "options" can mean exactly one thing in a panel
+    // that also counts hidden SECTIONS as options.
+    countNoun = 'option',
     defaultOpen = false,
     open: controlledOpen,
     onToggle,
@@ -70,7 +74,7 @@ export default function CollapsibleSection({
 
     const kind = variant || (count != null ? 'disclosure' : 'section');
     const label = count != null
-        ? (open ? 'Fewer options' : `Show ${count} more option${count === 1 ? '' : 's'}`)
+        ? (open ? `Fewer ${countNoun}s` : `Show ${count} more ${countNoun}${count === 1 ? '' : 's'}`)
         : title;
 
     const badgePill = badge != null && (

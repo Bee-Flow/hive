@@ -48,9 +48,14 @@ export function readStepPayload(dataTransfer) {
 
 /**
  * What is under the cursor on the React Flow canvas?
+ *   { kind: 'toolPort', id } — an AI step's bottom tools port (id = step id)
  *   { kind: 'edge', id }  — a connection (its fat transparent hit-path)
  *   { kind: 'node', id }  — a step node
  *   { kind: 'pane' }      — empty canvas
+ *
+ * The tool port is tested FIRST because it lives inside a node: it is the more
+ * specific target, and releasing an app on it means "give the AI this tool",
+ * not "add a step after the AI".
  *
  * React Flow stamps `data-id` on both the edge <g> and the node wrapper, so
  * the id maps straight back to the rendered edge/node we already hold in
@@ -61,6 +66,11 @@ export function readStepPayload(dataTransfer) {
 export function dropTargetFromPoint(x, y, doc = typeof document === 'undefined' ? null : document) {
     const el = doc?.elementFromPoint?.(x, y);
     if (!el || !el.closest) return { kind: 'pane' };
+    const port = el.closest('[data-tool-port]');
+    if (port?.getAttribute) {
+        const id = port.getAttribute('data-tool-port');
+        if (id) return { kind: 'toolPort', id };
+    }
     const edge = el.closest('.react-flow__edge');
     if (edge?.getAttribute) {
         const id = edge.getAttribute('data-id');

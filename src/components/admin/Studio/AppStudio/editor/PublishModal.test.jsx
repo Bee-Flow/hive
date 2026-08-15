@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // hoisted). PublishModal builds the PATCH payload and calls studioAppsApi.publish;
 // these tests assert the EXACT payload per audience mode.
 vi.mock('../studioAppsApi', () => {
-    const studioAppsApi = { publish: vi.fn() };
+    const studioAppsApi = { publish: vi.fn(), checkApp: vi.fn() };
     return { default: studioAppsApi, studioAppsApi };
 });
 vi.mock('../rbac/useAppRoles', () => ({ default: vi.fn(), useOrgDirectory: vi.fn() }));
@@ -91,6 +91,10 @@ beforeEach(() => {
     useOrgDirectory.mockReturnValue(DIRECTORY);
     useAppRoles.mockReturnValue(access());
     studioAppsApi.publish.mockResolvedValue({ success: true, isPublished: true, sharedGroups: [] });
+    studioAppsApi.checkApp.mockResolvedValue({
+        ok: true, static: { errors: [], warnings: [] },
+        bindings: [], roleFindings: [], actions: [], emptyTables: [],
+    });
 });
 
 describe('PublishModal', () => {
@@ -464,5 +468,126 @@ describe('PublishModal — a publish the server refuses', () => {
 
         await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Server unavailable'));
         expect(screen.queryByText(/to fix before publishing/)).toBeNull();
+    });
+});
+
+/**
+ * The publish gate only refuses what it can prove statically. What a
+ * hand-builder actually gets wrong — a list bound to an empty table, a screen
+ * that is blank for everyone but them, a save step writing a renamed column —
+ * is only visible by executing the bindings. The server has done that since
+ * Wave 4 (appDryRun); until now only the AI builder could ask for it.
+ */
+describe('PublishModal — checking the app before anyone else has to', () => {
+    const check = () => fireEvent.click(screen.getByRole('button', { name: /check this app/i }));
+
+    it('says so plainly when everything works', async () => {
+        render(<PublishModal open app={privateApp} definition={DEFINITION} onClose={vi.fn()} onPublished={vi.fn()} />);
+        check();
+        await waitFor(() => expect(studioAppsApi.checkApp).toHaveBeenCalledWith('app-1'));
+        expect(await screen.findByText(/every step checks out/i)).toBeTruthy();
+    });
+
+    it('reports a binding that could not load as broken', async () => {
+        studioAppsApi.checkApp.mockResolvedValue({
+            ok: false,
+            static: { errors: [], warnings: [] },
+            bindings: [{ nodeId: 'cmp_grid', prop: 'rows', kind: 'records', ok: false, error: 'no such table: orders' }],
+            roleFindings: [], actions: [], emptyTables: [],
+        });
+        render(<PublishModal open app={privateApp} definition={DEFINITION} onClose={vi.fn()} onPublished={vi.fn()} />);
+        check();
+        expect(await screen.findByText(/could not load its data/i)).toBeTruthy();
+        expect(screen.getByText(/no such table: orders/)).toBeTruthy();
+    });
+
+    /**
+     * Zero rows must never read as a failure — an unseeded demo table is normal
+     * and does not block a publish. It is still worth saying, because a list
+     * that renders empty looks broken to whoever opens the app.
+     */
+    it('treats an empty table as worth a look, not as broken', async () => {
+        studioAppsApi.checkApp.mockResolvedValue({
+            ok: true,
+            static: { errors: [], warnings: [] },
+            bindings: [{ nodeId: 'cmp_grid', prop: 'rows', kind: 'records', ok: true, rowCount: 0 }],
+            roleFindings: [], actions: [], emptyTables: ['tbl_1'],
+        });
+        render(<PublishModal open app={privateApp} definition={DEFINITION} onClose={vi.fn()} onPublished={vi.fn()} />);
+        check();
+        expect(await screen.findByText(/found no rows/i)).toBeTruthy();
+        expect(screen.getByText(/worth a look/i)).toBeTruthy();
+        expect(screen.queryByText(/are broken|is broken/i)).toBeNull();
+    });
+
+    it('warns that a role would see an empty screen', async () => {
+        studioAppsApi.checkApp.mockResolvedValue({
+            ok: true,
+            static: { errors: [], warnings: [] },
+            bindings: [],
+            roleFindings: [{ role: 'member', nodeId: 'cmp_grid', prop: 'rows', kind: 'records', ok: true, rowCount: 0 }],
+            actions: [], emptyTables: [],
+        });
+        render(<PublishModal open app={privateApp} definition={DEFINITION} onClose={vi.fn()} onPublished={vi.fn()} />);
+        check();
+        expect(await screen.findByText(/“member” role would see nothing/i)).toBeTruthy();
+    });
+
+    it('reports a step that writes a column that is not there', async () => {
+        studioAppsApi.checkApp.mockResolvedValue({
+            ok: true,
+            static: { errors: [], warnings: [] },
+            bindings: [], roleFindings: [],
+            actions: [{ actionId: 'act_save', step: 'create_record', ok: false, errors: ['unknown field "amount_due"'] }],
+            emptyTables: [],
+        });
+        render(<PublishModal open app={privateApp} definition={DEFINITION} onClose={vi.fn()} onPublished={vi.fn()} />);
+        check();
+        expect(await screen.findByText(/cannot run: create_record/i)).toBeTruthy();
+        expect(screen.getByText(/unknown field "amount_due"/)).toBeTruthy();
+    });
+
+    /**
+     * The dry run names the COMPONENT it executed, not a validator path, so
+     * "Show me" has to work from an id too — otherwise the one finding that
+     * points at a real node on screen is the one you cannot jump to.
+     */
+    it('jumps to the component a dry-run finding names', async () => {
+        studioAppsApi.checkApp.mockResolvedValue({
+            ok: false,
+            static: { errors: [], warnings: [] },
+            bindings: [{ nodeId: 'cmp_inner', prop: 'rows', kind: 'records', ok: false, error: 'boom' }],
+            roleFindings: [], actions: [], emptyTables: [],
+        });
+        const onRevealNode = vi.fn();
+        const onClose = vi.fn();
+        render(
+            <PublishModal
+                open app={privateApp} definition={DEFINITION}
+                onClose={onClose} onPublished={vi.fn()} onRevealNode={onRevealNode}
+            />,
+        );
+        check();
+        fireEvent.click(await screen.findByRole('button', { name: 'Show me' }));
+        expect(onRevealNode).toHaveBeenCalledWith({ nodeId: 'cmp_inner', screenId: 'scr_home' });
+    });
+
+    it('surfaces a static error the same way the refused publish does', async () => {
+        studioAppsApi.checkApp.mockResolvedValue({
+            ok: false,
+            static: { errors: [ERR_BUTTON], warnings: [] },
+            bindings: [], roleFindings: [], actions: [], emptyTables: [],
+        });
+        render(<PublishModal open app={privateApp} definition={DEFINITION} onClose={vi.fn()} onPublished={vi.fn()} />);
+        check();
+        expect(await screen.findByText(ERR_BUTTON.message)).toBeTruthy();
+        expect(screen.getByText(ERR_BUTTON.hint)).toBeTruthy();
+    });
+
+    it('does not publish anything just because you checked', async () => {
+        render(<PublishModal open app={privateApp} definition={DEFINITION} onClose={vi.fn()} onPublished={vi.fn()} />);
+        check();
+        await waitFor(() => expect(studioAppsApi.checkApp).toHaveBeenCalled());
+        expect(studioAppsApi.publish).not.toHaveBeenCalled();
     });
 });

@@ -140,3 +140,40 @@ describe('RowRuleBuilder — no access selected', () => {
         expect(getByLabelText('Remove condition 1').disabled).toBe(true);
     });
 });
+
+/**
+ * A select column's options may be plain strings OR {value,label} objects —
+ * the shape optionPairs exists to normalise, and the one the table designer
+ * writes as soon as a choice is given a display name. Rendering the raw entries
+ * put an OBJECT in a React child slot, which throws: opening the row-rule
+ * builder on such a column took the whole Roles & access panel down.
+ */
+describe('RowRuleBuilder — a choice column with {value,label} options', () => {
+    const labelled = {
+        ...table,
+        fields: table.fields.map((f) => (f.key === 'status'
+            ? { ...f, options: [{ value: 'open', label: 'Open' }, { value: 'done', label: 'Done' }] }
+            : f)),
+    };
+    const statusCond = (value) => cond({ field: 'status', op: '==', source: 'value', value, valueType: 'string' });
+
+    it('renders the choices by their label instead of crashing', () => {
+        const { getByLabelText } = setup(
+            { conditions: [statusCond('open')] },
+            { table: labelled },
+        );
+        const select = getByLabelText('Value, condition 1');
+        expect([...select.options].map((o) => o.textContent))
+            .toEqual(expect.arrayContaining(['Open', 'Done']));
+        // The value written is the option's VALUE, not its label.
+        expect(select.value).toBe('open');
+    });
+
+    it('keeps a saved value that is no longer one of the choices', () => {
+        const { getByLabelText } = setup(
+            { conditions: [statusCond('archived')] },
+            { table: labelled },
+        );
+        expect(getByLabelText('Value, condition 1').value).toBe('archived');
+    });
+});

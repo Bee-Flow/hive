@@ -69,3 +69,97 @@ describe('useAppRoles', () => {
         expect(authFetch).not.toHaveBeenCalled();
     });
 });
+
+/**
+ * Every writer here merges into a CACHED model and PUTs the whole thing, and
+ * that cache is 30s stale. With no expectedVersion it was a blind
+ * last-write-wins overwrite: add a column in Tables, then save a row rule, and
+ * the column was gone — the rule's PUT carried the model as it had been read
+ * before the column existed, and nothing anywhere said so.
+ */
+describe('useAppRoles — a whole-model save carries the version it read', () => {
+    beforeEach(() => authFetch.mockReset());
+
+    const schemaBody = (modelVersion) => ({
+        model: { roles: [], roleMapping: { default: 'app', byGroup: {} }, tables: [] },
+        modelVersion,
+    });
+
+    function mockSchema(modelVersion, onPut) {
+        authFetch.mockImplementation((rawUrl, options) => {
+            const url = String(rawUrl);
+            if (url.includes('/members')) return resp(200, { members: [] });
+            if (url.includes('/schema') && options?.method === 'PUT') return onPut(JSON.parse(options.body));
+            if (url.includes('/schema')) return resp(200, schemaBody(modelVersion));
+            return resp(404, {});
+        });
+    }
+
+    it('sends the version the server reported', async () => {
+        let sent = null;
+        mockSchema(7, (body) => { sent = body; return resp(200, { modelVersion: 8 }); });
+        const { result } = renderHook(() => useAppRoles('a1'), { wrapper: makeWrapper() });
+        await waitFor(() => expect(result.current.hasModel).toBe(true));
+
+        await result.current.saveRoles({ roles: [{ key: 'member', label: 'Member' }] });
+        expect(sent.expectedVersion).toBe(7);
+    });
+
+    /**
+     * An app with no data model yet is at version 0 on the server. Inventing a
+     * number for it would make the very FIRST save conflict with nothing at all.
+     */
+    it('sends no version when the server has never reported one', async () => {
+        let sent = null;
+        authFetch.mockImplementation((rawUrl, options) => {
+            const url = String(rawUrl);
+            if (url.includes('/members')) return resp(200, { members: [] });
+            if (url.includes('/schema') && options?.method === 'PUT') { sent = JSON.parse(options.body); return resp(200, { modelVersion: 1 }); }
+            if (url.includes('/schema')) return resp(200, { model: null, modelVersion: 0 });
+            return resp(404, {});
+        });
+        const { result } = renderHook(() => useAppRoles('a1'), { wrapper: makeWrapper() });
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        await result.current.saveRoles({ roles: [{ key: 'member', label: 'Member' }] });
+        // modelVersion 0 IS reported, so it is sent — what must never happen is
+        // a version the client made up.
+        expect(sent.expectedVersion).toBe(0);
+    });
+
+    it('reports a clash instead of overwriting somebody else’s work', async () => {
+        let sent = null;
+        let conflictOnce = true;
+        authFetch.mockImplementation((rawUrl, options) => {
+            const url = String(rawUrl);
+            if (url.includes('/members')) return resp(200, { members: [] });
+            if (url.includes('/schema') && options?.method === 'PUT') {
+                sent = JSON.parse(options.body);
+                if (conflictOnce) {
+                    conflictOnce = false;
+                    return resp(409, {
+                        error: 'The data model changed since you loaded it',
+                        conflict: true,
+                        currentVersion: 9,
+                        model: { roles: [], roleMapping: { default: 'app', byGroup: {} }, tables: [] },
+                    });
+                }
+                return resp(200, { modelVersion: 10 });
+            }
+            // After the clash the server reports ITS version, which is the
+            // whole point of refetching on a conflict.
+            if (url.includes('/schema')) return resp(200, schemaBody(conflictOnce ? 7 : 9));
+            return resp(404, {});
+        });
+        const { result } = renderHook(() => useAppRoles('a1'), { wrapper: makeWrapper() });
+        await waitFor(() => expect(result.current.hasModel).toBe(true));
+
+        await expect(result.current.saveRoles({ roles: [] })).rejects.toThrow(/changed somewhere else/i);
+        expect(sent.expectedVersion).toBe(7);
+
+        // The next attempt starts from the version the server reported in the
+        // conflict, so retrying is not another blind overwrite.
+        await result.current.saveRoles({ roles: [] });
+        expect(sent.expectedVersion).toBe(9);
+    });
+});

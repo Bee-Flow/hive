@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Braces, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import InsertDataButton from './InsertDataButton';
 import BindingField from './BindingField';
 import { ExpressionHelpBody } from './ExpressionHelp';
 import FieldPicker from './FieldPicker';
@@ -379,15 +380,10 @@ function RawExpression({ value, context, onChange, onFocusField, canUseVisual, o
                     })}
                     className={denseInputClass('w-full font-mono')}
                 />
-                <button
-                    type="button"
+                <InsertDataButton
                     onClick={(e) => picker.openPicker(e.currentTarget)}
-                    title="Insert data from a previous step"
-                    aria-label="Insert variable"
-                    className="shrink-0 px-2 rounded border border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] flex items-center justify-center opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                >
-                    <Braces size={12} />
-                </button>
+                    open={picker.open}
+                />
             </div>
             <div className="flex items-center justify-between gap-2 pt-1">
                 <button
@@ -395,7 +391,7 @@ function RawExpression({ value, context, onChange, onFocusField, canUseVisual, o
                     onClick={() => setShowHelp(h => !h)}
                     className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
                 >
-                    {showHelp ? <ChevronDown size={11} /> : <ChevronRight size={11} />} Syntax help
+                    {showHelp ? <ChevronDown size={11} /> : <ChevronRight size={11} />} What can I write here?
                 </button>
                 {canUseVisual && (
                     <button

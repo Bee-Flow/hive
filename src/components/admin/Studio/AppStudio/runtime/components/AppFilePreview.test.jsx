@@ -84,6 +84,19 @@ describe('AppFilePreview', () => {
         expect(container.querySelector('img')).toBeNull();
     });
 
+    it('hands a generated CSV over as a named download', async () => {
+        // The generate_file step's descriptor lands here: a CSV is never
+        // framed inline, so the download card — carrying the exact filename
+        // the portal expects — is the whole delivery mechanism.
+        globalThis.__authFetch = vi.fn(async () => blobResponse('text/csv'));
+        const { container, getByText } = renderPreview({ kind: 'studio_attachment', fileId: 'f9', name: 'PO19443.csv', mime: 'text/csv', size: 512 });
+        await waitFor(() => expect(getByText('Download')).toBeTruthy());
+        expect(container.querySelector('iframe')).toBeNull();
+        const link = getByText('Download').closest('a');
+        expect(link.getAttribute('download')).toBe('PO19443.csv');
+        expect(link.getAttribute('href')).toMatch(/^blob:/);
+    });
+
     it('redeems a mailbox attachment before showing it', async () => {
         const calls = [];
         globalThis.__authFetch = vi.fn(async (url, opts) => {

@@ -300,7 +300,14 @@ export function buildConditionExpr(leftPath, op, rightBinding) {
  */
 export function renderBindingValue(b) {
     if (!b || typeof b !== 'object') return JSON.stringify(b ?? '');
-    if (b.kind === 'literal') return JSON.stringify(b.value ?? '');
+    // `?? ''` here meant an EXPLICIT null rendered as the empty string, so the
+    // condition builder rewrote `form.assignee == null` into
+    // `form.assignee == ""` the moment any row in the group was edited — "show
+    // this only when nobody is assigned" quietly became "…when the assignee is
+    // an empty string", which is a different question with a different answer.
+    // Only `undefined` means "nothing filled in yet"; parseExprToRows produces
+    // value:null solely from a literal `null` the author actually wrote.
+    if (b.kind === 'literal') return JSON.stringify(b.value === undefined ? '' : b.value);
     if (b.kind === 'ref')     return String(b.path || '');
     if (b.kind === 'expr')    return String(b.value || '');
     if (b.kind === 'template') return templateToExprFragment(String(b.value || ''));

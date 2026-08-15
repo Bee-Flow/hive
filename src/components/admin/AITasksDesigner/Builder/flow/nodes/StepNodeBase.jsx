@@ -44,6 +44,12 @@ export default function StepNodeBase({
     // anchor and stay deletable) but refuses NEW connections. Used by
     // stop_error, whose outgoing edges are dead by definition (B9).
     sourceConnectable = true,
+    // `{ handleId, label, count }` — a second output at the BOTTOM of the card
+    // that carries something other than the flow. Only the AI step uses it
+    // today (its tools). Rendered as a labelled, always-visible drop zone
+    // rather than a bare handle: it is a target for a drag that starts in the
+    // ribbon, so it has to be findable before the drag begins.
+    bottomPort = null,
 }) {
     const branchHandles = Array.isArray(sourceHandles) && sourceHandles.length > 0 ? sourceHandles : null;
 
@@ -116,7 +122,13 @@ export default function StepNodeBase({
     const statusBorder = status === 'success' ? 'border-emerald-500 ring-1 ring-emerald-500/25'
         : status === 'pinned' ? 'border-cyan-500 ring-1 ring-cyan-500/25'
         : status === 'error' ? 'border-red-500 ring-1 ring-red-500/25'
-        : status === 'running' ? 'border-[var(--accent)] ring-1 ring-[var(--accent)]/30 animate-[pulse_1.2s_ease-in-out_infinite]'
+        // Amber, not var(--accent): the accent defaults to the product's
+        // GREY, which made a running node's border invisible in light themes.
+        : status === 'running' ? 'border-amber-500 ring-1 ring-amber-500/30 animate-[pulse_1.2s_ease-in-out_infinite]'
+        : status === 'skipped' ? 'border-dashed border-[var(--border-default)] opacity-70'
+        : status === 'handled_error' ? 'border-amber-500 ring-1 ring-amber-500/25'
+        : (status === 'awaiting_approval' || status === 'awaiting_confirm' || status === 'awaiting_form') ? 'border-amber-500 ring-1 ring-amber-500/25'
+        : status === 'cancelled' ? 'border-[var(--border-default)]'
         : pinned ? 'border-cyan-500 ring-1 ring-cyan-500/25'
         : null;
 
@@ -169,6 +181,37 @@ export default function StepNodeBase({
                 })
             ) : (
                 <Handle type="source" position={Position.Right} className={handleClass} style={{ right: -6 }} isConnectable={sourceConnectable} />
+            )}
+
+            {/* Bottom port (AI step: tools). `data-tool-port` is what the
+                ribbon's drop hit-test looks for — see flow/stepDrag.js — so
+                releasing an app here attaches it as a tool instead of adding a
+                step to the flow. It stays visible at rest, unlike the flow
+                handles: an invisible drop target is not a target. */}
+            {bottomPort && nodeId && (
+                <>
+                    <Handle
+                        type="source"
+                        id={bottomPort.handleId}
+                        position={Position.Bottom}
+                        isConnectable={false}
+                        className="!w-2.5 !h-2.5 !rounded-full !border-2 !bg-[var(--bg-primary)] !border-[var(--text-tertiary)] !opacity-70"
+                        style={{ bottom: -5 }}
+                    />
+                    <span
+                        data-tool-port={nodeId}
+                        title={bottomPort.hint || undefined}
+                        // NOT pointer-events-none: `elementFromPoint` skips
+                        // such elements, and this pill IS the drop target.
+                        className={`absolute left-1/2 -translate-x-1/2 -bottom-6 z-10 inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-[9px] whitespace-nowrap ${
+                            bottomPort.active
+                                ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]'
+                                : 'border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-tertiary)]'
+                        }`}
+                    >
+                        {bottomPort.label}
+                    </span>
+                </>
             )}
 
             {/* Hover toolbar — execute, duplicate, disconnect, delete. Before

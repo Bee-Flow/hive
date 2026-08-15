@@ -4,6 +4,7 @@ import { MousePointerClick, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { buildNode, sectionDroppableId } from './dnd';
+import { useEditorChrome } from './EditorChromeContext';
 import EditorNodeWrapper from './EditorNodeWrapper';
 import Marquee from './Marquee';
 import toast from '../../../../shared/Toast';
@@ -316,6 +317,9 @@ function CanvasBody({
  */
 export default function Canvas({ app, onCommit, editActionState = EMPTY_ACTION_STATE }) {
     const { definition, screenId, mode, previewUser, dispatch } = useAppEditor();
+    // The shell's autosave flush — preview needs the server to be looking at
+    // the same draft it is before it runs a step by ordinal.
+    const chrome = useEditorChrome();
 
     // Preview owns the same scope state as the run view (AppRunPage.RunSurface):
     // forms published by AppForm, screen params from navigate-with-params, vars
@@ -352,6 +356,13 @@ export default function Canvas({ app, onCommit, editActionState = EMPTY_ACTION_S
         dataState: runnerDataState,
         currentUser: previewUser,
         onRefresh: handleRefresh,
+        // Same two roots the renderer's scope carries, so a previewed sequence
+        // resolves screen.params.* exactly as the published app will.
+        forms,
+        screen: { id: screenId, params: screenParams },
+        // The server steps against the SAVED draft, so persist the canvas
+        // before it is asked to run one by ordinal.
+        beforeServerStep: chrome?.flush || null,
     });
 
     // The live scope dynamic binding filters resolve against (buildScope's

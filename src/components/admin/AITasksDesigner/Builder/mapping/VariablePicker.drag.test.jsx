@@ -88,7 +88,7 @@ describe('VariablePicker — leaves are drag sources', () => {
         const onPick = vi.fn();
         renderPicker({ onPick });
         fireEvent.click(leafRow('currentUser.email'));
-        expect(onPick).toHaveBeenCalledWith('currentUser.email');
+        expect(onPick).toHaveBeenCalledWith('currentUser.email', { raw: false });
     });
 
     it('renders the group and its leaves', () => {

@@ -78,6 +78,17 @@ describe('AppRenderer — run mode', () => {
     it('renders every registry type across the fixtures', () => {
         const { container } = renderBothScreens('run', { runAction: vi.fn() });
         for (const type of Object.keys(APP_COMPONENT_TYPES)) {
+            // A CLOSED modal deliberately renders nothing in run mode — not
+            // even its grid cell (an empty padded span-12 row painted a dead
+            // band into every section hosting one). Its cell exists in edit
+            // mode, which the edit-mode sweep below still pins.
+            if (type === 'modal') {
+                expect(
+                    container.querySelector(`[data-app-type="${type}"]`),
+                    'a closed modal must not leave a grid cell in run mode',
+                ).toBeNull();
+                continue;
+            }
             expect(
                 container.querySelector(`[data-app-type="${type}"]`),
                 `type '${type}' did not render`,

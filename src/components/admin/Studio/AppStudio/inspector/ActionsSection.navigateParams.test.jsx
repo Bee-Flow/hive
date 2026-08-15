@@ -108,3 +108,36 @@ describe('ActionsSection — navigate params', () => {
         expect(screen.getByText(/screen\.params\.name/)).toBeTruthy();
     });
 });
+
+/**
+ * `params` is an object keyed by name, so two rows cannot share one — and the
+ * duplicate guard exempted the EMPTY name. Clearing one row's name and then
+ * another collapsed both onto the '' key, and Object.fromEntries kept the last:
+ * the first row's carried value vanished, with nothing said.
+ */
+describe('NavigateParamsEditor — a blank name cannot eat another row', () => {
+    it('keeps both rows when two names are cleared', () => {
+        const { lastAction } = renderActions({
+            ...NAVIGATE,
+            params: {
+                recordId: { kind: 'formula', expr: 'item.id' },
+                tab: { kind: 'static', value: 'notes' },
+            },
+        });
+        fireEvent.change(screen.getByLabelText('Value 1 name'), { target: { value: '' } });
+        fireEvent.change(screen.getByLabelText('Value 2 name'), { target: { value: '' } });
+
+        // Both rows are still on screen, waiting to be named…
+        expect(screen.getByLabelText('Value 1 name')).toBeTruthy();
+        expect(screen.getByLabelText('Value 2 name')).toBeTruthy();
+        // …and neither reached the action, because neither has a name.
+        expect(lastAction()?.params ?? null).toBeNull();
+    });
+
+    it('commits a row again as soon as it is named', () => {
+        const { lastAction } = renderActions({ ...NAVIGATE, params: { recordId: { kind: 'formula', expr: 'item.id' } } });
+        fireEvent.change(screen.getByLabelText('Value 1 name'), { target: { value: '' } });
+        fireEvent.change(screen.getByLabelText('Value 1 name'), { target: { value: 'ticketId' } });
+        expect(lastAction().params).toEqual({ ticketId: { kind: 'formula', expr: 'item.id' } });
+    });
+});

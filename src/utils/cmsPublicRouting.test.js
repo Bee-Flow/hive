@@ -31,12 +31,10 @@ describe('isCmsPathCandidate', () => {
         expect(parseCmsPath('/f/abcdef')).toBeNull();
     });
 
-    it('keeps the markdown-backed legal URLs reserved', () => {
-        // These are served from in-repo markdown at URLs Google's OAuth
-        // consent screen points at; a CMS page must not be able to shadow one.
+    it('keeps the DSR-form URL reserved', () => {
+        // /privacy frames the public DSR request form; a CMS page must not be
+        // able to shadow it.
         expect(isCmsPathCandidate('/privacy')).toBe(false);
-        expect(isCmsPathCandidate('/terms')).toBe(false);
-        expect(isCmsPathCandidate('/legal')).toBe(false);
     });
 });
 
@@ -49,8 +47,6 @@ describe('isPublicMarketingPath', () => {
         expect(isPublicMarketingPath('/nl/pricing')).toBe(true);
         expect(isPublicMarketingPath('/privacy')).toBe(true);
         expect(isPublicMarketingPath('/privacy/requests')).toBe(true);
-        expect(isPublicMarketingPath('/terms')).toBe(true);
-        expect(isPublicMarketingPath('/legal/dpa')).toBe(true);
         expect(isPublicMarketingPath('/__demo__/agents')).toBe(true);
     });
     it('excludes product surfaces, whose telemetry regime is separate', () => {

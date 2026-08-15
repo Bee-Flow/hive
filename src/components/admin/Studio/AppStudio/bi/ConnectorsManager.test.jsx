@@ -518,3 +518,34 @@ describe('ConnectorsManager — combining actions', () => {
         expect(within(select).getByRole('option', { name: /Search/i })).toBeTruthy();
     });
 });
+
+/**
+ * A `chain` is only legal on an app connector — dataModel.js rejects one
+ * anywhere else with "chain is only supported for app connectors" — and the
+ * chain editor is only RENDERED for that kind. So switching the kind away left
+ * the steps behind where nobody could see them, and the data model could never
+ * be saved again: the error named a field the screen no longer showed.
+ */
+describe('ConnectorsManager — changing the kind takes the chain with it', () => {
+    const chained = [{
+        id: 'conn_abc123', kind: 'integration_tool', name: 'Read',
+        tool: 'gmail_read', integrationId: 'gmail', params: [],
+        chain: [{ tool: 'gmail_search', argsFrom: { messageId: 'id' } }],
+    }];
+
+    it('drops a chain the new kind cannot carry', () => {
+        const { last, getByLabelText } = renderMgr(chained);
+        fireEvent.change(getByLabelText('Connector kind'), { target: { value: 'rest' } });
+        const out = last()[0];
+        expect(out.kind).toBe('rest');
+        // Absent, not merely undefined — code that asks `'chain' in c` must
+        // agree with the JSON that reaches the server.
+        expect('chain' in out).toBe(false);
+    });
+
+    it('keeps the chain while the connector is still an app connector', () => {
+        const { last, getByLabelText } = renderMgr(chained);
+        fireEvent.change(getByLabelText('Name'), { target: { value: 'Mail' } });
+        expect(last()[0].chain).toHaveLength(1);
+    });
+});

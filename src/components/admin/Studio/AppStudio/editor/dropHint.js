@@ -45,8 +45,15 @@ export function computeDropHint({ active, over, definition, isPalette }) {
             if (overFound.node.id === activeFound.parent.id) return null;
             return { nodeId: overId, edge: 'inside' };
         }
-        // A node takes the sibling's slot → it lands BEFORE it.
-        return { nodeId: overId, edge: 'before' };
+        // A node takes the sibling's SLOT INDEX, and moveNode applies that index
+        // to the array with the node already removed from it. Moving DOWN inside
+        // the same parent therefore shifts the target up by one and the node
+        // lands AFTER it — while the indicator drew a line above it, one slot
+        // too high. Moving up (or across parents) removes nothing below the
+        // target, so the slot is genuinely before it.
+        const sameParent = overFound.parent.id === activeFound.parent.id;
+        const movingDown = sameParent && activeFound.index < overFound.index;
+        return { nodeId: overId, edge: movingDown ? 'after' : 'before' };
     }
 
     if (Array.isArray(overFound.node.children)) return { nodeId: overId, edge: 'inside' };

@@ -20,14 +20,14 @@
 // a self-hosted-only feature gated by license-key activation.
 
 // ── Beta feature buckets ────────────────────────────────────────────────────
-const BETA_FREE      = ['dutch_legal_sources'];
-const BETA_PLUS      = ['dutch_legal_sources', 'knowledge_bases_beta'];
-const BETA_TEAM      = ['dutch_legal_sources', 'automations', 'agent_routines', 'knowledge_bases_beta'];
+const BETA_FREE      = [];
+const BETA_PLUS      = ['knowledge_bases_beta'];
+const BETA_TEAM      = ['automations', 'agent_routines', 'knowledge_bases_beta'];
 const BETA_BUSINESS  = [
-    'dutch_legal_sources', 'knowledge_bases_beta',
+    'knowledge_bases_beta',
     'automations', 'agent_routines',
     'meeting_notes', 'voice_chat',
-    'itil_ticket_assistant', 'webpages', 'skills',
+    'webpages', 'skills',
 ];
 const BETA_ENTERPRISE = [
     ...BETA_BUSINESS,
@@ -142,12 +142,12 @@ export const PLAN_TEMPLATES = [
             title: 'Bee Flow Business',
             subtitle: 'Per-seat Business tier — all three model tiers, full beta suite, all 41+ integrations.',
             priceLabel: '€39 / seat / month',
-            highlights: ['1,800 messages per seat / month', 'Up to 100 users · 50 agents', 'Fast + Thinking + Deep Thinking', 'Voice chat · Meeting notes · Ticket Assistant'],
+            highlights: ['1,800 messages per seat / month', 'Up to 100 users · 50 agents', 'Fast + Thinking + Deep Thinking', 'Voice chat · Meeting notes · Webpages'],
             badge: 'PER SEAT',
         },
         plan: {
             name: 'Bee Flow Business',
-            description: 'Per-seat tier for production-grade deployments. €39 / active user / month with 1,800 messages per seat. Unlocks Deep Thinking, meeting notes, voice chat, ITIL Ticket Assistant, webpages, skills, and the full integration catalogue.',
+            description: 'Per-seat tier for production-grade deployments. €39 / active user / month with 1,800 messages per seat. Unlocks Deep Thinking, meeting notes, voice chat, webpages, skills, and the full integration catalogue.',
             tagline: 'The full Bee Flow product, per seat',
             plan_type: 'organization',
             tier: 'pro',

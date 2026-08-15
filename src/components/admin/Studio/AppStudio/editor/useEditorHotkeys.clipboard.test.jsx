@@ -104,3 +104,40 @@ describe('useEditorHotkeys — clipboard', () => {
         input.remove();
     });
 });
+
+/**
+ * Switching screens leaves the selection alone — the reducer's `set_screen`
+ * does not clear it. So the paste target, taken from the anchor's section,
+ * pointed at the screen you had LEFT: the copy landed off-screen, silently,
+ * with the canvas in front of you unchanged.
+ */
+describe('useEditorHotkeys — paste lands on the screen being edited', () => {
+    it('appends to the current screen when the selection is on another one', () => {
+        const { onCommit } = setup();
+
+        // Copy the dashboard heading…
+        act(() => ctxRef.current.dispatch({ type: 'select_node', nodeId: 'cmp_headg1' }));
+        meta('c');
+
+        // …switch to the form screen, WITHOUT clearing the selection…
+        act(() => ctxRef.current.dispatch({ type: 'set_screen', screenId: 'scr_form01' }));
+        expect(ctxRef.current.selectedNodeId).toBe('cmp_headg1');
+
+        meta('v');
+        const def = onCommit.mock.calls.at(-1)[0];
+
+        // …and the copy is on the screen in front of you, not the one you left.
+        const dashIds = def.screens.find((s) => s.id === 'scr_dash01')
+            .sections.flatMap((sec) => sec.children).map((c) => c.id);
+        const formIds = def.screens.find((s) => s.id === 'scr_form01')
+            .sections.flatMap((sec) => sec.children).map((c) => c.id);
+        const before = KITCHEN_SINK.screens.find((s) => s.id === 'scr_dash01')
+            .sections.flatMap((sec) => sec.children).length;
+
+        expect(dashIds).toHaveLength(before);
+        expect(formIds).toContain(
+            formIds.find((id) => !KITCHEN_SINK.screens.find((s) => s.id === 'scr_form01')
+                .sections.flatMap((sec) => sec.children).some((c) => c.id === id)),
+        );
+    });
+});

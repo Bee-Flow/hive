@@ -1,7 +1,7 @@
 /**
  * ExportMenu — the document export action cluster for the workspace header:
  * PDF / Word dropdown + optional SignRequest and Nextcloud buttons. Shared by
- * NotebooksPage and LegalStudioPage. Generation (Reports/Visuals) was removed;
+ * NotebooksPage. Generation (Reports/Visuals) was removed;
  * this is the only top-right action cluster now.
  */
 import React, { useState, useRef, useEffect } from 'react';

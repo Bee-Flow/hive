@@ -2,6 +2,7 @@ import { tryEvaluate } from '@shared/expr/engine.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { reconcileVariableDefaults, seedVariableDefaults } from './appVariables';
 import { closeAppModal, openAppModal } from './components/AppModal';
+import { resetAppForm } from './formContext';
 import { resolveBinding } from './resolveBinding';
 import { buildScope } from './RuntimeContext';
 import { API_BASE, authFetch } from '../../../../../utils/helpers';
@@ -75,7 +76,7 @@ const SEQ_ABORT = Symbol('useActionRunner.abort');
 // success. `send_email` was missing here and did exactly that: the support desk
 // toasted "Reply sent" while nothing was ever sent. useActionRunner.stepKinds
 // .test.js now pins the two lists together.
-export const SERVER_STEP_KINDS = new Set(['run_automation', 'create_record', 'update_record', 'delete_record', 'ai_extract', 'ai_generate', 'kb_query', 'send_email']);
+export const SERVER_STEP_KINDS = new Set(['run_automation', 'create_record', 'update_record', 'delete_record', 'ai_extract', 'ai_generate', 'kb_query', 'send_email', 'generate_file', 'file_intake']);
 
 // A hard deadline on one server step. Deliberately longer than the server's own
 // AI ceiling (STUDIO_APP_AI_TIMEOUT_MS, 120s) so a real server error still wins
@@ -163,6 +164,28 @@ function defaultConfirm(step) {
 
 export default function useActionRunner(appId, definition, {
     draft = false, onNavigate, confirm, onRefresh, currentUser = null, dataState = null,
+    // The two scope roots the RENDERER always has and the runner did not:
+    // `forms` (every form's live values, by node id) and `screen`
+    // ({ id, name, params }). A step formula reading screen.params.<name> —
+    // how every template hands a record id to a detail screen — resolved to
+    // undefined, so the delete button on a detail screen deleted nothing.
+    // Optional: a caller that omits them gets the empty objects buildScope
+    // already defaults to.
+    forms = null, screen = null,
+    /**
+     * Awaited once before a sequence that touches the SERVER runs.
+     *
+     * `stepIndex` is never stored: the browser derives it from the definition
+     * it holds and the server from the one it has (?draft=1 → the SAVED draft).
+     * In the editor those are not the same document — autosave is debounced —
+     * so previewing an action inside that window had the server resolve the
+     * ordinal to a DIFFERENT step than the one on screen. On a delete_record
+     * that is not a cosmetic difference. The editor passes its autosave flush;
+     * a caller with nothing to flush passes nothing.
+     * → { ok:false } aborts the run rather than dispatching against a draft the
+     * server has not got.
+     */
+    beforeServerStep = null,
 } = {}) {
     const [actionState, setActionState] = useState({});
     // Shared variable state for the whole run surface — sequences seed their
@@ -190,6 +213,12 @@ export default function useActionRunner(appId, definition, {
     currentUserRef.current = currentUser;
     const dataStateRef = useRef(dataState);
     dataStateRef.current = dataState;
+    const formsRef = useRef(forms);
+    formsRef.current = forms;
+    const screenRef = useRef(screen);
+    screenRef.current = screen;
+    const beforeServerStepRef = useRef(beforeServerStep);
+    beforeServerStepRef.current = beforeServerStep;
     /*
      * Fold a change in the DECLARATIONS into the live bag.
      *
@@ -322,14 +351,34 @@ export default function useActionRunner(appId, definition, {
         // Only a server-touching sequence shows the triggering control's spinner
         // (and guards re-entry). Pure client sequences run synchronously.
         if (hasServer && stateRef.current[actionId]?.status === 'running') return;
+        if (hasServer && beforeServerStepRef.current) {
+            // The server resolves the step from the definition IT has; make
+            // sure that is the one on screen before handing it an ordinal.
+            const ready = await beforeServerStepRef.current();
+            if (ready && ready.ok === false) {
+                showToast('danger', ready.error || 'Your latest changes could not be saved, so this was not run.');
+                return;
+            }
+        }
         if (hasServer) setEntry(actionId, { status: 'running', result: undefined, error: null });
 
         const state = {
             actionId,
             formValues: opts.formValues || {},
             vars: { ...varsRef.current },
-            item: undefined,
-            index: undefined,
+            // The ROW that triggered this, when one did. A row click hands the
+            // row over, and the inspector's own picker (and every template)
+            // teaches `item.<field>` for it — so without this, "open THIS
+            // ticket" resolved to undefined and the next screen opened blank.
+            // A loop step overwrites both for the duration of its body.
+            item: opts.item,
+            index: opts.index,
+            // The VALUE beside the row, when the trigger carries one — a kanban
+            // drop's target column, an onChange's new value. `value` has been a
+            // declared scope root on both sides all along, but nothing ever put
+            // the payload's value into it, so `expr: 'value'` always read
+            // undefined while `form.value` worked.
+            value: opts.value,
             lastResult: undefined,
             error: null,
         };
@@ -351,9 +400,17 @@ export default function useActionRunner(appId, definition, {
                     actionState: merged,
                     dataState: data,
                     form: st.formValues || {},
+                    // `forms` and `screen` are in every scope the RENDERER
+                    // builds, so a formula that reads screen.params.<name> —
+                    // which is how every template passes a record id to a detail
+                    // screen — worked in a binding and resolved to undefined in
+                    // the step that acted on it.
+                    forms: formsRef.current || {},
+                    screen: screenRef.current || {},
                     vars: st.vars || {},
                     item: st.item,
                     index: st.index,
+                    value: st.value,
                     currentUser: currentUserRef.current || null,
                 }),
             };
@@ -370,6 +427,9 @@ export default function useActionRunner(appId, definition, {
             // whose column read `index + 1` wrote NaN into every row, while the
             // loop itself iterated perfectly.
             if (st.index !== undefined) body.index = st.index;
+            // `value` rides along like item/index — it too is a declared server
+            // scope root that otherwise arrives undefined in every server step.
+            if (st.value !== undefined) body.value = st.value;
             const qs = draft ? '?draft=1' : '';
             let res;
             try {
@@ -440,6 +500,9 @@ export default function useActionRunner(appId, definition, {
                     return;
                 case 'close_modal':
                     if (step.modalId) closeAppModal(step.modalId);
+                    return;
+                case 'reset_form':
+                    if (typeof step.form === 'string' && step.form) resetAppForm(step.form);
                     return;
                 case 'confirm': {
                     const ask = confirmRef.current || defaultConfirm;
@@ -578,7 +641,12 @@ export default function useActionRunner(appId, definition, {
                         actionState: stateRef.current,
                         dataState: dataStateRef.current || {},
                         form: opts.formValues || {},
+                        forms: formsRef.current || {},
+                        screen: screenRef.current || {},
                         vars: varsRef.current || {},
+                        item: opts.item,
+                        index: opts.index,
+                        value: opts.value,
                         currentUser: currentUserRef.current || null,
                     });
                     onNavigateRef.current(action.screenId, resolveNavParams(action.params, scope));

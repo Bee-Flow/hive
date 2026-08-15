@@ -53,7 +53,7 @@ describe('AppList', () => {
         const runAction = vi.fn();
         const { container } = renderList(node({}, { onRowClick: 'act_1' }), { runAction });
         fireEvent.click(container.querySelectorAll('button')[0]);
-        expect(runAction).toHaveBeenCalledWith('act_1', { formValues: ROWS[0] });
+        expect(runAction).toHaveBeenCalledWith('act_1', { formValues: ROWS[0], item: ROWS[0] });
 
         runAction.mockClear();
         const edit = renderList(node({}, { onRowClick: 'act_1' }), { runAction, mode: 'edit' });

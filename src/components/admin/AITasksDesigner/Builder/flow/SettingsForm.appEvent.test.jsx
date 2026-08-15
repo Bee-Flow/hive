@@ -69,11 +69,10 @@ describe('SettingsForm — app_event (dynamic availability-gated providers)', ()
         try { localStorage.clear(); } catch {}
     });
 
-    it('lists exactly the catalog providers — no hardcoded extras like Ticket Assistant', () => {
+    it('lists exactly the catalog providers — no hardcoded extras', () => {
         renderForm(trigger({ provider: 'gmail', event: 'mail.new', filter: null }));
         openPicker();
         expect(pickerApps()).toEqual(['Gmail', 'Nextcloud', 'Support Inbox']);
-        expect(screen.queryByText('Ticket Assistant')).toBeNull();
     });
 
     it('the picker shows what an app can trigger on before you commit to it', () => {

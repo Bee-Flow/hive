@@ -1,5 +1,6 @@
-import { Braces, Check, List } from 'lucide-react';
+import { Check, List } from 'lucide-react';
 import { onBindingDragOver, getBindingDropPath } from './bindingDnd';
+import InsertDataButton from './InsertDataButton';
 import React, { useEffect, useRef, useState } from 'react';
 import RefTokenInput from './RefTokenInput';
 import useVariablePicker from './useVariablePicker';
@@ -9,7 +10,8 @@ import { walkPath, previewValue, getAutocompleteTokenFromPrefix } from '../../..
 import { humanizeExpression } from '../flow/displayHelpers';
 import FieldHint from '../flow/FieldHint';
 import { useTranslation } from '../../../../../hooks/useTranslation';
-import { denseInputClass } from '../flow/settings/formStyles';
+import { describeListPath } from './listShape';
+import { denseInputClass, AMBER_NOTE } from '../flow/settings/formStyles';
 
 /**
  * PathField — the mapping-aware control for configs that store a PLAIN
@@ -99,12 +101,23 @@ export default function PathField({
     };
 
     // ── Footer: sample preview + soft warnings (never block typing) ──
+    // ONE footer line, merged — a second slot would stack two bands for one
+    // fact. The display never normalises the stored value.
     const trimmed = text.trim();
     let footer = null;
     if (trimmed) {
         const resolved = effectivePreviewSample ? walkPath(trimmed, effectivePreviewSample) : undefined;
         if (resolved !== undefined) {
-            if (expectArray && !Array.isArray(resolved)) {
+            if (expectArray && trimmed.includes('[*]')) {
+                // A [*] column IS a list, so the not-a-list warning misses the
+                // real trap: repeating over a column merges every row's values
+                // into one flat list. Say that, with the resolved example on
+                // the same line.
+                footer = {
+                    tone: 'warn',
+                    text: `${t('routines.builder.path_column_merges', 'This path takes one value from every row and merges them into one list.')} — ${previewValue(resolved, 40)}`,
+                };
+            } else if (expectArray && !Array.isArray(resolved)) {
                 footer = { tone: 'warn', text: t('routines.builder.path_not_list', "This isn't a list in the sample data — pick a field that holds multiple items.") };
             } else {
                 footer = { tone: 'ok', text: previewValue(resolved, 60) };
@@ -150,20 +163,13 @@ export default function PathField({
                         className={inputClass}
                     />
                 </div>
-                <button
-                    type="button"
+                <InsertDataButton
                     onClick={(e) => picker.openPicker(e.currentTarget)}
-                    title={t('routines.builder.insert_from_step', 'Insert data from a previous step')}
-                    aria-label="Insert variable"
-                    aria-haspopup="dialog"
-                    aria-expanded={picker.open}
-                    className="shrink-0 px-2 rounded border border-[var(--border-default)] text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] flex items-center justify-center opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                >
-                    <Braces size={12} />
-                </button>
+                    open={picker.open}
+                />
             </div>
             {footer && (
-                <div className={`text-[10px] flex items-center gap-1.5 ${footer.tone === 'warn' ? 'text-amber-500' : 'text-[var(--text-tertiary)]'}`}>
+                <div className={`flex items-center gap-1.5 ${footer.tone === 'warn' ? AMBER_NOTE : 'text-[10px] text-[var(--text-tertiary)]'}`}>
                     <span className="uppercase tracking-wide">{footer.tone === 'warn' ? '!' : t('routines.builder.example', 'example')}</span>
                     <span className={`truncate ${footer.tone === 'warn' ? '' : 'font-mono text-[var(--text-secondary)]'}`}>{footer.text}</span>
                 </div>
@@ -175,7 +181,16 @@ export default function PathField({
                     </div>
                     {quickPicks.map(q => {
                         const selected = trimmed === q.path;
-                        const friendly = humanizeExpression(q.path, stepLabelById).replace(/[‹›]/g, '');
+                        // Column paths read as "step ▸ Field (inside each row)"
+                        // and count via walkPath — q.sample for a [*] path is
+                        // the first ELEMENT, so its length lied about the list.
+                        const friendly = q.path.includes('[*]')
+                            ? describeListPath(q.path, stepLabelById, t)
+                            : humanizeExpression(q.path, stepLabelById).replace(/[‹›]/g, '');
+                        const resolved = effectivePreviewSample ? walkPath(q.path, effectivePreviewSample) : undefined;
+                        const preview = Array.isArray(resolved)
+                            ? `${resolved.length} item${resolved.length === 1 ? '' : 's'}`
+                            : previewValue(resolved !== undefined ? resolved : q.sample, 24);
                         return (
                             <button
                                 key={q.path}
@@ -186,7 +201,7 @@ export default function PathField({
                             >
                                 <List size={12} className="shrink-0 text-[var(--text-tertiary)]" />
                                 <span className="text-[var(--text-primary)] truncate">{friendly}</span>
-                                <span className="ml-auto text-[10px] text-[var(--text-tertiary)] truncate max-w-[120px]">{previewValue(q.sample, 24)}</span>
+                                <span className="ml-auto text-[10px] text-[var(--text-tertiary)] truncate max-w-[120px]">{preview}</span>
                                 {selected && <Check size={12} className="shrink-0 text-[var(--accent)]" />}
                             </button>
                         );

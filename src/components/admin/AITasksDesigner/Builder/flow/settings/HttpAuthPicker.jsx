@@ -6,7 +6,7 @@ import { HTTP_AUTH_TYPES, HTTP_AUTH_TYPE_BY_ID, httpKindName, splitHttpAuthValue
 
 /**
  * Credential picker for the http_request step's Authentication section.
- * Mirrors TicketAssistantConnectionPicker (triggerFilters.jsx): lazy-loads
+ * Lazy-loads
  * the accessible HTTP credentials once on mount, falls back to a free-text
  * connection-id input on fetch error. Also hosts an inline "+ Add credential"
  * mini-form so the user never has to leave the builder to save a secret.

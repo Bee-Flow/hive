@@ -3,6 +3,7 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import AppRenderer from '../AppRenderer';
 import AppForm from './AppForm';
+import AppInputCheckbox from './AppInputCheckbox';
 import AppInputMultiselect from './AppInputMultiselect';
 import AppInputNumber from './AppInputNumber';
 import AppInputRelation from './AppInputRelation';
@@ -352,5 +353,92 @@ describe('AppButton — role "submit" outside a form', () => {
         expect(btn.getAttribute('type')).toBe('submit');
         fireEvent.click(btn);
         expect(runAction).toHaveBeenCalledWith('act_submit', expect.anything());
+    });
+});
+
+/**
+ * An unchecked box is `false` — not null, not '', not an empty array — so it
+ * passed every emptiness test the required rule used. A consent checkbox marked
+ * required therefore submitted unticked, which is the one rule on a form that
+ * has to hold.
+ */
+describe('AppForm — a required checkbox must actually be ticked', () => {
+    const agreeNode = () => ({
+        id: 'cmp_agree1', type: 'input_checkbox', visible: true, style: {},
+        props: { name: 'agree', label: 'I agree' },
+        validations: [{ type: 'required', message: 'Please agree first' }],
+    });
+
+    it('blocks the submit while the box is unticked', () => {
+        const node = agreeNode();
+        const { runAction, getByText } = renderForm([node], <AppInputCheckbox node={node} />);
+        fireEvent.click(getByText('Send'));
+        expect(runAction).not.toHaveBeenCalled();
+        expect(getByText('Please agree first')).toBeTruthy();
+    });
+
+    it('lets it through once the box is ticked', () => {
+        const node = agreeNode();
+        const { runAction, getByLabelText, getByText } = renderForm([node], <AppInputCheckbox node={node} />);
+        fireEvent.click(getByLabelText('I agree'));
+        fireEvent.click(getByText('Send'));
+        expect(runAction).toHaveBeenCalledWith('act_submit', expect.objectContaining({
+            formValues: expect.objectContaining({ agree: true }),
+        }));
+    });
+
+    it('still treats a required 0 as filled in', () => {
+        // `false` is strictly what a required rule now rejects, so a numeric
+        // zero keeps the meaning it already had.
+        const node = { ...numberNode({}), validations: [{ type: 'required', message: 'Say how many' }] };
+        const { runAction, getByLabelText, getByText } = renderForm([node], <AppInputNumber node={node} />);
+        fireEvent.change(getByLabelText('Amount'), { target: { value: '0' } });
+        fireEvent.click(getByText('Send'));
+        expect(runAction).toHaveBeenCalled();
+    });
+});
+
+/**
+ * A number box holding "12e" reports '' to JS while still showing the text. The
+ * input knew that and said "Enter a number" — but the message was local to it,
+ * so the FORM never saw it and an optional field submitted empty under a
+ * visible error.
+ */
+describe('AppForm — the browser refusing what was typed blocks the submit', () => {
+    const optionalNumber = () => ({
+        ...numberNode({}),
+        props: { ...numberNode({}).props, name: 'amount', label: 'Amount' },
+    });
+
+    it('refuses to submit an optional field the browser called bad input', () => {
+        const node = optionalNumber();
+        const { runAction, getByLabelText, getByText } = renderForm([node], <AppInputNumber node={node} />);
+        const input = getByLabelText('Amount');
+        fireEvent.change(input, { target: { value: '3' } });
+        // Now the browser refuses the next keystroke: it reports '' and flags
+        // badInput, while the box on screen still reads "3,". jsdom does not
+        // run that machinery, so the flag is stubbed as the case above does.
+        Object.defineProperty(input, 'validity', { value: { badInput: true }, configurable: true });
+        fireEvent.change(input, { target: { value: '' } });
+        fireEvent.click(getByText('Send'));
+
+        expect(runAction).not.toHaveBeenCalled();
+        expect(getByText(/Enter a number/)).toBeTruthy();
+    });
+
+    it('submits again once the value is a real number', () => {
+        const node = optionalNumber();
+        const { runAction, getByLabelText, getByText } = renderForm([node], <AppInputNumber node={node} />);
+        const input = getByLabelText('Amount');
+        fireEvent.change(input, { target: { value: '3' } });
+        Object.defineProperty(input, 'validity', { value: { badInput: true }, configurable: true });
+        fireEvent.change(input, { target: { value: '' } });
+        Object.defineProperty(input, 'validity', { value: { badInput: false }, configurable: true });
+        fireEvent.change(input, { target: { value: '7' } });
+        fireEvent.click(getByText('Send'));
+
+        expect(runAction).toHaveBeenCalledWith('act_submit', expect.objectContaining({
+            formValues: expect.objectContaining({ amount: 7 }),
+        }));
     });
 });
