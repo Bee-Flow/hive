@@ -20,7 +20,7 @@
  *   3. no cycles.
  *
  * ── HOW BRANCHES MAP ────────────────────────────────────────────────
- * condition → `then` / `else`; switch → `case:<name>` / `case:default`; loop →
+ * condition → `then` / `else`; switch → `case:<index>` / `case:default`; loop →
  * its body. Each is a CONTAINER node whose children live in their own scope,
  * addressed by a prefixed id (`s2/then/s5`) — the same trick the routine
  * builder's inline flowlets use, so the ids stay flat and unique while the
@@ -43,6 +43,13 @@ export const ENTRY_SUFFIX = '__entry__';
 
 function isObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
 
+/** "When it is Paid" — or the position, while nobody has said what it matches. */
+function caseLabel(c, i) {
+    const v = c?.value;
+    if (v === '' || v === null || v === undefined) return `Case ${i + 1}`;
+    return `When it is ${v}`;
+}
+
 /**
  * The scopes a container step owns, in a FIXED order — the same order
  * flattenSteps walks, so a reader can line the two up.
@@ -60,10 +67,15 @@ export function scopesOf(step) {
             return [{ key: 'body', label: 'For each', steps: step.steps }];
         case 'switch': {
             const cases = Array.isArray(step.cases) ? step.cases : [];
+            // Keyed by POSITION, not by the case's value: canonicalize keeps
+            // only { value, steps }, values are author-typed and may repeat or
+            // be blank, and a scope key ends up inside a node id — so it has to
+            // be unique and stable. The value is what the branch is LABELLED
+            // with, which is the part a reader needs.
             return [
                 ...cases.map((c, i) => ({
-                    key: `case:${c?.name ?? i}`,
-                    label: c?.name ? String(c.name) : `Case ${i + 1}`,
+                    key: `case:${i}`,
+                    label: caseLabel(c, i),
                     steps: c?.steps,
                 })),
                 { key: 'case:default', label: 'Otherwise', steps: step.default },
@@ -80,9 +92,9 @@ function withScope(step, key, steps) {
     if (step.kind === 'loop') return { ...step, steps };
     if (step.kind === 'switch') {
         if (key === 'case:default') return { ...step, default: steps };
-        const name = key.slice('case:'.length);
+        const at = Number(key.slice('case:'.length));
         const cases = (Array.isArray(step.cases) ? step.cases : []).map((c, i) => (
-            String(c?.name ?? i) === name ? { ...c, steps } : c
+            i === at ? { ...c, steps } : c
         ));
         return { ...step, cases };
     }

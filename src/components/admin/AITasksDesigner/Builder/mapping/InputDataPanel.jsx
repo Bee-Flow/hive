@@ -125,6 +125,8 @@ function PanelHint() {
         <div className="px-3 py-2 text-[10px] text-[var(--text-tertiary)] shrink-0">
             Drag a value into a field (or the prompt), or click to insert.
             Open <span className="font-medium">Table</span> to map a whole column or one cell.
+            A value marked as a <span className="font-medium">list</span> will ask how you
+            want to use it — one of them, all of them, or one run per row.
         </div>
     );
 }

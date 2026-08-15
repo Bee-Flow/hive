@@ -82,7 +82,7 @@ describe('BindingField — mode toggle stability', () => {
     }
 
     // The controls sitting beside the input — the ones whose flicker was the
-    // reported bug. (The "Syntax help" disclosure below the field is a separate,
+    // reported bug. (The "What can I write here?" disclosure below the field is a separate,
     // deliberate affordance and is asserted on its own further down.)
     const inlineControls = () => [
         ...screen.getAllByLabelText('Insert variable'),
@@ -175,15 +175,15 @@ describe('BindingField — mode toggle stability', () => {
 
     it('offers syntax help in expression mode, and not in plain-text mode', () => {
         renderLiteral();
-        expect(screen.queryByText(/Syntax help/)).toBeNull();
+        expect(screen.queryByText(/What can I write here\?/)).toBeNull();
         fireEvent.click(screen.getByTitle(/^Expression/));
-        expect(screen.getByText(/Syntax help/)).toBeTruthy();
+        expect(screen.getByText(/What can I write here\?/)).toBeTruthy();
     });
 
     it('suppresses syntax help when the host opts out', () => {
         renderLiteral({ showExpressionHelp: false });
         fireEvent.click(screen.getByTitle(/^Expression/));
-        expect(screen.queryByText(/Syntax help/)).toBeNull();
+        expect(screen.queryByText(/What can I write here\?/)).toBeNull();
     });
 });
 

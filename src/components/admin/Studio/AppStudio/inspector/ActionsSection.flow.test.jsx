@@ -11,6 +11,12 @@ const AUTOMATIONS = [{
     definition: { trigger: { kind: 'app_trigger', params: [{ name: 'email', type: 'string', required: true }, { name: 'amount', type: 'number' }] } },
 }];
 
+vi.mock('../../../../shared/Toast', () => {
+    const toast = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
+    return { default: toast, toast };
+});
+import toast from '../../../../shared/Toast';
+
 vi.mock('../../../../../hooks/useAutomationApi', () => ({
     default: () => ({
         listAutomations: vi.fn(async () => ({ automations: AUTOMATIONS })),
@@ -36,7 +42,10 @@ function defWith(action) {
         schemaVersion: 2,
         meta: { name: 'T' },
         homeScreenId: 'scr_a',
-        screens: [{ id: 'scr_a', name: 'Home', sections: [{ id: 'sec_a', children: [NODE] }] }],
+        screens: [
+            { id: 'scr_a', name: 'Home', sections: [{ id: 'sec_a', children: [NODE] }] },
+            { id: 'scr_b', name: 'Thank you', sections: [{ id: 'sec_b', children: [] }] },
+        ],
         actions: { act_a: action },
     };
 }
@@ -144,5 +153,44 @@ describe('ActionsSection — the routine contract, when it drifts', () => {
         await screen.findByRole('combobox', { name: 'Action kind' });
         expect(screen.queryByText(/the routine also expects/i)).toBeNull();
         expect(screen.queryByText(/no longer takes/i)).toBeNull();
+    });
+});
+
+/**
+ * Effects are an ACTION-level shape: no step kind carries onSuccess/onError,
+ * and canonicalize drops the keys on the next save. Converting a "Run routine"
+ * with "on success: say Saved, then go to Thank you" therefore looked like
+ * nothing happened, and then quietly lost both.
+ */
+describe('ActionsSection — turning an action into a flow keeps its effects', () => {
+    it('turns onSuccess into the steps that do the same thing', () => {
+        const { lastAction } = renderSection({
+            kind: 'run_automation',
+            automationId: 'auto-1',
+            onSuccess: { toast: { message: 'Saved!', tone: 'success' }, navigateTo: 'scr_b' },
+        });
+        fireEvent.change(screen.getByLabelText('Action kind'), { target: { value: 'sequence' } });
+
+        const steps = lastAction().steps;
+        expect(steps.map((s) => s.kind)).toEqual(['run_automation', 'toast', 'navigate']);
+        expect(steps[1]).toMatchObject({ message: 'Saved!', tone: 'success' });
+        expect(steps[2]).toMatchObject({ screenId: 'scr_b' });
+        // The effect keys do not ride along on the step — nothing reads them
+        // there, and the server strips them.
+        expect(steps[0]).not.toHaveProperty('onSuccess');
+    });
+
+    it('says so when the on-error part cannot come across', () => {
+        const { lastAction } = renderSection({
+            kind: 'run_automation',
+            automationId: 'auto-1',
+            onError: { toast: { message: 'Oh no', tone: 'danger' } },
+        });
+        fireEvent.change(screen.getByLabelText('Action kind'), { target: { value: 'sequence' } });
+
+        // A flow stops at the step that fails, so there is nowhere to put it.
+        expect(lastAction().steps.map((s) => s.kind)).toEqual(['run_automation']);
+        expect(lastAction().steps[0]).not.toHaveProperty('onError');
+        expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/on error/i));
     });
 });

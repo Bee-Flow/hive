@@ -82,7 +82,30 @@ function StoragePill({ ratio }) {
     );
 }
 
-function CardBody({ app }) {
+// Small "Update beschikbaar" pill-button on OWNER cards whose source template
+// carries a newer registry version while the app is still untouched since
+// install. templateUpgrade { available, fromVersion, toVersion } is computed
+// server-side on GET /mine (registry version newer + install-hash pristine),
+// so this renders purely on that flag. stopPropagation on click AND keydown —
+// the whole card is itself a click/Enter target that opens the editor.
+function TemplateUpdatePill({ app, onUpgrade }) {
+    if (!app.templateUpgrade?.available || !onUpgrade) return null;
+    const { fromVersion, toVersion } = app.templateUpgrade;
+    return (
+        <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onUpgrade(app); }}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-opacity hover:opacity-80"
+            style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#2563eb' }}
+            title={`Nieuwe templateversie beschikbaar (v${fromVersion} → v${toVersion})`}
+        >
+            Update beschikbaar
+        </button>
+    );
+}
+
+function CardBody({ app, onUpgrade }) {
     return (
         <>
             <div className="flex items-start gap-2.5 mb-2">
@@ -106,6 +129,7 @@ function CardBody({ app }) {
             <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                 {app.isPublished ? <PublishedBadge /> : null}
                 <StoragePill ratio={app.usage?.dbRatio} />
+                <TemplateUpdatePill app={app} onUpgrade={onUpgrade} />
                 {formatUpdated(app.updatedAt) ? <span>Updated {formatUpdated(app.updatedAt)}</span> : null}
             </div>
         </>
@@ -506,6 +530,7 @@ export default function AppList({ onOpen }) {
     const [renameValue, setRenameValue] = useState('');
     const [renameBusy, setRenameBusy] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState(null);
+    const [upgradeTarget, setUpgradeTarget] = useState(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -551,6 +576,21 @@ export default function AppList({ onOpen }) {
             toast.error(err?.message || 'Could not rename the app.');
         } finally {
             setRenameBusy(false);
+        }
+    };
+
+    // Template upgrade — confirmed first (the definition is replaced), then
+    // the list reloads so the pill disappears and the card shows the result.
+    const confirmUpgrade = async () => {
+        if (!upgradeTarget) return;
+        try {
+            await studioAppsApi.templateUpgrade(upgradeTarget.id);
+            toast.success('App bijgewerkt naar de nieuwste templateversie.');
+            load();
+        } catch (err) {
+            toast.error(err?.message || 'Kon de app niet bijwerken.');
+        } finally {
+            setUpgradeTarget(null);
         }
     };
 
@@ -664,7 +704,7 @@ export default function AppList({ onOpen }) {
                                     className={`${CARD_CLASSES} cursor-pointer`}
                                     style={CARD_STYLE}
                                 >
-                                    <CardBody app={app} />
+                                    <CardBody app={app} onUpgrade={setUpgradeTarget} />
                                     <OwnerMenu
                                         app={app}
                                         onOpen={() => onOpen?.(app)}
@@ -730,6 +770,15 @@ export default function AppList({ onOpen }) {
                     />
                 </form>
             </Modal>
+
+            <ConfirmDialog
+                open={!!upgradeTarget}
+                title={`“${upgradeTarget?.name || 'App'}” bijwerken?`}
+                description="De app wordt bijgewerkt naar de nieuwste templateversie. Je gegevens blijven staan."
+                confirmLabel="Bijwerken"
+                onConfirm={confirmUpgrade}
+                onCancel={() => setUpgradeTarget(null)}
+            />
 
             <ConfirmDialog
                 open={!!deleteTarget}

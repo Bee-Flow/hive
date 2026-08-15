@@ -4,6 +4,7 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import BuilderShell from './Builder/BuilderShell';
 import { describeCron } from './Builder/flow/scheduleBuilderUtils';
+import { buildStudioSearch } from '../Studio/studioRoutes';
 import RoutineRow from '../Studio/RoutinesStudio/RoutineRow';
 import RoutinesEmptyState from '../Studio/RoutinesStudio/EmptyState';
 import QuickSwitcher from '../Studio/RoutinesStudio/QuickSwitcher';
@@ -14,7 +15,7 @@ import { formatNextRun, buildMessageFromSuggestion } from './taskFormatters';
 import ListView from './ListView';
 import EditorView from './EditorView';
 
-export default function AITasksDesigner({ initialTaskId = null, initialStepId = null, initialFlowletKey = null, onClose, onNavigate, modelTiers = {}, embedded = false, user = null, onEditingChange }) {
+export default function AITasksDesigner({ initialTaskId = null, initialStepId = null, initialFlowletKey = null, initialBuilderView = null, initialRunId = null, initialRunStepId = null, onClose, onNavigate, modelTiers = {}, embedded = false, user = null, onEditingChange }) {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(false);
     const [maxTasks, setMaxTasks] = useState(10);
@@ -28,6 +29,9 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
     // Which tab the builder opens on (e.g. 'history' from a "View executions"
     // affordance). Consumed once on mount, then cleared.
     const [builderInitialTab, setBuilderInitialTab] = useState(null);
+    // URL ?view= word → builder tab id. The id stays 'history' (BFSF-343);
+    // only the URL and the labels say "runs".
+    const viewToTab = (view) => (view === 'runs' ? 'history' : (view === 'settings' || view === 'versions' ? view : null));
     const [openingBuilder, setOpeningBuilder] = useState(false);
     // A brand-new automation has no id in `builderAutomationId` (it stays '')
     // until BuilderShell lazily creates the row server-side. `liveAutomationId`
@@ -101,7 +105,14 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
             const res = await authFetch(`${API_BASE}/api/ai-tasks`);
             if (res.ok) {
                 const data = await res.json();
-                setTasks(data.tasks || []);
+                // Agent-linked rows only. Plain prompt tasks were migrated into
+                // Cowork (see server/migrations/prompt-tasks-to-cowork-2026-08)
+                // and their originals are left behind, deactivated, purely as a
+                // rollback copy — listing them here would show a paused
+                // duplicate of something the user can see running under Cowork.
+                // Agent routines stay: they run through the agent runtime and
+                // are created and managed from the Agent Wizard.
+                setTasks((data.tasks || []).filter(t => t.agentId));
                 if (data.maxTasks) setMaxTasks(data.maxTasks);
             } else {
                 console.error('[AITasksDesigner] fetchTasks failed:', res.status, res.statusText);
@@ -146,8 +157,8 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
 
     // ── URL ↔ open-routine sync ───────────────────────────────────────────
     // The path encodes what's open so a refresh — and browser back/forward —
-    // restores it: /app/studio/routines/<id> for an automation, and
-    // /app/studio/routines/<id>/<flowletKey> when drilled into a flowlet.
+    // restores it: /app/studio/automations/<id> for an automation, and
+    // /app/studio/automations/<id>/<flowletKey> when drilled into a flowlet.
     // `lastRouteRef` holds that descriptor ('<id>' | '<id>/<flowlet>' | 'new'
     // | null) and is the shared reconciliation point: the push paths record
     // what they sent; the reconcile effect reads it to tell its own echo apart
@@ -189,13 +200,17 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
             }
             return; // not loaded yet (or stale id) — retry when the lists update
         }
-        // urlId is null → the URL points at the bare list; close any open editor.
+        // urlId is null → the URL points at the bare list; close any open
+        // editor — UNLESS a Reusable-Step deep link owns the URL (its path has
+        // no task id, so this branch used to re-fire and clobber the step
+        // descriptor every time `automations`/`tasks` resolved).
+        if (initialStepId) return;
         lastRouteRef.current = null;
         setBuilderAutomationId(null);
         setOpeningBuilder(false);
         if (editingTaskId !== null) resetForm();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialTaskId, initialFlowletKey, automations, tasks]);
+    }, [initialTaskId, initialFlowletKey, initialStepId, automations, tasks]);
 
     // Push the OPEN ROUTINE (id) to the URL when it changes. Compares only the
     // id portion of the descriptor so a flowlet drill (same id, see
@@ -211,7 +226,7 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
         // A different routine opened/closed — drop any flowlet scope (it belongs
         // to the routine we're leaving), landing on the bare id or the list.
         lastRouteRef.current = selectedRoutineId || null;
-        onNavigate(selectedRoutineId ? `studio/routines/${selectedRoutineId}` : 'studio/routines');
+        onNavigate(selectedRoutineId ? `studio/automations/${selectedRoutineId}` : 'studio/automations');
     }, [embedded, onNavigate, selectedRoutineId, builderStepId]);
 
     // Adopt a deep-linked Step id on mount (refresh / back into the Step builder).
@@ -231,7 +246,7 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
         const want = builderStepId ? `steps/${builderStepId}` : null;
         if (!want || want === lastRouteRef.current) return;
         lastRouteRef.current = want;
-        onNavigate(`studio/routines/${want}`);
+        onNavigate(`studio/automations/${want}`);
     }, [embedded, onNavigate, builderStepId]);
 
     // Push the FLOWLET scope to the URL. Called by BuilderShell whenever the
@@ -244,7 +259,7 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
         const key = scopeKey ? `${id}/${scopeKey}` : id;
         if (key === lastRouteRef.current) return;
         lastRouteRef.current = key;
-        onNavigate(scopeKey ? `studio/routines/${id}/${scopeKey}` : `studio/routines/${id}`);
+        onNavigate(scopeKey ? `studio/automations/${id}/${scopeKey}` : `studio/automations/${id}`);
     }, [embedded, onNavigate, builderAutomationId, liveAutomationId]);
 
     // `liveAutomationId` only bridges the gap while a brand-new draft has no id
@@ -253,6 +268,24 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
     useEffect(() => {
         setLiveAutomationId(null);
     }, [builderAutomationId]);
+
+    // Push the builder's QUERY state (?view/run/step) to the URL. Imperative,
+    // like handleScopeChange — and it must NOT write lastRouteRef: that ref
+    // holds the PATH descriptor and four string comparisons depend on its
+    // format. The path suffix is reused verbatim ('<id>', '<id>/<flowlet>',
+    // 'steps/<id>') so a query push never clobbers a flowlet drill.
+    const lastQueryRef = useRef({ view: null, runId: null, stepId: null });
+    const pushBuilderState = useCallback(({ view = null, runId = null, stepId = null, replace = false } = {}) => {
+        if (!embedded || !onNavigate) return;
+        const next = { view, runId, stepId };
+        const cur = lastQueryRef.current;
+        if (cur.view === next.view && cur.runId === next.runId && cur.stepId === next.stepId) return;
+        lastQueryRef.current = next;
+        const search = buildStudioSearch(next);
+        const suffix = lastRouteRef.current
+            || (builderStepId ? `steps/${builderStepId}` : (builderAutomationId || liveAutomationId || null));
+        onNavigate(suffix ? `studio/automations/${suffix}${search}` : `studio/automations${search}`, { replace });
+    }, [embedded, onNavigate, builderStepId, builderAutomationId, liveAutomationId]);
 
     const resetForm = () => {
         setTitle(''); setPrompt(''); setDate(''); setTime('');
@@ -481,6 +514,7 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
             await fetchAutomations();
             const newId = created?.automation?.id || created?.id;
             if (newId) {
+                setBuilderInitialTab(null); // a fresh copy always opens on the Editor
                 setSegment('automation');
                 setBuilderAutomationId(newId);
             }
@@ -545,6 +579,12 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
 
     const onPickFromSwitcher = useCallback((item) => {
         setQuickSwitcherOpen(false);
+        // Jumping to another routine leaves the previous one's builder state
+        // (open run, forced tab, an open Step builder) behind — carrying any
+        // of it across reads as the new routine misbehaving.
+        setBuilderInitialTab(null);
+        setBuilderStepId(null);
+        stepUrlAdoptedRef.current = true;
         if (item.kind === 'automation') {
             setSegment('automation');
             setBuilderAutomationId(item.id);
@@ -704,10 +744,11 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
 
     // ── Embedded studio layout (the redesigned sidebar+detail shell) ─────
     if (embedded) {
-        // When the user can't see Automations at all, force the sidebar to
-        // show the Prompt Tasks segment regardless of the persisted choice.
-        const effectiveSegment = !automationsAllowed ? 'prompt_task' : segment;
-        const showSegmented = automationsAllowed;
+        // The tab is Automations; there is no segment to pick any more. The
+        // 'prompt_task' value survives as an internal route only — deep-linking
+        // an agent routine (from the agent that owns it) still opens its editor
+        // here, which is the one place that editor exists.
+        const effectiveSegment = segment;
 
         // Filter the active list by the search query (case-insensitive
         // match on title; cheap enough to do every render). Power-user
@@ -744,48 +785,20 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
                         user.betaFeatures (access gating lives elsewhere). Amber house
                         style mirrors the Tests Studio badge; no purple per brand rule. */}
                     <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-[var(--text-primary)]">Routines</span>
+                        <span className="text-sm font-semibold text-[var(--text-primary)]">
+                            {effectiveSegment === 'automation' ? 'Automations' : 'Agent routines'}
+                        </span>
                         <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/30">BETA</span>
                     </div>
                     <button
                         onClick={onPlus}
                         data-tour="routine-create"
-                        title={effectiveSegment === 'automation' ? 'New automation' : 'New routine'}
+                        title={effectiveSegment === 'automation' ? 'New automation' : 'New agent routine'}
                         className="p-1 rounded-lg hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)]"
                     >
                         <Plus size={16} />
                     </button>
                 </div>
-
-                {/* Segmented control — only shown when both segments are
-                    available. Makes the page feel native to the studio:
-                    one shell, one list, two filters. */}
-                {showSegmented && (
-                    <div className="px-2 pt-2">
-                        <div className="flex items-center bg-[var(--bg-secondary)] rounded-lg p-0.5 text-xs font-medium">
-                            <button
-                                onClick={() => { setSegment('automation'); }}
-                                className={`flex-1 px-2 py-1 rounded-md transition ${
-                                    effectiveSegment === 'automation'
-                                        ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'
-                                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                                }`}
-                            >
-                                Automations
-                            </button>
-                            <button
-                                onClick={() => { setSegment('prompt_task'); }}
-                                className={`flex-1 px-2 py-1 rounded-md transition ${
-                                    effectiveSegment === 'prompt_task'
-                                        ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'
-                                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                                }`}
-                            >
-                                Prompt Tasks
-                            </button>
-                        </div>
-                    </div>
-                )}
 
                 {/* Search — debounced filter on the visible list. */}
                 <div className="px-2 pt-2">
@@ -835,12 +848,29 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
                         </>
                     ) : (
                         <>
+                            {/* Plain prompt tasks moved to Cowork — one sidebar
+                                click, with an editor and a run history. What is
+                                left in this segment is the agent-linked kind,
+                                which runs through the agent runtime. */}
+                            {onNavigate && (
+                            <button
+                                type="button"
+                                onClick={() => onNavigate('cowork')}
+                                data-testid="routines-cowork-pointer"
+                                className="mx-2 mb-2 w-[calc(100%-1rem)] text-left rounded-lg px-2.5 py-2 text-[11px] leading-snug transition-colors hover:bg-[var(--bg-tertiary)]"
+                                style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}
+                            >
+                                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Looking for your prompt tasks?</span>
+                                <br />
+                                They live under Cowork now →
+                            </button>
+                            )}
                             {loading && tasks.length === 0 && (
                                 <div className="text-xs text-[var(--text-tertiary)] p-3">Loading…</div>
                             )}
                             {!loading && visibleTasks.length === 0 && (
                                 <div className="text-xs text-[var(--text-tertiary)] p-4 text-center">
-                                    {q ? 'No matches.' : 'No routines yet.'}
+                                    {q ? 'No matches.' : 'No agent routines yet. An agent gets one from its own editor.'}
                                 </div>
                             )}
                             {visibleTasks.map((t) => (
@@ -870,7 +900,10 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
                         key={'step:' + (builderStepId || 'new')}
                         mode="step"
                         automationId={builderStepId || null}
-                        initialTab={builderInitialTab}
+                        initialTab={viewToTab(initialBuilderView) ?? builderInitialTab}
+                        initialRunId={initialRunId}
+                        initialRunStepId={initialRunStepId}
+                        onBuilderStateChange={pushBuilderState}
                         onBack={() => { setBuilderStepId(null); setBuilderInitialTab(null); }}
                         onAutomationIdResolved={(id) => { if (id) setBuilderStepId(id); }}
                         onPublished={() => { fetchSteps(); }}
@@ -890,7 +923,10 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
                         // build's whole life).
                         key={builderAutomationId || `new:${newBuilderNonce}`}
                         automationId={builderAutomationId || null}
-                        initialTab={builderInitialTab}
+                        initialTab={viewToTab(initialBuilderView) ?? builderInitialTab}
+                        initialRunId={initialRunId}
+                        initialRunStepId={initialRunStepId}
+                        onBuilderStateChange={pushBuilderState}
                         onBack={() => { setBuilderAutomationId(null); setBuilderInitialTab(null); setOpeningBuilder(false); setPresetChatInput(''); setAutoSendInput(null); }}
                         // Carry the lazily-created id up so the URL/refresh path
                         // can reopen a brand-new automation. Never changes the
@@ -920,6 +956,7 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
                         await fetchAutomations();
                         const newId = created?.automation?.id || created?.id;
                         if (newId) {
+                            setBuilderInitialTab(null); // a template opens on the Editor
                             setSegment('automation');
                             setBuilderAutomationId(newId);
                         }
@@ -1098,7 +1135,7 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="text-[15px] font-bold text-[var(--text-primary)] leading-tight">
-                        {editing ? (isNewMode ? 'New routine' : 'Edit routine') : 'Routines'}
+                        {editing ? (isNewMode ? 'New agent routine' : 'Edit agent routine') : 'Agent routines'}
                     </div>
                     <div className="text-[11px] text-[var(--text-muted)] font-medium">
                         {editing ? 'Schedule a recurring AI workflow' : `${tasks.length}/${maxTasks} tasks`}
@@ -1112,7 +1149,7 @@ export default function AITasksDesigner({ initialTaskId = null, initialStepId = 
                         style={{ background: 'var(--text-primary)', boxShadow: tasks.length >= maxTasks ? 'none' : '0 2px 8px rgba(0,0,0,0.1)' }}
                     >
                         <Plus className="w-4 h-4" />
-                        New routine
+                        New agent routine
                     </button>
                 )}
                 {onClose && (

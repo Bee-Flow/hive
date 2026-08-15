@@ -1,4 +1,4 @@
-import { Braces } from 'lucide-react';
+import InsertDataButton from './InsertDataButton';
 import { onBindingDragOver, getBindingDropPath } from './bindingDnd';
 import React, { useEffect, useRef, useState } from 'react';
 import RefTokenInput from './RefTokenInput';
@@ -6,7 +6,8 @@ import useVariablePicker from './useVariablePicker';
 import VariablePicker from './VariablePicker';
 import { useVariablePickerContext } from './VariablePickerContext';
 import { walkPath, previewValue, getAutocompleteTokenFromPrefix } from '../../../../../utils/bindingHelpers';
-import { denseInputClass } from '../flow/settings/formStyles';
+import { useTranslation } from '../../../../../hooks/useTranslation';
+import { denseInputClass, AMBER_NOTE } from '../flow/settings/formStyles';
 
 /**
  * Multi-line string field with `{{path}}` interpolation. Unlike
@@ -99,6 +100,7 @@ export default function TemplateField({
         if (path) insertPath(path);
     };
 
+    const { t } = useTranslation();
     const preview = renderPreview(text, effectivePreviewSample);
 
     const insertFromPicker = (path) => {
@@ -131,20 +133,11 @@ export default function TemplateField({
     );
 
     const insertButton = (
-        <button
-            type="button"
+        <InsertDataButton
             onClick={(e) => { autocompleteLength.current = 0; picker.openPicker(e.currentTarget); }}
-            title="Insert variable from upstream"
-            aria-label="Insert variable"
-            aria-haspopup="dialog"
-            aria-expanded={picker.open}
-            className={`shrink-0 inline-flex items-center gap-1 rounded border border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] ${
-                inline ? 'px-1.5 self-stretch' : 'px-1.5 py-0.5'
-            }`}
-        >
-            <Braces size={11} />
-            {!inline && <span>Insert</span>}
-        </button>
+            open={picker.open}
+            className={inline ? 'self-stretch' : 'py-0.5'}
+        />
     );
 
     return (
@@ -178,21 +171,42 @@ export default function TemplateField({
                 <div className="text-[10px] text-[var(--text-tertiary)] space-y-0.5">
                     <div className="uppercase tracking-wide">example</div>
                     <div className="font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words bg-[var(--bg-secondary)] rounded px-2 py-1">
-                        {preview}
+                        {preview.text}
                     </div>
+                    {preview.arrayPreview && (
+                        <div className={AMBER_NOTE}>
+                            {t('routines.builder.template_array_warn', 'This will be sent as text: {preview}. Use an Edit data step to join them first.', { preview: preview.arrayPreview })}
+                        </div>
+                    )}
                 </div>
             )}
         </div>
     );
 }
 
+/**
+ * Preview-only honesty: a `{{path}}` that resolves to an ARRAY used to
+ * preview as "[2 items]", while the runtime (server/automation/bind.js
+ * interpolateTemplate) JSON.stringifies the array into the surrounding text.
+ * The example now shows exactly that string, plus a warning naming the fix —
+ * no runtime change, no migration.
+ */
 function renderPreview(text, sampleRoot) {
     if (!text) return null;
     if (!/\{\{[^}]+\}\}/.test(text)) return null; // no interpolation, no preview
-    if (!sampleRoot) return text;
-    return String(text).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (full, expr) => {
+    if (!sampleRoot) return { text, arrayPreview: null };
+    let arrayPreview = null;
+    const filled = String(text).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (full, expr) => {
         const v = walkPath(expr.trim(), sampleRoot);
         if (v === undefined) return full;
+        if (Array.isArray(v)) {
+            let asText;
+            try { asText = JSON.stringify(v); } catch { asText = String(v); }
+            const clipped = asText.length > 60 ? `${asText.slice(0, 59)}…` : asText;
+            if (!arrayPreview) arrayPreview = clipped;
+            return clipped;
+        }
         return previewValue(v, 30);
     });
+    return { text: filled, arrayPreview };
 }

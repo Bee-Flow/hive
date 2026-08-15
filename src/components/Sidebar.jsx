@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Users, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, LayoutGrid, Scale, AppWindow } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Users, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, FileText, PenLine, Handshake, Mail, BookOpen, LayoutGrid, AppWindow } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import { useLicenseContext } from './LicenseContext';
 import { useEntitlements } from './EntitlementsContext';
@@ -8,6 +8,14 @@ import { API_BASE, authFetch } from '../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../utils/agentAvatar';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
+import AppIcon from './AppIcon';
+// The Studio app registry doubles as the sidebar's Studio-group source: the
+// Studio screen no longer has its own tab bar, so the sections (and their
+// gates) render here instead. Main-chunk-safe by design — see the import
+// discipline note in studioApps.jsx.
+import { STUDIO_APPS, makeCanUse } from './admin/Studio/studioApps';
+import { useRuntimeStudioApps } from '../moduleRuntime/registry';
+import { studioAppsApi } from './admin/Studio/AppStudio/studioAppsApi';
 import beeFlowIcon from '../assets/BeeFlow-logo-Icon-2026.svg';
 import beeFlowLogo from '../assets/bee-flow-logo.svg';
 
@@ -18,7 +26,9 @@ const ROW_ACTIVE = 'bg-[var(--item-active-bg)]';
 const ROW_IDLE = 'hover:bg-[var(--item-hover-bg)]';
 const ACCENT_BAR = 'absolute left-0 top-1 bottom-1 w-[3px] rounded-r-full bg-[var(--accent-primary)]';
 const SECTION_HDR = 'flex items-center justify-between px-3 h-9 cursor-pointer select-none';
-const SECTION_LBL = 'text-[13px] font-semibold tracking-normal text-[var(--text-secondary)]';
+// Uppercase micro-heading — same voice as the marketing header's mega-menu
+// column headings (BUILD / WORK).
+const SECTION_LBL = 'text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--text-tertiary)]';
 const CONV_ROW = 'w-full flex items-center px-4 py-1 text-left relative cursor-pointer gap-1.5';
 const ICON_ACTIVE = 'text-[var(--accent-primary)]';
 const ICON_IDLE = 'text-[var(--text-tertiary)]';
@@ -37,6 +47,11 @@ const readExpanded = (k, fallback) => {
 const writeExpanded = (k, v) => {
     scopedStorage.setItem(storageKey(k), v ? '1' : '0');
 };
+
+/* ─── Published-app icon colour — the app's accent (validated hex), same
+   default as AppList / AppsHomePage. No tile behind it, just the glyph. */
+const APP_DEFAULT_ACCENT = '#0F766E';
+const appAccent = (accentColor) => (/^#[0-9a-fA-F]{6}$/.test(accentColor || '') ? accentColor : APP_DEFAULT_ACCENT);
 
 /* ─── Inline label creator (with color wheel) ─── */
 const CreateLabelInline = ({ onCreateLabel, t }) => {
@@ -438,6 +453,7 @@ const Sidebar = ({
     onSelectConversation, onDeleteConversation,
     onSelectAgent, onOpenMarketplace, onOpenSearch, onOpenKBStore,
     user, onLogout, onNavigate, currentPage, studioRoute = null,
+    hasPermission: hasPermissionProp = null,
     onDirectChat, directChatMode,
     directConversations = [],
     onSelectDirectConversation, onDeleteDirectConversation,
@@ -468,19 +484,20 @@ const Sidebar = ({
     showAITasks = false,
     showSkillsPanel = false,
     showMarketplace = false,
-    showTicketAssistant = false,
-    // Legacy alias — callers passing showEmailKB still work for one release.
-    showEmailKB = undefined,
 }) => {
-    if (showEmailKB !== undefined && showTicketAssistant === false) {
-        showTicketAssistant = showEmailKB;
-    }
-    const { t } = useTranslation();
+    const { t, locale } = useTranslation();
     // We'll use the 'isOpen' prop as 'sidebarOpen' (expanded state)
     // and if !isOpen, we'll show the narrow 'Power Bar'
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const themeCtx = useTheme();
     const { hasFeature: hasLicenseFeature, deploymentMode } = useLicenseContext();
+    // Effective-permission check for the Studio section gates. AgentHub passes
+    // the real resolver; fall back to a permissions spot-check so the sidebar
+    // renders sanely if a caller omits it.
+    const hasPermission = hasPermissionProp || ((perm) => {
+        const perms = user?.permissions || [];
+        return perms.includes('all') || perms.includes(perm);
+    });
     // App Studio consumers/builders get an "Apps" nav entry (the published-apps
     // directory at /app/apps). Gated on the app_studio capability — apps are
     // only shareable inside the licensed org, so anyone who can be an audience
@@ -497,7 +514,7 @@ const Sidebar = ({
     const [agentsOpen, setAgentsOpen] = useState(() => readExpanded('agents', true));
     const [chatsOpen, setChatsOpen] = useState(() => readExpanded('chats', false));
     const [projectsOpen, setProjectsOpen] = useState(() => readExpanded('projects', true));
-    const [activeAITaskCount, setActiveAITaskCount] = useState(0);
+    const [activeCoworkCount, setActiveCoworkCount] = useState(0);
     const profileRef = useRef(null);
     const scrollRef = useRef(null);
     const secondaryItemRefs = useRef({});
@@ -506,6 +523,87 @@ const Sidebar = ({
     const toggleAgents = useCallback(() => setAgentsOpen(p => { writeExpanded('agents', !p); return !p; }), []);
     const toggleChats = useCallback(() => setChatsOpen(p => { writeExpanded('chats', !p); return !p; }), []);
     const toggleProjects = useCallback(() => setProjectsOpen(p => { writeExpanded('projects', !p); return !p; }), []);
+
+    /* ─── Studio + Apps flyout panels ───
+       The Studio screen has no tab bar of its own anymore: its sections (from
+       the same registry the shell renders from, gates included) open from a
+       floating panel BESIDE the sidebar row — the marketing header's
+       mega-menu, turned sideways. Published App Studio apps hang off the Apps
+       row the same way. Hover opens (a grace timer lets the pointer cross the
+       gap to the panel); click toggles; Escape, scrolling the sidebar or
+       picking a destination closes. Fixed-positioned so the sidebar's own
+       scroll container can't clip it. */
+    const [flyout, setFlyout] = useState(null); // { key, top, left } | null
+    const flyoutCloseTimer = useRef(null);
+    const openFlyout = useCallback((key, anchorEl) => {
+        if (flyoutCloseTimer.current) { clearTimeout(flyoutCloseTimer.current); flyoutCloseTimer.current = null; }
+        const rect = anchorEl.getBoundingClientRect();
+        // -6 compensates the panel's own padding so the FIRST item sits level
+        // with the row that opened it.
+        setFlyout({ key, top: rect.top - 6, left: rect.right + 8 });
+    }, []);
+    const scheduleFlyoutClose = useCallback((key) => {
+        if (flyoutCloseTimer.current) clearTimeout(flyoutCloseTimer.current);
+        flyoutCloseTimer.current = setTimeout(() => {
+            setFlyout(f => (f?.key === key ? null : f));
+        }, 180);
+    }, []);
+    const closeFlyout = useCallback(() => {
+        if (flyoutCloseTimer.current) { clearTimeout(flyoutCloseTimer.current); flyoutCloseTimer.current = null; }
+        setFlyout(null);
+    }, []);
+    useEffect(() => () => { if (flyoutCloseTimer.current) clearTimeout(flyoutCloseTimer.current); }, []);
+    // Escape and sidebar scrolling both dismiss the panel — it is fixed-
+    // positioned, so it would visually detach from its row otherwise.
+    useEffect(() => {
+        if (!flyout) return undefined;
+        const onKey = (e) => { if (e.key === 'Escape') closeFlyout(); };
+        const scroller = scrollRef.current;
+        document.addEventListener('keydown', onKey);
+        scroller?.addEventListener('scroll', closeFlyout);
+        return () => {
+            document.removeEventListener('keydown', onKey);
+            scroller?.removeEventListener('scroll', closeFlyout);
+        };
+    }, [flyout, closeFlyout]);
+
+    // Runtime (remotely-installed) modules contribute extra Studio sections;
+    // they join the group after the built-ins, exactly like the old tab bar.
+    const runtimeStudioApps = useRuntimeStudioApps();
+
+    // Published apps for the Apps group — the same merge AppsHomePage does
+    // (accessible ∪ own, published only), but alphabetical: a menu should not
+    // reshuffle every time someone saves. Loaded once, then refreshed when
+    // entering the directory or coming back from Studio (where publishing
+    // happens) — not on every page change.
+    const canSeeApps = canUseCapability('app_studio');
+    const [publishedApps, setPublishedApps] = useState([]);
+    const prevPageRef = useRef(undefined);
+    const appsLoadedRef = useRef(false);
+    useEffect(() => {
+        const prev = prevPageRef.current;
+        prevPageRef.current = currentPage;
+        if (!canSeeApps) return undefined;
+        if (appsLoadedRef.current && currentPage !== 'apps' && prev !== 'studio') return undefined;
+        appsLoadedRef.current = true;
+        let cancelled = false;
+        (async () => {
+            // Per-call catches: a consumer without builder rights may 403 on
+            // /mine, and the shared directory must still fill the menu.
+            const [accessible, mine] = await Promise.all([
+                studioAppsApi.listAccessible().catch(() => null),
+                studioAppsApi.listMine().catch(() => null),
+            ]);
+            if (cancelled) return;
+            const isPublished = (a) => !!(a?.isPublished ?? a?.is_published);
+            const byId = new Map();
+            for (const a of [...(accessible?.apps || []), ...(mine?.apps || [])]) {
+                if (a?.id && isPublished(a) && !byId.has(a.id)) byId.set(a.id, a);
+            }
+            setPublishedApps([...byId.values()].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+        })();
+        return () => { cancelled = true; };
+    }, [currentPage, canSeeApps]);
 
     // Close profile menu on outside click
     useEffect(() => {
@@ -557,23 +655,26 @@ const Sidebar = ({
         }
     }, []);
 
-    // Lightweight active AI task count for the sidebar badge.
-    // Refreshed when the AI Tasks page is opened/closed, so create/edit/toggle
-    // actions there will refresh the count when the user returns.
+    // How much is currently running or scheduled, shown as a badge on the
+    // Cowork row. Counted from /api/cowork, not /api/ai-tasks: prompt tasks
+    // were migrated into cowork, and the old count was fetched every render
+    // pass but never actually displayed anywhere.
+    // Re-read whenever the user leaves or enters Cowork, so create / pause /
+    // delete over there is reflected when they come back.
     useEffect(() => {
         let cancelled = false;
         const load = async () => {
             try {
-                const res = await authFetch(`${API_BASE}/api/ai-tasks`);
+                const res = await authFetch(`${API_BASE}/api/cowork`);
                 if (!res.ok || cancelled) return;
                 const data = await res.json();
-                const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
-                setActiveAITaskCount(tasks.filter(t => t.isActive).length);
+                const schedules = Array.isArray(data?.schedules) ? data.schedules : [];
+                setActiveCoworkCount(schedules.filter(s => s.isActive).length);
             } catch { /* silent */ }
         };
         load();
         return () => { cancelled = true; };
-    }, [showAITasks]);
+    }, [currentPage]);
 
     // On mobile, completely hide when closed (hamburger in header opens it)
     if (!isOpen && isMobile) return null;
@@ -691,83 +792,223 @@ const Sidebar = ({
     // not reset when an overlay/page opens), so two items looked active at once
     // (BFSF-172). Gate it on the same view flags the other nav items use.
     const _otherViewActive = showMarketplace || showSettings || showAITasks
-        || showSkillsPanel || showTicketAssistant
-        || ['studio', 'notebooks', 'legal', 'admin'].includes(currentPage);
+        || showSkillsPanel
+        || ['studio', 'notebooks', 'admin', 'cowork', 'apps', 'appRun'].includes(currentPage);
+
+    // Studio sections for the sidebar group — the same registry + gates the
+    // Studio shell renders from (built-ins first, then runtime modules).
+    const _studioGateCtx = { user, hasLicenseFeature, hasPermission, canUse: makeCanUse(user), can: canUseCapability };
+    const studioSections = [...STUDIO_APPS, ...runtimeStudioApps]
+        .filter(app => { try { return app.gate(_studioGateCtx); } catch { return false; } });
+    // Runtime modules carry a locale-aware label() fn; built-ins their i18n key.
+    const studioSectionLabel = (app) => (typeof app.label === 'function'
+        ? app.label(t, locale)
+        : (app.labelFallback ? t(app.labelKey, app.labelFallback) : t(app.labelKey)));
+    // One-line flyout description. Built-ins declare descKey/descFallback in
+    // the registry; runtime modules without one simply show no description.
+    const studioSectionDesc = (app) => (app.descKey ? t(app.descKey, app.descFallback) : null);
+
     const coreNav = [
         { key: 'new-chat', label: t('sidebar.new_chat', 'New Chat'), icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent && !_otherViewActive },
+        // Cowork sits right under New Chat on purpose: "ask" and "delegate" are
+        // the two things people come here to do, and prompt automation used to
+        // be buried three levels inside Studio → Routines. Phone-friendly, so
+        // no isMobile guard.
+        // Handshake, not Sparkles: Cowork is a colleague taking something off
+        // your plate, not a magic-AI feature. Sparkles also already means
+        // "Skills" one level down in Studio, so it named two different things.
+        { key: 'cowork', label: t('sidebar.cowork', 'Cowork'), icon: Handshake, onClick: () => onNavigate && onNavigate('cowork'), active: currentPage === 'cowork', badge: activeCoworkCount },
         { key: 'search', label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false },
     ];
 
     const secondaryNav = [
         { key: 'agents', label: t('sidebar.agents', 'Agents'), icon: Store, onClick: onOpenMarketplace, active: showMarketplace },
+        // Studio — a flyout, not a screen: its sections (registry-gated) open
+        // from the side panel and each deep-links straight into the shell.
+        // The row's onClick (compact strip / mobile fallback) lands on the
+        // first visible section.
         ...(!_simpleMode && !isMobile && (_isAdminLike || _permissions.includes('manage_agents') || _permissions.includes('manage_skills') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin')
-            ? [{ key: 'studio', label: t('studio.sidebar_link', 'Studio'), icon: LayoutGrid, onClick: () => onNavigate && onNavigate('studio'), active: currentPage === 'studio' }]
+            ? [{
+                key: 'studio',
+                label: t('studio.sidebar_link', 'Studio'),
+                icon: LayoutGrid,
+                onClick: () => onNavigate && onNavigate(`studio/${(studioSections[0] || STUDIO_APPS[0]).urlSegment}`),
+                active: currentPage === 'studio',
+                flyout: {
+                    children: studioSections.map(app => ({
+                        key: `studio-${app.id}`,
+                        label: studioSectionLabel(app),
+                        desc: studioSectionDesc(app),
+                        icon: app.Icon,
+                        onClick: () => onNavigate && onNavigate(`studio/${app.urlSegment}`),
+                        active: currentPage === 'studio' && studioRoute?.section === app.id,
+                    })),
+                },
+            }]
             : []),
-        // Apps — the published-apps directory. Shown to anyone with the
+        // Apps — the published-apps directory PLUS every published app the
+        // user can open, as its own flyout row. Shown to anyone with the
         // app_studio capability (builders and org members who can be an
-        // audience). Reachable on phones too (the directory stacks).
+        // audience). Reachable on phones too (no flyout there — the row
+        // navigates to the directory, which stacks).
         ...(canUseCapability('app_studio')
-            ? [{ key: 'apps', label: t('sidebar.apps', 'Apps'), icon: AppWindow, onClick: () => onNavigate && onNavigate('apps'), active: currentPage === 'apps' }]
+            ? [{
+                key: 'apps',
+                label: t('sidebar.apps', 'Apps'),
+                icon: AppWindow,
+                onClick: () => onNavigate && onNavigate('apps'),
+                active: currentPage === 'apps' || currentPage === 'appRun',
+                flyout: {
+                    children: [
+                        {
+                            key: 'apps-all',
+                            label: t('sidebar.all_apps', 'All apps'),
+                            desc: t('sidebar.all_apps_desc', 'Browse everything published for you'),
+                            icon: AppWindow,
+                            onClick: () => onNavigate && onNavigate('apps'),
+                            active: currentPage === 'apps',
+                        },
+                        ...publishedApps.map(app => ({
+                            key: `app-${app.id}`,
+                            label: app.name || 'Untitled app',
+                            desc: app.description || null,
+                            iconNode: (
+                                <AppIcon
+                                    name={app.icon || 'LayoutGrid'}
+                                    className="w-4 h-4 flex-shrink-0 mt-0.5"
+                                    style={{ color: appAccent(app.accentColor) }}
+                                />
+                            ),
+                            onClick: () => onNavigate && onNavigate(`apps/${app.id}`),
+                            active: currentPage === 'appRun' && typeof window !== 'undefined' && window.location.pathname.startsWith(`/app/apps/${app.id}`),
+                        })),
+                    ],
+                },
+            }]
             : []),
         // hasLicenseFeature short-circuits each entry on community-tier
         // installs — the licence gate is the source of truth; the beta
         // opt-in and permissions remain as additional org-level controls.
         // Meeting Notes lives inside Studio (Mic tab) and is reached there;
         // no top-level sidebar entry.
-        ...(!_simpleMode && !isMobile && hasLicenseFeature('ticket_assistant') && (_betaFeatures.includes('itil_ticket_assistant') || _betaFeatures.includes('email_knowledge_base'))
-            ? [{ key: 'ticket-assistant', label: t('ticket_assistant.sidebar_label', 'Ticket Assistant'), icon: Ticket, onClick: () => onNavigate && onNavigate('ticketAssistant'), active: showTicketAssistant, beta: true }]
-            : []),
         ...(!_simpleMode && !isMobile && hasLicenseFeature('notebooks') && _featureFlags.notebooks !== false && _featureFlags.notebooksMenu !== false && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
             ? [{ key: 'notebooks', label: t('sidebar.notebooks', 'Notebooks'), icon: FileText, onClick: () => onNavigate && onNavigate('notebooks'), active: currentPage === 'notebooks' }]
             : []),
-        // Legal Studio — gated by the dutch_legal_sources beta + use_notebooks
-        // (a matter is a notebook of type 'legal_matter').
-        ...(!_simpleMode && !isMobile && hasLicenseFeature('notebooks') && _betaFeatures.includes('dutch_legal_sources') && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
-            ? [{ key: 'legal', label: t('sidebar.legal', 'Juridisch'), icon: Scale, onClick: () => onNavigate && onNavigate('legal'), active: currentPage === 'legal', beta: true }]
-            : []),
     ];
 
-    const renderNavRow = ({ key, label, icon: Icon, onClick, active, primary, beta, kbd, badge }) => (
+    /* ── Row inside a flyout panel (Studio sections, published apps): plain
+       icon + label with a short muted description underneath — the marketing
+       mega-menu item, minus the icon tile. ── */
+    const renderFlyoutRow = ({ key, label, desc, icon: Icon, iconNode, onClick, active }) => (
         <button
             key={key}
-            onClick={onClick}
-            className={`group relative flex items-center ${isOpen
-                ? ROW + ' ' + (active ? ROW_ACTIVE : ROW_IDLE)
-                : 'w-10 h-10 rounded-xl justify-center transition-all ' + (active ? 'bg-[var(--accent-primary)] text-[var(--accent-primary-fg,#fff)] shadow-lg' : primary ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-[var(--accent-primary-fg,#fff)]' : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]')}`}
-            title={!isOpen ? label : ''}
-            aria-label={label}
+            onClick={() => { closeFlyout(); onClick?.(); }}
+            className={`w-full flex items-start gap-2.5 px-2.5 py-2 rounded-lg text-left relative transition-all duration-150 ${active ? ROW_ACTIVE : ROW_IDLE}`}
             aria-current={active ? 'page' : undefined}
-            data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
-            data-tour={`nav-${key}`}
+            data-testid={`nav-${key}`}
         >
-            {isOpen && active && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r-full bg-[var(--accent-primary)]" />}
-            <Icon className={`${isOpen ? 'w-4 h-4' : 'w-5 h-5'} ${isOpen ? (active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]') : ''}`} strokeWidth={active || primary ? 2.25 : 1.75} />
-            {isOpen && <span className={`text-[13px] ${active ? 'font-semibold' : ''}`} style={{ color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{label}</span>}
-            {isOpen && kbd && <kbd className="ml-auto inline-flex items-center px-1.5 py-0.5 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)] transition-colors">{kbd}</kbd>}
-            {isOpen && typeof badge === 'number' && badge > 0 && (
-                <span
-                    className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums"
-                    style={{
-                        background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-                        color: 'var(--accent-primary)',
-                    }}
-                >
-                    {badge}
-                </span>
-            )}
-            {isOpen && primary === undefined && beta && (
-                <span
-                    className="text-[9px] px-1 py-px rounded font-medium flex-shrink-0 ml-auto"
-                    style={{
-                        background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-                        color: 'var(--accent-primary)',
-                    }}
-                >
-                    beta
-                </span>
-            )}
+            {active && <div className={ACCENT_BAR} />}
+            {iconNode || (Icon ? <Icon className={`w-4 h-4 flex-shrink-0 mt-0.5 ${active ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={active ? 2.25 : 1.75} /> : null)}
+            <span className="flex-1 min-w-0">
+                <span className={`block text-[13px] leading-tight ${active ? 'font-semibold' : 'font-medium'} text-[var(--text-primary)]`}>{label}</span>
+                {/* No `block` here: line-clamp needs its own -webkit-box
+                    display, and a competing display utility silently
+                    disables the clamp (seen live: a full app description
+                    filling the panel). */}
+                {desc && <span className="line-clamp-2 text-[11.5px] leading-snug mt-0.5 text-[var(--text-tertiary)]">{desc}</span>}
+            </span>
         </button>
     );
+
+    /* ── Nav row: plain icon + label. Rows with a `flyout` open a floating
+       panel beside the sidebar (the marketing header's mega-menu, turned
+       sideways) on hover or click instead of navigating; on phones the same
+       row falls back to its onClick. Collapsed sidebar keeps the icon-only
+       power bar. ── */
+    const renderNavRow = (item) => {
+        const { key, label, icon: Icon, onClick, active, primary, kbd, badge, flyout: flyoutDef } = item;
+        if (!isOpen) {
+            return (
+                <button
+                    key={key}
+                    onClick={onClick}
+                    className={`group relative flex items-center w-10 h-10 rounded-xl justify-center transition-all ${active ? 'bg-[var(--accent-primary)] text-[var(--accent-primary-fg,#fff)] shadow-lg' : primary ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-[var(--accent-primary-fg,#fff)]' : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'}`}
+                    title={label}
+                    aria-label={label}
+                    aria-current={active ? 'page' : undefined}
+                    data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+                    data-tour={`nav-${key}`}
+                >
+                    <Icon className="w-5 h-5" strokeWidth={active || primary ? 2.25 : 1.75} />
+                </button>
+            );
+        }
+        const hasFlyout = !!flyoutDef && !isMobile;
+        const flyoutOpen = hasFlyout && flyout?.key === key;
+        const row = (
+            <button
+                key={key}
+                onClick={hasFlyout
+                    ? (e) => (flyoutOpen ? closeFlyout() : openFlyout(key, e.currentTarget))
+                    : onClick}
+                className={`group relative flex items-center ${ROW} ${active ? ROW_ACTIVE : ROW_IDLE}`}
+                aria-label={label}
+                aria-current={active ? 'page' : undefined}
+                aria-expanded={hasFlyout ? flyoutOpen : undefined}
+                aria-haspopup={hasFlyout ? 'true' : undefined}
+                data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+                data-tour={`nav-${key}`}
+            >
+                {active && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r-full bg-[var(--accent-primary)]" />}
+                <Icon className={`w-4 h-4 ${active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]'}`} strokeWidth={active || primary ? 2.25 : 1.75} />
+                <span className={`text-[13px] ${active ? 'font-semibold' : ''}`} style={{ color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{label}</span>
+                {kbd && <kbd className="ml-auto inline-flex items-center px-1.5 py-0.5 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)] transition-colors">{kbd}</kbd>}
+                {typeof badge === 'number' && badge > 0 && (
+                    <span
+                        className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums"
+                        style={{
+                            background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+                            color: 'var(--accent-primary)',
+                        }}
+                    >
+                        {badge}
+                    </span>
+                )}
+            </button>
+        );
+        if (!hasFlyout) return row;
+        return (
+            <div
+                key={key}
+                className="relative"
+                onMouseEnter={(e) => {
+                    const btn = e.currentTarget.querySelector('button');
+                    if (btn) openFlyout(key, btn);
+                }}
+                onMouseLeave={() => scheduleFlyoutClose(key)}
+            >
+                {row}
+                {flyoutOpen && flyout && (
+                    <div
+                        className="fixed z-50 w-72 rounded-2xl border overflow-hidden"
+                        style={{
+                            top: Math.max(8, Math.min(flyout.top, (typeof window !== 'undefined' ? window.innerHeight : 800) - 360)),
+                            left: flyout.left,
+                            borderColor: 'var(--border-default)',
+                            boxShadow: 'var(--shadow-popover, 0 20px 60px rgba(15,23,42,0.18))',
+                            animation: 'sidebarMenuIn .18s cubic-bezier(0.16, 1, 0.3, 1)',
+                        }}
+                        data-surface="opaque"
+                        data-testid={`flyout-${key}`}
+                    >
+                        <div className="p-1.5 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                            {flyoutDef.children.map(renderFlyoutRow)}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     /* ─── The sidebar ─── */
     const content = (

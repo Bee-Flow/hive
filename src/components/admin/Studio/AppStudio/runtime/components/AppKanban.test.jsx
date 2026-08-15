@@ -1,18 +1,26 @@
 import { render } from '@testing-library/react';
+import { act } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 
-// Mock @dnd-kit/core: capture DndContext's onDragEnd so the test can fire a
-// synthetic drop without simulating pointer gestures (flaky in jsdom).
-const captured = { onDragEnd: null };
+// Mock @dnd-kit/core: capture DndContext's drag callbacks so the test can fire
+// synthetic drags without simulating pointer gestures (flaky in jsdom).
+const captured = { onDragStart: null, onDragEnd: null, onDragCancel: null };
 vi.mock('@dnd-kit/core', () => ({
-    DndContext: ({ children, onDragEnd }) => {
+    DndContext: ({ children, onDragStart, onDragEnd, onDragCancel }) => {
+        captured.onDragStart = onDragStart;
         captured.onDragEnd = onDragEnd;
+        captured.onDragCancel = onDragCancel;
         return <div data-dnd-context="true">{children}</div>;
     },
+    // The moving copy rides in the overlay (the in-lane card is clipped by the
+    // column's scroll container) — render children so tests can see it.
+    DragOverlay: ({ children }) => <div data-dnd-overlay="true">{children}</div>,
     PointerSensor: function PointerSensor() {},
     // The cards announce themselves as draggable, so a keyboard user has to
     // be able to drag them — the component registers this sensor too.
     KeyboardSensor: function KeyboardSensor() {},
+    pointerWithin: () => [],
+    rectIntersection: () => [],
     useSensor: () => null,
     useSensors: (...sensors) => sensors,
     useDraggable: () => ({ attributes: {}, listeners: {}, setNodeRef: () => {}, transform: null, isDragging: false }),
@@ -28,9 +36,14 @@ function withRuntime(ui, overrides = {}) {
 }
 
 const ROWS = [
-    { id: 'rec_1', title: 'Fix hive', status: 'open', owner: 'Ann' },
-    { id: 'rec_2', title: 'Order frames', status: 'open', owner: 'Bob' },
-    { id: 'rec_3', title: 'Paint boxes', status: 'done', owner: 'Cee' },
+    { id: 'rec_1', title: 'Fix hive', status: 'open', owner: 'Ann', light: 'groen' },
+    { id: 'rec_2', title: 'Order frames', status: 'open', owner: 'Bob', light: 'paars' },
+    { id: 'rec_3', title: 'Paint boxes', status: 'done', owner: 'Cee', light: null },
+];
+
+const TONES = [
+    { value: 'groen', label: 'Green', tone: 'success' },
+    { value: 'rood', label: 'Red', tone: 'danger' },
 ];
 
 function kbNode(extra = {}, props = {}) {
@@ -93,18 +106,22 @@ describe('AppKanban', () => {
         const runAction = vi.fn();
         withRuntime(<AppKanban node={kbNode({ onCardMove: 'act_move01' })} />, { mode: 'run', runAction });
         expect(typeof captured.onDragEnd).toBe('function');
-        captured.onDragEnd({
-            active: { id: 'appkanban-card:0', data: { current: { row: ROWS[0] } } },
-            over: { id: 'appkanban-col:done' },
+        act(() => {
+            captured.onDragEnd({
+                active: { id: 'appkanban-card:0', data: { current: { row: ROWS[0] } } },
+                over: { id: 'appkanban-col:done' },
+            });
         });
-        expect(runAction).toHaveBeenCalledWith('act_move01', { formValues: { item: ROWS[0], value: 'done' } });
+        expect(runAction).toHaveBeenCalledWith('act_move01', { formValues: { item: ROWS[0], value: 'done' }, item: ROWS[0], value: 'done' });
     });
 
     it('drop on the SAME column (or nowhere) is a no-op', () => {
         const runAction = vi.fn();
         withRuntime(<AppKanban node={kbNode({ onCardMove: 'act_move01' })} />, { mode: 'run', runAction });
-        captured.onDragEnd({ active: { id: 'appkanban-card:0', data: { current: { row: ROWS[0] } } }, over: { id: 'appkanban-col:open' } });
-        captured.onDragEnd({ active: { id: 'appkanban-card:0', data: { current: { row: ROWS[0] } } }, over: null });
+        act(() => {
+            captured.onDragEnd({ active: { id: 'appkanban-card:0', data: { current: { row: ROWS[0] } } }, over: { id: 'appkanban-col:open' } });
+            captured.onDragEnd({ active: { id: 'appkanban-card:0', data: { current: { row: ROWS[0] } } }, over: null });
+        });
         expect(runAction).not.toHaveBeenCalled();
     });
 
@@ -115,7 +132,62 @@ describe('AppKanban', () => {
             { mode: 'run', runAction },
         );
         getByText('Paint boxes').closest('[data-app-kanban-card]').click();
-        expect(runAction).toHaveBeenCalledWith('act_row001', { formValues: ROWS[2] });
+        expect(runAction).toHaveBeenCalledWith('act_row001', { formValues: ROWS[2], item: ROWS[2] });
+    });
+
+    it('the click a drop spawns does NOT open the card', () => {
+        const runAction = vi.fn();
+        const { getByText } = withRuntime(
+            <AppKanban node={kbNode({ onRowClick: 'act_row001', onCardMove: 'act_move01' })} />,
+            { mode: 'run', runAction },
+        );
+        act(() => {
+            captured.onDragStart({ active: { id: 'appkanban-card:0', data: { current: { row: ROWS[0] } } } });
+            captured.onDragEnd({ active: { id: 'appkanban-card:0', data: { current: { row: ROWS[0] } } }, over: { id: 'appkanban-col:open' } });
+        });
+        // The browser's synthetic click lands synchronously after pointerup —
+        // before the guard's macrotask reset — so this click must be swallowed.
+        getByText('Fix hive').closest('[data-app-kanban-card]').click();
+        expect(runAction).not.toHaveBeenCalled();
+    });
+
+    it('shows the drag overlay copy while a drag is live', () => {
+        const { getAllByText } = withRuntime(
+            <AppKanban node={kbNode({ onCardMove: 'act_move01' })} />,
+            { mode: 'run', runAction: vi.fn() },
+        );
+        act(() => {
+            captured.onDragStart({ active: { id: 'appkanban-card:0', data: { current: { row: ROWS[0] } } } });
+        });
+        // The overlay is PORTALED to document.body (a transformed ancestor in
+        // the builder chrome would otherwise re-anchor its fixed position and
+        // float the copy away from the cursor) — query the document, not the
+        // render container.
+        expect(document.querySelector('[data-app-kanban-overlay]')).toBeTruthy();
+        expect(getAllByText('Fix hive').length).toBe(2); // in-lane card + overlay copy
+        act(() => {
+            captured.onDragCancel();
+        });
+        expect(document.querySelector('[data-app-kanban-overlay]')).toBeNull();
+    });
+
+    it('a badge value the tone map covers renders as a coloured dot, not text', () => {
+        const { container, queryByText } = withRuntime(
+            <AppKanban node={kbNode({}, { badgeKey: 'light', badgeToneMap: TONES })} />,
+        );
+        const dot = container.querySelector('[data-app-kanban-dot]');
+        expect(dot).toBeTruthy();
+        expect(dot.getAttribute('data-app-kanban-dot')).toBe('success');
+        expect(dot.getAttribute('title')).toBe('Green');
+        expect(queryByText('groen')).toBeNull(); // the word never renders
+    });
+
+    it('a badge value OUTSIDE the tone map keeps the text pill', () => {
+        const { container, getByText } = withRuntime(
+            <AppKanban node={kbNode({}, { badgeKey: 'light', badgeToneMap: TONES })} />,
+        );
+        expect(getByText('paars')).toBeTruthy(); // unmapped → visible as text
+        expect(container.querySelectorAll('[data-app-kanban-dot]').length).toBe(1);
     });
 
     it('derives columns from the data when props.columns is empty', () => {

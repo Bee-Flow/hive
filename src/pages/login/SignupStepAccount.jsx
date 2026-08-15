@@ -1,22 +1,31 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { User, Lock, Mail, Loader2, UserPlus, Building, ArrowLeft } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
-import { useDeploymentMode } from '../../hooks/useDeploymentMode';
-import LegalDocModal from '../../components/LegalDocModal';
+import { MIN_PASSWORD_LENGTH } from './signupValidation';
+import CaptchaWidget from './CaptchaWidget';
 
 const SignupStepAccount = ({
     signupData, setSignupData, signupOrgs, handleSignup,
     isLoading, setIsLoading, setSignupStep, setError,
-    inputClass, inputClassSimple, labelClass, embedded = false
+    inputClass, inputClassSimple, labelClass, embedded = false,
+    captchaConfig = null, onCaptchaToken,
 }) => {
     const { t } = useTranslation();
-    // Legal & Consent (the clickwrap below) is a Bee Flow Cloud surface only.
-    // Self-hosted installs are governed by their licence agreement, not these
-    // SaaS terms, so the consent step is hidden and never blocks signup there.
-    const { isSelfHosted } = useDeploymentMode();
-    const consentRequired = !isSelfHosted;
-    const [viewDoc, setViewDoc] = useState(null); // { docId, title } — opens the in-app reader
+
+    /**
+     * The organisation's name when joining an existing one.
+     *
+     * This used to come only from the public organisation directory, which no
+     * longer answers anonymously on cloud — GET /auth/organizations/public was
+     * disclosing the entire customer list (M-04 in the security assessment) and
+     * is now off by default there. Joining an existing org happens through an
+     * invitation anyway, and the invitation already carries the org's name, so
+     * prefer that and keep the directory lookup as the self-hosted fallback.
+     */
+    const joinedOrgName = signupData.orgName
+        || signupOrgs?.find(o => o.id === signupData.organizationId)?.name
+        || '';
 
     // ── Review summary (wizard) ──────────────────────────────────────────
     // Mirrors the "done"/review step of the Nextcloud onboarding wizard, but
@@ -36,7 +45,7 @@ const SignupStepAccount = ({
         const orgName = signupData.signupType === 'new'
             ? signupData.newOrgName
             : signupData.signupType === 'existing'
-                ? (signupOrgs.find(o => o.id === signupData.organizationId)?.name || '')
+                ? joinedOrgName
                 : '';
         const rows = [
             [t('signup.review_account_type', 'Account type'), typeLabel],
@@ -57,66 +66,6 @@ const SignupStepAccount = ({
         );
     };
 
-    // ── Legal consent checkbox (clickwrap) ───────────────────────────────
-    // Un-ticked by default; the primary action stays disabled until ticked.
-    // Org creators (signupType 'new') also accept the DPA; everyone else accepts
-    // Terms + Privacy + Acceptable Use. Document links open the in-app reader
-    // (LegalDocModal); the modal also offers an "Open full page" link to the
-    // stable, savable public page (Dutch BW 6:234).
-    const renderConsent = () => {
-        if (!consentRequired) return null;
-        const links = [
-            { key: 'signup.consent_tos', fb: 'Terms of Service', docId: 'terms' },
-            { key: 'signup.consent_privacy', fb: 'Privacy Policy', docId: 'privacy' },
-            ...(signupData.signupType === 'new'
-                ? [{ key: 'signup.consent_dpa', fb: 'Data Processing Agreement', docId: 'dpa' }]
-                : []),
-            { key: 'signup.consent_aup', fb: 'Acceptable Use Policy', docId: 'aup' },
-        ];
-        // The trigger buttons live inside the <label>, so preventDefault/stop
-        // keeps a doc click from toggling the consent checkbox. The modal is a
-        // sibling of the label (it portals to body) so its events don't bubble
-        // back into the label through React's tree.
-        const openDoc = (e, l) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setViewDoc({ docId: l.docId, title: t(l.key, l.fb) });
-        };
-        return (
-            <>
-                <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                    <input
-                        type="checkbox"
-                        checked={!!signupData.consentAccepted}
-                        onChange={e => setSignupData(p => ({ ...p, consentAccepted: e.target.checked }))}
-                        className="mt-0.5 w-4 h-4 shrink-0"
-                        style={{ accentColor: 'var(--accent-primary)' }}
-                    />
-                    <span className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                        {t('signup.consent_intro', "I have read and agree to Bee Flow's")}{' '}
-                        {links.map((l, i) => (
-                            <React.Fragment key={l.docId}>
-                                {i > 0 && (i === links.length - 1
-                                    ? <>{' '}{t('signup.consent_and', 'and')}{' '}</>
-                                    : ', ')}
-                                <button type="button" onClick={e => openDoc(e, l)}
-                                    className="underline" style={{ color: 'var(--accent-primary)' }}>
-                                    {t(l.key, l.fb)}
-                                </button>
-                            </React.Fragment>
-                        ))}.
-                    </span>
-                </label>
-                <LegalDocModal
-                    open={!!viewDoc}
-                    docId={viewDoc?.docId}
-                    title={viewDoc?.title}
-                    onClose={() => setViewDoc(null)}
-                />
-            </>
-        );
-    };
-
     // OAuth flow — redirect to provider (org or consumer)
     if (signupData.authMethod !== 'password' && (signupData.signupType === 'new' || signupData.signupType === 'consumer')) {
         const providerName = signupData.authMethod === 'google' ? 'Google' : 'Microsoft';
@@ -124,10 +73,6 @@ const SignupStepAccount = ({
         const isConsumerOAuth = signupData.signupType === 'consumer';
 
         const handleOAuthSignup = async () => {
-            if (consentRequired && !signupData.consentAccepted) {
-                setError(t('signup.consent_required_error', 'Please read and accept the legal terms to continue.'));
-                return;
-            }
             setIsLoading(true);
             setError('');
             try {
@@ -144,7 +89,6 @@ const SignupStepAccount = ({
                             piiDetectionAction: signupData.piiAction || 'tokenize',
                             euModeEnabled: signupData.euModeEnabled,
                         },
-                        consent: { accepted: true, accountType: 'consumer' },
                     }
                     : {
                         newOrgName: signupData.newOrgName,
@@ -166,7 +110,6 @@ const SignupStepAccount = ({
                                 euModeEnabled: signupData.euModeEnabled
                             }
                         },
-                        consent: { accepted: true, accountType: 'org_admin' }
                     };
 
                 const res = await authFetch(`${API_BASE}/auth/pending-signup`, {
@@ -210,9 +153,7 @@ const SignupStepAccount = ({
                     {t('signup.sign_in_with_provider', { provider: providerName })}
                 </p>
 
-                {renderConsent()}
-
-                <button type="button" disabled={isLoading || (consentRequired && !signupData.consentAccepted)} onClick={handleOAuthSignup}
+                <button type="button" disabled={isLoading} onClick={handleOAuthSignup}
                     className="w-full py-3.5 bg-white border-2 border-[var(--border-default)] hover:border-[var(--accent-primary)] text-[var(--text-primary)] rounded-xl font-medium transition-all flex items-center justify-center gap-3 text-base shadow-sm disabled:opacity-50">
                     {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
                         <>
@@ -258,7 +199,7 @@ const SignupStepAccount = ({
         ? t('signup.personal_account')
         : signupData.signupType === 'new'
             ? signupData.newOrgName
-            : signupOrgs.find(o => o.id === signupData.organizationId)?.name || 'Organization';
+            : joinedOrgName || 'Organization';
 
     const contextSubtitle = isConsumer
         ? t('signup.personal_account_desc')
@@ -318,7 +259,7 @@ const SignupStepAccount = ({
                 <label className={labelClass}>{t('signup.password')} *</label>
                 <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                    <input type="password" value={signupData.password} onChange={e => setSignupData(p => ({ ...p, password: e.target.value }))} className={inputClass} placeholder="••••••••" required minLength={4} />
+                    <input type="password" value={signupData.password} onChange={e => setSignupData(p => ({ ...p, password: e.target.value }))} className={inputClass} placeholder="••••••••" required minLength={MIN_PASSWORD_LENGTH} />
                 </div>
             </div>
 
@@ -326,13 +267,14 @@ const SignupStepAccount = ({
                 <label className={labelClass}>{t('signup.confirm_password')} *</label>
                 <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                    <input type="password" value={signupData.confirmPassword} onChange={e => setSignupData(p => ({ ...p, confirmPassword: e.target.value }))} className={inputClass} placeholder="••••••••" required minLength={4} />
+                    <input type="password" value={signupData.confirmPassword} onChange={e => setSignupData(p => ({ ...p, confirmPassword: e.target.value }))} className={inputClass} placeholder="••••••••" required minLength={MIN_PASSWORD_LENGTH} />
                 </div>
             </div>
 
-            {renderConsent()}
+            {/* Renders nothing unless the server reported a configured provider. */}
+            <CaptchaWidget config={captchaConfig} onToken={onCaptchaToken} />
 
-            <button type="submit" disabled={isLoading || (consentRequired && !signupData.consentAccepted)}
+            <button type="submit" disabled={isLoading}
                 className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-base shadow-lg mt-2">
                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><UserPlus className="w-5 h-5" /> {t('signup.create_account_btn')}</>}
             </button>

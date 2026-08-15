@@ -397,4 +397,23 @@ export function LabelledEdge({ id, source, target, sourceX, sourceY, targetX, ta
     );
 }
 
-export const edgeTypes = { labelled: LabelledEdge };
+/**
+ * The thin dashed tether from an AI step's tool port down to one of its tools.
+ *
+ * Its own type rather than a styled LabelledEdge because it is NOT a
+ * connection: there is no definition row behind it, so the "+" splice, the "×"
+ * delete and the colour palette a LabelledEdge offers would all act on an edge
+ * that does not exist. Nothing to hover, nothing to click.
+ */
+export function ToolLinkEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition }) {
+    const [path] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 12 });
+    return (
+        <BaseEdge
+            path={path}
+            style={{ stroke: 'var(--border-default)', strokeWidth: 1.5, strokeDasharray: '4 3' }}
+            interactionWidth={0}
+        />
+    );
+}
+
+export const edgeTypes = { labelled: LabelledEdge, toolLink: ToolLinkEdge };

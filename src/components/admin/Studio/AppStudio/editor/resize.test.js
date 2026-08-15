@@ -40,7 +40,7 @@ describe('heightFromDrag', () => {
     });
 
     it('clamps at the ends of the vocabulary', () => {
-        expect(heightFromDrag({ startHeight: 'lg', dy: 400, stepPx })).toBe('lg');
+        expect(heightFromDrag({ startHeight: 'xl', dy: 400, stepPx })).toBe('xl');
         expect(heightFromDrag({ startHeight: 'auto', dy: -400, stepPx })).toBe('auto');
     });
 
@@ -50,6 +50,6 @@ describe('heightFromDrag', () => {
     });
 
     it('exposes the ordered step vocabulary', () => {
-        expect(HEIGHT_STEPS).toEqual(['auto', 'sm', 'md', 'lg']);
+        expect(HEIGHT_STEPS).toEqual(['auto', 'sm', 'md', 'lg', 'xl']);
     });
 });

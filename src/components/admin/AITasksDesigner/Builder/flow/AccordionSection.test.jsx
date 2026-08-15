@@ -81,3 +81,83 @@ describe('densityForOpen', () => {
         expect(densityForOpen('nonsense')).toBe('quick');
     });
 });
+
+describe('AccordionSection mode (Simple / All options)', () => {
+    beforeEach(() => {
+        cleanup();
+        scopedStorage.setCurrentUser('accordion-test-user');
+        try { localStorage.clear(); } catch { /* ignore */ }
+    });
+
+    const renderWith = (ctx, props = {}) => render(
+        <FormDensityContext.Provider value={ctx}>
+            <AccordionSection stepType="ai_step" sectionKey="advanced" title="Advanced" {...props}>
+                <div>secret setting</div>
+            </AccordionSection>
+        </FormDensityContext.Provider>,
+    );
+
+    it('the user\'s mode beats the gesture, in BOTH directions', () => {
+        // Advanced mode shows the section even in the small (quick) window…
+        renderWith({ density: 'quick', mode: 'advanced' });
+        expect(screen.getByText('Advanced')).toBeTruthy();
+        cleanup();
+        // …and Simple hides it even in the big (full) window.
+        renderWith({ density: 'full', mode: 'simple' });
+        expect(screen.queryByText('Advanced')).toBeNull();
+    });
+
+    it('a configured section is never hidden in Simple, and says why', () => {
+        renderWith({ density: 'quick', mode: 'simple' }, { hasContent: true });
+        expect(screen.getByText('Advanced')).toBeTruthy();
+        // The "set" badge marks it as kept-because-configured.
+        expect(screen.getByText('set')).toBeTruthy();
+    });
+
+    it('a section revealed by Simple → All options arrives OPEN', () => {
+        const ui = (mode) => (
+            <FormDensityContext.Provider value={{ density: 'quick', mode }}>
+                <AccordionSection stepType="ai_step" sectionKey="advanced" title="Advanced">
+                    <div>secret setting</div>
+                </AccordionSection>
+            </FormDensityContext.Provider>
+        );
+        const { rerender } = render(ui('simple'));
+        expect(screen.queryByText('secret setting')).toBeNull();
+        rerender(ui('advanced'));
+        // Not merely present — OPEN. Revealing it collapsed would make the
+        // toggle look like it did nothing.
+        expect(screen.getByText('secret setting')).toBeTruthy();
+    });
+
+    it('All options → Simple hides again without opening anything else', () => {
+        const onHiddenSection = vi.fn();
+        const ui = (mode) => (
+            <FormDensityContext.Provider value={{ density: 'quick', mode, onHiddenSection }}>
+                <AccordionSection stepType="ai_step" sectionKey="advanced" title="Advanced">
+                    <div>secret setting</div>
+                </AccordionSection>
+            </FormDensityContext.Provider>
+        );
+        const { rerender } = render(ui('advanced'));
+        expect(screen.getByText('Advanced')).toBeTruthy();
+        rerender(ui('simple'));
+        expect(screen.queryByText('Advanced')).toBeNull();
+        expect(onHiddenSection).toHaveBeenCalledWith('advanced');
+    });
+
+    it('reports becoming visible so the host can drain its hidden count', () => {
+        const onShownSection = vi.fn();
+        const ui = (mode) => (
+            <FormDensityContext.Provider value={{ density: 'quick', mode, onShownSection }}>
+                <AccordionSection stepType="ai_step" sectionKey="advanced" title="Advanced">
+                    <div>secret setting</div>
+                </AccordionSection>
+            </FormDensityContext.Provider>
+        );
+        const { rerender } = render(ui('simple'));
+        expect(onShownSection).not.toHaveBeenCalled();
+        rerender(ui('advanced'));
+        expect(onShownSection).toHaveBeenCalledWith('advanced');
+    });
+});

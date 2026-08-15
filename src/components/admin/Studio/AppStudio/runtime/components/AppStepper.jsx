@@ -97,6 +97,9 @@ export default function AppStepper({ node }) {
                         type="button"
                         onClick={() => runAction(node.onRowClick, {
                             formValues: { value: step?.value ?? null, label, index: i },
+                            item: step,
+                            index: i,
+                            value: step?.value ?? null,
                         })}
                         className="app-stepper-step min-w-0 rounded-md px-1 py-0.5"
                         aria-current={isCurrent ? 'step' : undefined}

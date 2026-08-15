@@ -1,6 +1,7 @@
 import { Loader2, Plus, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useAppRoles, { useOrgDirectory } from './useAppRoles';
+import { resolveAccessEntry } from './rowRuleModel';
 import ConfirmDialog from '../../../../shared/ConfirmDialog';
 import toast from '../../../../shared/Toast';
 import { setDefinitionRoles } from '../state/definitionOps';
@@ -45,20 +46,21 @@ function uniqueRoleKey(base, taken) {
 }
 
 /**
- * What a viewer holding `roleKey` may do with one table — mirrors the server's
- * scope resolution (rlsGateway resolveScope: an explicit access.roles entry
- * wins, otherwise the table's access.default) so the summary below can never
- * promise more than the gateway allows.
+ * What a viewer holding `roleKey` may do with one table.
+ *
+ * This used to re-derive the resolution by hand and only recognised a STRING
+ * read permission, so an entry of { read: true, create: true } — a shape
+ * normalizePerm handles and rowRuleModel.test.js pins — fell through to the
+ * table's default. On a table defaulting to 'none' the panel then said the role
+ * had no access at all, for a role the gateway grants full read: an owner
+ * reading that would go and grant access that was already there.
+ *
+ * resolveAccessEntry IS the gateway's resolution, shared. Using it means the
+ * summary cannot drift from what the server does in either direction.
  */
 function tableScopeFor(table, roleKey) {
-    const access = (table && typeof table.access === 'object' && table.access) ? table.access : {};
-    const entry = (access.roles && typeof access.roles === 'object') ? access.roles[roleKey] : null;
-    if (entry && typeof entry === 'object' && typeof entry.read === 'string') {
-        return { read: entry.read, create: entry.create === true || entry.create === 'all' || entry.create === 'own' };
-    }
-    if (access.default === 'app') return { read: 'all', create: true };
-    if (access.default === 'owner') return { read: 'own', create: true };
-    return { read: 'none', create: false };
+    const entry = resolveAccessEntry(table, roleKey);
+    return { read: entry.read, create: entry.create === true };
 }
 
 function accessPhrase(scope) {
@@ -73,7 +75,7 @@ function joinNames(names) {
 }
 
 /** Plain-language tail describing what `roleKey` (null = no role) can do. */
-function describeRoleAccess(roleKey, tables) {
+export function describeRoleAccess(roleKey, tables) {
     if (!roleKey) return 'cannot open any of this app’s data';
     if (!tables.length) return 'can open this app — there is no data to protect yet';
     const byPhrase = new Map();

@@ -122,11 +122,22 @@ describe('NodeDetailView', () => {
 
         it('offers Execute, a data line, and a counted way into everything else', () => {
             const onExecuteStep = vi.fn();
-            const onDensityChange = vi.fn();
-            render(<NodeDetailView {...quickProps({ onExecuteStep, onDensityChange })} />);
+            const onModeChange = vi.fn();
+            render(<NodeDetailView {...quickProps({ onExecuteStep, onModeChange })} />);
             fireEvent.click(screen.getAllByRole('button', { name: /Execute/ })[0]);
             expect(onExecuteStep).toHaveBeenCalledWith('s1');
-            // ai_step hides 2 sections in quick (Advanced + Structured output).
+            // ai_step hides 2 sections in Simple (Advanced + Structured
+            // output). The counted control now reveals them IN THIS dialog by
+            // switching the MODE — it must not swap the window for the
+            // three-column workspace (the old "More options" did, and still
+            // left the sections hidden).
+            fireEvent.click(screen.getByText(/Show all options \(2\)/));
+            expect(onModeChange).toHaveBeenCalledWith('advanced');
+        });
+
+        it('without a mode owner, the legacy counted button still opens the full view', () => {
+            const onDensityChange = vi.fn();
+            render(<NodeDetailView {...quickProps({ onDensityChange })} />);
             fireEvent.click(screen.getByText(/More options \(2\)/));
             expect(onDensityChange).toHaveBeenCalledWith('full');
         });
@@ -157,10 +168,30 @@ describe('NodeDetailView', () => {
         });
     });
 
-    it('the full view offers a way back to the simple one', () => {
+    it('the full view offers a way back to the small dialog', () => {
+        // "Shrink to the small dialog", not "Simple view" — the words Simple /
+        // All options belong to the MODE toggle; this button only resizes.
         const onDensityChange = vi.fn();
         render(<NodeDetailView {...baseProps({ density: 'full', onDensityChange })} />);
-        fireEvent.click(screen.getByLabelText('Simple view'));
+        fireEvent.click(screen.getByLabelText('Shrink to the small dialog'));
         expect(onDensityChange).toHaveBeenCalledWith('quick');
+    });
+
+    it('the user\'s mode beats the gesture: Simple stays simple in the full view', () => {
+        // A user who chose Simple keeps the simple form even in the big
+        // window — mode owns content, density owns window size.
+        render(<NodeDetailView {...baseProps({ density: 'full', mode: 'simple', onModeChange: vi.fn() })} />);
+        expect(screen.queryByText('Advanced')).toBeNull();
+        expect(screen.getByText('Inputs')).toBeTruthy();
+    });
+
+    it('switching to All options reveals the hidden sections in place', () => {
+        const onModeChange = vi.fn();
+        const { rerender } = render(<NodeDetailView {...baseProps({ density: 'quick', mode: 'simple', onModeChange })} />);
+        expect(screen.queryByText('Advanced')).toBeNull();
+        rerender(<NodeDetailView {...baseProps({ density: 'quick', mode: 'advanced', onModeChange })} />);
+        expect(screen.getByText('Advanced')).toBeTruthy();
+        // The counted link now reads the other way and the count drains.
+        expect(screen.getByText('Show fewer options')).toBeTruthy();
     });
 });

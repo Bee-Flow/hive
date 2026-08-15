@@ -10,7 +10,9 @@ import { NC_BLUE, LANGS, Toggle, Row, Select } from './shared/settingsPrimitives
  * when present, take precedence over these per field.
  */
 export default function MeetingNotesSection() {
-    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk', language: 'nl', autoRecord: false, autoRecordScope: 'calendar', recordingMode: 'audio' });
+    // recordingFolder: Talk saves to <attachment folder>/Recording/<room token>/,
+    // so /Talk/Recording is the default on a stock Nextcloud.
+    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk/Recording', language: 'nl', autoRecord: false, autoRecordScope: 'calendar', recordingMode: 'audio' });
     const [available, setAvailable] = useState(true);
     const [connected, setConnected] = useState(false);
     const [recordingEnabled, setRecordingEnabled] = useState(false);
@@ -89,11 +91,11 @@ export default function MeetingNotesSection() {
                     <Toggle on={cfg.postSummaryBack} onClick={() => setCfg(c => ({ ...c, postSummaryBack: !c.postSummaryBack }))} disabled={saving} />
                 </Row>
                 <div style={{ height: 1, background: 'var(--border-subtle)' }} />
-                <Row title="Recordings folder" desc="Nextcloud Files folder where Talk saves your recordings.">
+                <Row title="Recordings folder" desc="Nextcloud Files folder where Talk saves your recordings — normally /Talk/Recording, with one subfolder per conversation.">
                     <input
                         type="text" value={cfg.recordingFolder}
                         onChange={e => setCfg(c => ({ ...c, recordingFolder: e.target.value }))}
-                        disabled={saving} placeholder="/Talk"
+                        disabled={saving} placeholder="/Talk/Recording"
                         className="w-40 px-3 py-1.5 rounded-lg border outline-none text-[13px]"
                         style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                     />

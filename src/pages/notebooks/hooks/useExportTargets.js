@@ -1,7 +1,7 @@
 /**
  * useExportTargets — probes which external export targets are configured.
  *
- * Shared by NotebooksPage + LegalStudioPage (both copied these two probes). The
+ * Used by NotebooksPage (it copied these two probes). The
  * results gate the SignRequest and Nextcloud entries in the export menu.
  */
 import { useState, useEffect } from 'react';

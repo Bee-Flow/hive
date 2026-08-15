@@ -117,5 +117,11 @@ export function readableForeground(hex) {
         return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
     };
     const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-    return L > 0.5 ? '#000000' : '#ffffff';
+    // Crossover where black text starts beating white under the WCAG contrast
+    // formula: (L+0.05)/0.05 > 1.05/(L+0.05) → L > √0.0525 − 0.05 ≈ 0.179.
+    // The previous midpoint test (L > 0.5) chose WHITE for every mid-luminance
+    // accent — the default grey #9ca3af (L ≈ 0.36) got white at 2.54:1 when
+    // black measures 8.3:1, which is the exact failure this function's doc
+    // comment promises to prevent.
+    return L > 0.179 ? '#000000' : '#ffffff';
 }

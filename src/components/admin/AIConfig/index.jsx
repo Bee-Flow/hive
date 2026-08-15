@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import DirectChatConfig from './DirectChatConfig';
 import EmbeddingsConfig from './EmbeddingsConfig';
-import LeadEnrichmentConfig from './LeadEnrichmentConfig';
 import LimitsConfig from './LimitsConfig';
 import ChatModelTiersConfig from '../ChatModelTiersConfig';
 import AzureConfigCard from './ProviderCards/AzureCard';
 import ClaudeApiKeyCard from './ProviderCards/ClaudeCard';
 import GoogleApiKeyCard from './ProviderCards/GoogleCard';
 import MistralApiKeyCard from './ProviderCards/MistralCard';
-import TicketAssistantTiersConfig from './TicketAssistantTiersConfig';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import { getModelMeta, CAT_COLORS } from '../../../utils/modelMeta';
@@ -18,6 +16,7 @@ import WebSearchInferenceConfig from './WebSearchInferenceConfig';
 import OpenAIApiKeyCard from './ProviderCards/OpenAICard';
 import ElevenLabsApiKeyCard from './ProviderCards/ElevenLabsCard';
 import GoogleVertexConfigCard from './ProviderCards/GoogleVertexCard';
+import LocalModelsCard from './ProviderCards/LocalModelsCard';
 import RerankerConfig from './RerankerConfig';
 
 
@@ -108,9 +107,7 @@ const AIConfigPanel = () => {
         { id: 'chatModels', label: t('admin.ai_chat_models'), icon: '🗨️' },
         { id: 'embeddings', label: t('admin.ai_embeddings', 'Embeddings'), icon: '🧬' },
         { id: 'directChat', label: t('admin.ai_direct_chat'), icon: '💬' },
-        { id: 'ticketAssistantTiers', label: t('admin.ai_ticket_assistant_tiers', 'Ticket Assistant Models'), icon: '🎫' },
         { id: 'webSearchInference', label: t('admin.ai_web_search_inference', 'Web Search Inference'), icon: '🌐' },
-        { id: 'leadEnrichment', label: t('admin.ai_lead_enrichment', 'Lead Enrichment'), icon: '🎯' },
         { id: 'limits', label: t('admin.ai_limits', 'Limits & Self-host'), icon: '⚙️' },
 
     ];
@@ -216,6 +213,16 @@ const AIConfigPanel = () => {
                             );
                         })}
 
+                        {/* Self-hosted runtimes. Not part of providerCards
+                            above: those are one-API-key singletons matched by a
+                            fixed display name, while a customer can connect
+                            several local runtimes under names they choose. */}
+                        {/* onProvidersChanged → fetchProviders always sets a fresh
+                            array, so the [activeTab, providers] effect re-runs
+                            fetchAllModels and a newly connected runtime (or a
+                            newly pulled model) shows up in the tier picker. */}
+                        <LocalModelsCard onMessage={setMessage} onProvidersChanged={fetchProviders} />
+
                         {/* Reranker stays at the bottom of providers */}
                         <RerankerConfig onMessage={setMessage} />
 
@@ -243,19 +250,9 @@ const AIConfigPanel = () => {
                     <DirectChatConfig />
                 )}
 
-                {/* Ticket Assistant Tiers Tab — per-stage model tier picker */}
-                {activeTab === 'ticketAssistantTiers' && (
-                    <TicketAssistantTiersConfig />
-                )}
-
                 {/* Web Search Inference Tab — embed inherits global, rerank method-only, cleanup uses chat-model picker */}
                 {activeTab === 'webSearchInference' && (
                     <WebSearchInferenceConfig allModels={allModels} onNavigateToTab={setActiveTab} />
-                )}
-
-                {/* Lead Enrichment Tab — Lead Studio data-source API keys (KvK/Hunter/Apollo/Apify) */}
-                {activeTab === 'leadEnrichment' && (
-                    <LeadEnrichmentConfig onMessage={setMessage} />
                 )}
 
                 {/* Limits Tab — runtime caps applied to chat surfaces */}

@@ -55,7 +55,7 @@ describe('ConditionBuilder — trivial values open visual, not raw', () => {
         // Visual mode affordances present; NOT the raw textarea.
         expect(screen.getByText('Add condition')).toBeTruthy();
         expect(screen.getByText('Write raw expression')).toBeTruthy();
-        expect(screen.queryByText(/Syntax help/)).toBeNull();
+        expect(screen.queryByText(/What can I write here\?/)).toBeNull();
     });
 
     it('a bare `false` also opens visual mode with an empty row', () => {
@@ -102,9 +102,9 @@ describe('ConditionBuilder — raw mode', () => {
         expect(textarea.value).toBe('foo(bar) &&& x');
     });
 
-    it('Syntax help reveals the whitelisted functions', () => {
+    it('the help disclosure reveals the whitelisted functions', () => {
         renderBuilder({ value: 'foo(bar) &&& x' });
-        fireEvent.click(screen.getByText(/Syntax help/));
+        fireEvent.click(screen.getByText(/What can I write here\?/));
         expect(screen.getByText('contains(text, part)')).toBeTruthy();
         expect(screen.getByText('isEmpty(value)')).toBeTruthy();
     });

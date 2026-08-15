@@ -242,7 +242,6 @@ const I_SERVERS = () => ([
     { server_endpoint: 'graph.microsoft.com', server_ips: ['20.190.160.14', '20.190.160.20'], country_codes: ['NL', 'IE'], country_names: ['Netherlands', 'Ireland'], country_flags: ['🇳🇱', '🇮🇪'], is_eu: true, integration_count: 4, sent: 261, received: 261, total: 522, last_contact: dayKey(0) },
     { server_endpoint: 'nextcloud.internal', server_ips: ['10.0.4.11'], country_codes: ['LOCAL'], country_names: ['On your network'], country_flags: ['🏠'], is_eu: true, integration_count: 6, sent: 194, received: 194, total: 388, last_contact: dayKey(0) },
     { server_endpoint: 'api.anthropic.com', server_ips: ['160.79.104.10'], country_codes: ['US'], country_names: ['United States'], country_flags: ['🇺🇸'], is_eu: false, integration_count: 1, sent: 96, received: 96, total: 192, last_contact: dayKey(0) },
-    { server_endpoint: 'rechtspraak.nl', server_ips: ['145.21.33.8'], country_codes: ['NL'], country_names: ['Netherlands'], country_flags: ['🇳🇱'], is_eu: true, integration_count: 1, sent: 74, received: 74, total: 148, last_contact: dayKey(1) },
     { server_endpoint: 'api.elevenlabs.io', server_ips: ['34.117.62.4'], country_codes: ['US'], country_names: ['United States'], country_flags: ['🇺🇸'], is_eu: false, integration_count: 1, sent: 21, received: 21, total: 42, last_contact: dayKey(2) },
 ]);
 
@@ -289,7 +288,6 @@ const I_EGRESS = () => {
         ['drive_get_file', 'google', 'gmail.googleapis.com', 'IE', 'Ireland', '🇮🇪', 1, 0, 'Google', 'inbound', ''],
         ['elevenlabs_tts', 'voice', 'api.elevenlabs.io', 'US', 'United States', '🇺🇸', 0, 0, 'ElevenLabs', 'outbound', ''],
         ['nextcloud_list', 'nextcloud', 'nextcloud.internal', 'LOCAL', 'On your network', '🏠', 1, 1, 'On your network', 'outbound', ''],
-        ['rechtspraak_search', 'legal', 'rechtspraak.nl', 'NL', 'Netherlands', '🇳🇱', 1, 0, 'Rechtspraak', 'outbound', ''],
     ];
     const people = USERS();
     return rows.map((r, i) => ({

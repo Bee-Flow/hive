@@ -1,7 +1,7 @@
 import {
     Clock, Zap, Webhook, MousePointer2, Mail, Calendar,
     Tag, BellRing, FileUp, FilePlus, FilePen, Share2, Activity, Bell,
-    Ticket, RefreshCw, Stethoscope, LogIn, Bot, AppWindow, ClipboardList,
+    Stethoscope, LogIn, Bot, AppWindow, ClipboardList,
 } from 'lucide-react';
 import React from 'react';
 import IntegrationLogo from './IntegrationLogo';
@@ -51,8 +51,6 @@ const APP_EVENT_ICON = {
     'nextcloud.share.received':        Share2,
     'nextcloud.activity.new':          Activity,
     'nextcloud.notification.new':      Bell,
-    'ticket-assistant.ticket.new':     Ticket,
-    'ticket-assistant.sync.completed': RefreshCw,
 };
 
 export default function TriggerNode({ id, data }) {
@@ -292,25 +290,6 @@ function summariseFilter(filter, appEvent) {
         if (key === 'nextcloud.notification.new') {
             if (filter.app)             push('app',             `app: ${truncate(filter.app, 16)}`);
             if (filter.subjectContains) push('subjectContains', `subject ~ "${truncate(filter.subjectContains, 14)}"`);
-            return out;
-        }
-    }
-
-    if (provider === 'ticket-assistant') {
-        if (key === 'ticket-assistant.ticket.new') {
-            if (filter.provider)         push('provider',         `${filter.provider}`);
-            if (filter.connectionId)     push('connectionId',     `conn: ${truncate(filter.connectionId, 10)}`);
-            if (filter.priorityEquals)   push('priorityEquals',   `prio: ${filter.priorityEquals}`);
-            if (filter.statusEquals)     push('statusEquals',     `status: ${filter.statusEquals}`);
-            if (filter.categoryEquals)   push('categoryEquals',   `cat: ${truncate(filter.categoryEquals, 14)}`);
-            if (filter.subjectContains)  push('subjectContains',  `subject ~ "${truncate(filter.subjectContains, 14)}"`);
-            if (filter.bodyContains)     push('bodyContains',     `body ~ "${truncate(filter.bodyContains, 14)}"`);
-            return out;
-        }
-        if (key === 'ticket-assistant.sync.completed') {
-            if (filter.provider)        push('provider',        `${filter.provider}`);
-            if (filter.connectionId)    push('connectionId',    `conn: ${truncate(filter.connectionId, 10)}`);
-            if (filter.outcomeEquals)   push('outcomeEquals',   `outcome: ${filter.outcomeEquals}`);
             return out;
         }
     }

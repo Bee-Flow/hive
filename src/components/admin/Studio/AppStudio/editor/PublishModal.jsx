@@ -1,6 +1,7 @@
-import { AlertTriangle, ExternalLink, Info, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Info, LayoutGrid, Loader2, Stethoscope } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import AudiencePicker from './AudiencePicker';
+import dryRunIssues from './dryRunIssues';
 import { GROUPS, ORG, PRIVATE } from './publishAccessSummary';
 import Modal from '../../../../shared/Modal';
 import toast from '../../../../shared/Toast';
@@ -91,6 +92,28 @@ function asIssueList(value) {
     return Array.isArray(value) ? value.filter((e) => e && typeof e === 'object') : [];
 }
 
+/**
+ * The screen a node id sits on, in the { nodeId, screenId, screenName } shape
+ * "Show me" wants. resolveIssueTarget walks a validator PATH; the dry run
+ * reports the component it actually executed, which only has an id.
+ */
+function resolveNodeScreen(definition, nodeId) {
+    if (!definition || !nodeId) return null;
+    for (const screen of definition.screens || []) {
+        let hit = false;
+        const walk = (nodes) => {
+            for (const n of nodes || []) {
+                if (hit) return;
+                if (n?.id === nodeId) { hit = true; return; }
+                if (Array.isArray(n?.children)) walk(n.children);
+            }
+        };
+        for (const section of screen.sections || []) walk(section.children);
+        if (hit) return { nodeId, screenId: screen.id, screenName: screen.name || null };
+    }
+    return null;
+}
+
 export default function PublishModal({ open, onClose, app, onPublished, definition, onRevealNode }) {
     const currentAudience = audienceOf(app);
     const currentGroups = useMemo(() => sharedGroupsOf(app), [app]);
@@ -99,10 +122,15 @@ export default function PublishModal({ open, onClose, app, onPublished, definiti
 
     const [audience, setAudience] = useState(currentAudience);
     const [selectedGroups, setSelectedGroups] = useState(() => new Set(currentGroups));
+    // Nextcloud app-menu opt-in (stored per app; applied after the publish).
+    const [ncMenu, setNcMenu] = useState(!!app?.nextcloudMenu);
     const [busy, setBusy] = useState(false);
     // What the server said stands in the way of publishing, straight from the
     // 422 body: { errors, warnings }. null until a publish is refused.
     const [blockers, setBlockers] = useState(null);
+    // The pre-flight check: null = never run, then { errors, warnings }.
+    const [checking, setChecking] = useState(false);
+    const [checkResult, setCheckResult] = useState(null);
 
     // Reset the draft each time the modal opens so a re-open starts from the
     // app's real, current audience.
@@ -110,9 +138,36 @@ export default function PublishModal({ open, onClose, app, onPublished, definiti
         if (!open) return;
         setAudience(audienceOf(app));
         setSelectedGroups(new Set(sharedGroupsOf(app)));
+        setNcMenu(!!app?.nextcloudMenu);
         setBusy(false);
         setBlockers(null);
+        setChecking(false);
+        setCheckResult(null);
     }, [open, app]);
+
+    /**
+     * Try the app without publishing it.
+     *
+     * The publish gate only refuses what it can prove statically. The things a
+     * hand-builder actually gets wrong — a table with no rows behind a list, a
+     * screen that is blank for everyone but them, a save step writing a column
+     * that was renamed — are only visible by executing the bindings, which is
+     * what the server's dry run does read-only. Until now nothing but the AI
+     * builder could ask for it.
+     */
+    const doCheck = async () => {
+        if (!app?.id || checking) return;
+        setChecking(true);
+        setBlockers(null);
+        try {
+            const result = await studioAppsApi.checkApp(app.id);
+            setCheckResult(dryRunIssues(result, resolveAgainst));
+        } catch (err) {
+            toast.error(err?.message || 'Could not check this app.');
+        } finally {
+            setChecking(false);
+        }
+    };
 
     // A different audience is a different attempt — the previous refusal no
     // longer describes what the Apply button would do.
@@ -150,10 +205,32 @@ export default function PublishModal({ open, onClose, app, onPublished, definiti
             const res = await studioAppsApi.publish(app.id, payload);
             const nextPublished = res?.isPublished ?? payload.isPublished;
             const nextGroups = res?.sharedGroups ?? payload.sharedGroups ?? [];
+
+            // Apply the Nextcloud app-menu opt-in AFTER the publish settled —
+            // enabling requires a live published copy, which the publish call
+            // just created. Best-effort: a hiccup here must not roll back a
+            // successful publish, so it reports its own toast and moves on.
+            // Only touched when publishing and actually changed; unpublishing
+            // leaves the stored flag as-is (the server hides the entry via the
+            // is_published filter, and re-publishing restores it).
+            let nextNcMenu = !!app?.nextcloudMenu;
+            if (payload.isPublished && ncMenu !== nextNcMenu) {
+                try {
+                    const ncRes = await studioAppsApi.setNextcloudMenu(app.id, ncMenu);
+                    nextNcMenu = !!ncRes?.nextcloudMenu;
+                    if (ncMenu && ncRes?.ncConnected === false) {
+                        toast.info('Saved — the app icon appears once your organization’s Nextcloud is connected to Bee Flow.');
+                    }
+                } catch (err) {
+                    toast.error(err?.message || 'The Nextcloud menu setting could not be saved.');
+                }
+            }
+
             onPublished?.({
                 ...app,
                 isPublished: nextPublished,
                 sharedGroups: nextGroups,
+                nextcloudMenu: nextNcMenu,
                 // Which draft is now live — the server reports it so the "live
                 // copy is behind your edits" indicator settles immediately
                 // instead of waiting for the next app fetch.
@@ -192,6 +269,12 @@ export default function PublishModal({ open, onClose, app, onPublished, definiti
     const resolveAgainst = definition ?? app?.definition ?? null;
     const revealTarget = (issue) => {
         if (!onRevealNode) return null;
+        // The dry run names the COMPONENT it executed, not a validator path —
+        // so "Show me" has to work from an id as well as from a path.
+        if (issue?.nodeId && !issue?.path) {
+            const byId = resolveNodeScreen(resolveAgainst, issue.nodeId);
+            return byId || null;
+        }
         const target = resolveIssueTarget(resolveAgainst, issue?.path);
         return (target && (target.nodeId || target.screenId)) ? target : null;
     };
@@ -243,6 +326,56 @@ export default function PublishModal({ open, onClose, app, onPublished, definiti
                     />
                 ) : null}
 
+                {/*
+                  * Try it before anyone else has to. The publish gate only
+                  * refuses what it can prove statically; this actually runs the
+                  * app's data reads, so an empty list, a screen that is blank
+                  * for everyone but the owner, or a save step writing a column
+                  * that was renamed all surface here rather than in front of a
+                  * colleague.
+                  */}
+                <div
+                    className="rounded-lg border px-3 py-2.5"
+                    style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}
+                >
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={doCheck}
+                            disabled={checking || !app?.id}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1.5 text-xs font-medium hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                            style={{ color: 'var(--text-primary)' }}
+                        >
+                            {checking
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                                : <Stethoscope className="h-3.5 w-3.5" aria-hidden="true" />}
+                            {checking ? 'Checking…' : 'Check this app'}
+                        </button>
+                        <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                            Tries the app’s screens and logic without changing anything.
+                        </span>
+                    </div>
+
+                    {checkResult && !checking ? (
+                        checkResult.errors.length === 0 && checkResult.warnings.length === 0 ? (
+                            <p className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                Everything loaded and every step checks out.
+                            </p>
+                        ) : (
+                            <div className="mt-2.5">
+                                <BlockerList
+                                    errors={checkResult.errors}
+                                    warnings={checkResult.warnings}
+                                    revealTarget={revealTarget}
+                                    onReveal={doReveal}
+                                    context="check"
+                                />
+                            </div>
+                        )
+                    ) : null}
+                </div>
+
                 {/* Current status */}
                 <div
                     className="rounded-lg border px-3 py-2.5 text-xs"
@@ -281,25 +414,69 @@ export default function PublishModal({ open, onClose, app, onPublished, definiti
                     onToggleGroup={toggleGroup}
                     incomplete={groupsIncomplete}
                 />
+
+                {/*
+                  * Nextcloud app menu — only meaningful for a published app,
+                  * so the section hides under "Private". The entry's ICON is
+                  * visible to everyone on the connected Nextcloud (top-menu
+                  * entries are instance-wide); opening the app still enforces
+                  * the audience above, so people outside it see the normal
+                  * "not available to you" screen. The copy says exactly that.
+                  */}
+                {audience !== PRIVATE ? (
+                    <label
+                        className="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5"
+                        style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={ncMenu}
+                            onChange={(e) => setNcMenu(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent-primary)]"
+                        />
+                        <span className="min-w-0">
+                            <span className="flex items-center gap-1.5 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                <LayoutGrid className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                Show in the Nextcloud app menu
+                            </span>
+                            <span className="mt-0.5 block text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                                Adds this app to the top bar of your organization’s connected
+                                Nextcloud, opening on its own page. Everyone on that Nextcloud
+                                sees the icon; only the audience you chose above can use the app.
+                            </span>
+                        </span>
+                    </label>
+                ) : null}
             </div>
         </Modal>
     );
 }
 
-function BlockerList({ errors, warnings, revealTarget, onReveal }) {
+/**
+ * `context` distinguishes the two ways this list appears. A refused publish
+ * has to say what happened to the readers; a check the author asked for has
+ * not changed anything, so saying so would be noise — and it may have no
+ * errors at all, only things worth a look.
+ */
+function BlockerList({ errors, warnings, revealTarget, onReveal, context = 'publish' }) {
+    const isCheck = context === 'check';
     return (
         <div className="space-y-3">
-            <IssuePanel
-                issues={errors}
-                icon={<AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" style={{ color: '#b45309' }} />}
-                title={errors.length === 1
-                    ? '1 thing to fix before publishing'
-                    : `${errors.length} things to fix before publishing`}
-                note="Nothing changed for your readers — they still see the version you published last."
-                panelStyle={{ borderColor: '#b45309', background: 'color-mix(in srgb, #b45309 8%, transparent)' }}
-                revealTarget={revealTarget}
-                onReveal={onReveal}
-            />
+            {errors.length > 0 ? (
+                <IssuePanel
+                    issues={errors}
+                    icon={<AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" style={{ color: '#b45309' }} />}
+                    title={errors.length === 1
+                        ? (isCheck ? '1 thing is broken' : '1 thing to fix before publishing')
+                        : `${errors.length} things ${isCheck ? 'are broken' : 'to fix before publishing'}`}
+                    note={isCheck
+                        ? 'These stop the app working for the people you share it with.'
+                        : 'Nothing changed for your readers — they still see the version you published last.'}
+                    panelStyle={{ borderColor: '#b45309', background: 'color-mix(in srgb, #b45309 8%, transparent)' }}
+                    revealTarget={revealTarget}
+                    onReveal={onReveal}
+                />
+            ) : null}
             {warnings.length > 0 ? (
                 <IssuePanel
                     issues={warnings}

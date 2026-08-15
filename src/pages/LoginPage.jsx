@@ -76,6 +76,11 @@ const LoginPage = ({ onLogin }) => {
     });
     const [signupOrgs, setSignupOrgs] = useState([]);
     const [publicPlans, setPublicPlans] = useState([]);
+    // Bot challenge for signup. { enabled:false } unless the operator configured
+    // a provider — see server/auth/signupCaptcha.js. The server enforces it
+    // independently; this only produces the token.
+    const [captchaConfig, setCaptchaConfig] = useState(null);
+    const [captchaToken, setCaptchaToken] = useState('');
     const [signupData, setSignupData] = useState(() => {
         // A ?plan=<id> deep link (from the pricing page) preselects that plan.
         // It is validated against the fetched plan list below and dropped if it
@@ -87,7 +92,6 @@ const LoginPage = ({ onLogin }) => {
             signupType: type, organizationId: '',
             newOrgName: '', orgTagline: '', orgDescription: '', orgAddress: '', orgEmail: '', orgPhone: '', orgWebsite: '', orgKvk: '', orgVat: '', orgCountry: '', orgAllowSignup: false,
             authMethod: '', shieldEnabled: true, piiCategories: DEFAULT_PII_CATEGORIES, piiAction: 'block', euModeEnabled: false,
-            consentAccepted: false,
             selectedPlanId: params.get('plan') || null,
         };
     });
@@ -149,6 +153,7 @@ const LoginPage = ({ onLogin }) => {
                         setOrgLogo(data.branding.logo.startsWith('/') ? `${API_BASE}${data.branding.logo}` : data.branding.logo);
                     }
                     if (data.availableLocales) setAvailableLocales(data.availableLocales);
+                    if (data.signupCaptcha) setCaptchaConfig(data.signupCaptcha);
                 } else {
                     // If setup-status fails, show everything (safe fallback)
                     setAllowSignups(true);
@@ -214,6 +219,11 @@ const LoginPage = ({ onLogin }) => {
                 ...prev,
                 signupType: 'existing',
                 organizationId: data.organizationId,
+                // Carry the org's name from the invite. The public organisation
+                // directory no longer answers anonymously on cloud (it was
+                // disclosing the whole customer list), so the invite is now the
+                // only place this name comes from.
+                orgName: data.orgName || prev.orgName || '',
                 email: data.email || prev.email,
             }));
             setSignupMode(true);
@@ -418,12 +428,10 @@ const LoginPage = ({ onLogin }) => {
             const v = validateSubmit(signupData, { locale, isInvite: !!inviteInfo, t });
             if (!v.ok) { setError(v.error); return; }
         }
-        // Clickwrap consent is Cloud-only; self-hosted signup skips the gate.
-        if (deploymentMode !== 'self-hosted' && !signupData.consentAccepted) {
-            setError(t('signup.consent_required_error', 'Please read and accept the legal terms to continue.'));
+        if (captchaConfig?.enabled && !captchaToken) {
+            setError(t('signup.captcha_required', 'Please complete the verification challenge.'));
             return;
         }
-
         setIsLoading(true);
         try {
             const body = {
@@ -439,6 +447,9 @@ const LoginPage = ({ onLogin }) => {
                 // Carried through signup so the app can send the user straight
                 // to checkout after first login. Null means the default plan.
                 selectedPlanId,
+                // Empty unless a challenge provider is configured; the server
+                // ignores it in that case and requires it otherwise.
+                ...(captchaToken ? { captchaToken } : {}),
             };
 
             if (signupData.signupType === 'new') {
@@ -480,9 +491,6 @@ const LoginPage = ({ onLogin }) => {
                 body.inviteToken = inviteToken;
             }
 
-            // Legal consent — the server re-derives the required documents and
-            // versions from the registry; we only assert the affirmative tick.
-            body.consent = { accepted: true };
 
             const res = await authFetch(`${API_BASE}/auth/signup`, {
                 method: 'POST',
@@ -646,7 +654,6 @@ const LoginPage = ({ onLogin }) => {
             signupType: 'new', organizationId: '',
             newOrgName: '', orgTagline: '', orgDescription: '', orgAddress: '', orgEmail: '', orgPhone: '', orgWebsite: '', orgKvk: '', orgVat: '', orgAllowSignup: false,
             authMethod: '', shieldEnabled: true, piiCategories: DEFAULT_PII_CATEGORIES, piiAction: 'block', euModeEnabled: false,
-            consentAccepted: false,
         });
     };
 
@@ -748,6 +755,7 @@ const LoginPage = ({ onLogin }) => {
                 availableLocales={availableLocales} locale={locale} setLocale={setLocale}
                 availablePlans={availablePlans} selectedPlanId={selectedPlanId}
                 inputClass={inputClass} inputClassSimple={inputClassSimple} labelClass={labelClass}
+                captchaConfig={captchaConfig} onCaptchaToken={setCaptchaToken}
             />
         );
     }

@@ -9,7 +9,9 @@ import { NC_BLUE, LANGS, Toggle, Row, Select } from '../../pages/settings/shared
  */
 export default function MeetingNotesAdminPanel({ user }) {
     const orgId = user?.organizationId;
-    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk', language: 'nl', autoRecord: false, autoRecordScope: 'calendar', recordingMode: 'audio', insightsPerPersonStats: true });
+    // recordingFolder: Talk saves to <attachment folder>/Recording/<room token>/,
+    // so /Talk/Recording is the default on a stock Nextcloud.
+    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk/Recording', language: 'nl', autoRecord: false, autoRecordScope: 'calendar', recordingMode: 'audio', insightsPerPersonStats: true });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
@@ -85,11 +87,11 @@ export default function MeetingNotesAdminPanel({ user }) {
                             <Toggle on={cfg.postSummaryBack} onClick={() => setCfg(c => ({ ...c, postSummaryBack: !c.postSummaryBack }))} disabled={saving} />
                         </Row>
                         <div style={{ height: 1, background: 'var(--border-subtle)' }} />
-                        <Row title="Recordings folder" desc="Nextcloud Files folder where Talk saves recordings (per-room subfolders inside).">
+                        <Row title="Recordings folder" desc="Nextcloud Files folder where Talk saves recordings — normally /Talk/Recording, with one subfolder per conversation.">
                             <input
                                 type="text" value={cfg.recordingFolder}
                                 onChange={e => setCfg(c => ({ ...c, recordingFolder: e.target.value }))}
-                                disabled={saving} placeholder="/Talk"
+                                disabled={saving} placeholder="/Talk/Recording"
                                 className="w-40 px-3 py-1.5 rounded-lg border outline-none text-[13px]"
                                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                             />

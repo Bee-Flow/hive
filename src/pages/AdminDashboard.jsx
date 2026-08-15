@@ -10,7 +10,6 @@ import MonitoringPanel from '../components/admin/MonitoringPanel';
 import ComplianceHub from '../components/admin/ComplianceHub';
 import SubscriptionsPanel from '../components/admin/subscriptions';
 import LanguagesPanel from '../components/admin/LanguagesPanel';
-import LegalDocsPanel from '../components/admin/LegalDocsPanel';
 import AppearancePanel from '../components/admin/appearance-studio/AppearancePanel';
 import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsitePanel';
 import AnalyticsPanel from '../components/admin/ProductWebsite/AnalyticsPanel';
@@ -89,11 +88,6 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'modules', label: t('admin.tab_modules', 'Modules'), perm: ['all'], superAdminOnly: true },
         { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise' },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
-        // Legal — platform admin edits the legal documents (content + version +
-        // which require consent) and manages optional (marketing) consents.
-        // Legal & Consent is a Bee Flow Cloud surface; self-hosted installs are
-        // governed by their licence agreement, so the tab is hidden there.
-        { id: 'legal', label: t('admin.tab_legal', 'Legal'), perm: ['admin_ai_config'], superAdminOnly: true, cloudOnly: true },
         // Product website builder — a Bee Flow Cloud marketing surface. On a
         // self-hosted install the public site is disabled (root goes straight
         // to /app), so the editor tab is hidden too.
@@ -316,10 +310,6 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     ) : activeTab === 'languages' ? (
                         <div className="absolute inset-0 overflow-hidden">
                             <LanguagesPanel />
-                        </div>
-                    ) : activeTab === 'legal' ? (
-                        <div className="absolute inset-0 overflow-auto">
-                            <LegalDocsPanel />
                         </div>
                     ) : activeTab === 'website-analytics' ? (
                         <div className="absolute inset-0">

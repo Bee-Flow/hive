@@ -197,3 +197,53 @@ describe('does not contain', () => {
         expect(operatorsForType('number').map(o => o.key)).not.toContain('notContains');
     });
 });
+
+/**
+ * `== null` is a question about ABSENCE — "nobody is assigned yet", "this was
+ * never filled in". It is not the same question as `== ""`, and in the
+ * restricted engine it does not have the same answer.
+ *
+ * renderBindingValue collapsed both null and undefined to the empty string, on
+ * the reasoning that an unfilled row should serialise as `""`. But
+ * parseExprToRows produces value:null only from a literal `null` the author
+ * actually wrote, so the two were never the same thing: opening such a
+ * condition in the clickable builder and touching ANY row in the group rewrote
+ * the null comparison into an empty-string one, silently inverting a rule
+ * nobody had edited.
+ */
+describe('conditionModel — comparing against null', () => {
+    it('round-trips == null without turning it into == ""', () => {
+        const expr = 'form.assignee == null';
+        const parsed = parseExprToRows(expr);
+        expect(parsed.rows).toEqual([
+            { field: { kind: 'ref', path: 'form.assignee' }, op: 'eq', value: { kind: 'literal', value: null } },
+        ]);
+        expect(serializeRows(parsed.rows, parsed.join)).toBe(expr);
+    });
+
+    it('round-trips != null too', () => {
+        const expr = 'form.assignee != null';
+        const parsed = parseExprToRows(expr);
+        expect(serializeRows(parsed.rows, parsed.join)).toBe(expr);
+    });
+
+    it('survives an edit to a DIFFERENT row in the same group', () => {
+        // The real failure: you change the second condition and the first one,
+        // which you never touched, comes back meaning something else.
+        const parsed = parseExprToRows('form.assignee == null && form.status == "open"');
+        const edited = parsed.rows.map((r, i) => (
+            i === 1 ? { ...r, value: { kind: 'literal', value: 'closed' } } : r
+        ));
+        expect(serializeRows(edited, parsed.join))
+            .toBe('form.assignee == null && form.status == "closed"');
+    });
+
+    it('still serialises a row nobody has filled in as an empty string', () => {
+        // emptyRow() carries value:'' — unchanged. An explicitly UNDEFINED
+        // value is the other "not filled in" shape and must not become `null`.
+        expect(serializeRows([emptyRow()], '&&')).toBe('');
+        expect(serializeRows([
+            { field: { kind: 'ref', path: 'form.a' }, op: 'eq', value: { kind: 'literal', value: undefined } },
+        ], '&&')).toBe('form.a == ""');
+    });
+});

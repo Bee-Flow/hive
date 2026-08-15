@@ -32,7 +32,7 @@ export function spanFromDrag({ startSpan, dx, columnWidth } = {}) {
 // The height knob's ordered vocabulary (mirror of STYLE_KNOBS.height in
 // componentSpecs.js). Only some types carry it (image) — the component gates
 // the handle on the type's styleKnobs.
-export const HEIGHT_STEPS = ['auto', 'sm', 'md', 'lg'];
+export const HEIGHT_STEPS = ['auto', 'sm', 'md', 'lg', 'xl'];
 
 /** One height step ≈ this many pixels of vertical drag. */
 export const HEIGHT_STEP_PX = 80;

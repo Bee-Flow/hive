@@ -63,6 +63,10 @@ const TEXT_OPS = new Set(['contains', 'startsWith']);
 // `between` a [min, max] pair).
 const LIST_OPS = new Set(['in', 'between']);
 
+// Controls whose value is a SHAPE (an array, a pair) rather than a scalar, so
+// the raw-text escape cannot represent them without corrupting the filter.
+const SHAPE_CONTROLS = new Set(['list', 'range']);
+
 /**
  * Which ops each column type can carry. A saved op outside its list is always
  * re-offered (see opsFor) so an existing filter round-trips untouched, but the
@@ -207,7 +211,15 @@ function ValueControl({ control, f, field, update }) {
         // `in` takes an array (queryCompiler caps it at MAX_IN_VALUES). Comma
         // separated is the shape people already type into a filter box; blanks
         // are dropped so a trailing comma is harmless.
-        const list = Array.isArray(f.value) ? f.value : [];
+        // A saved value that is not an array (a legacy row, or one written by
+        // the raw-text escape this control no longer offers) is SHOWN rather
+        // than hidden behind an empty box, and normalised to an array by the
+        // next edit — `in` takes a list, and a string there matches nothing.
+        const list = Array.isArray(f.value)
+            ? f.value
+            : (typeof f.value === 'string' && f.value
+                ? f.value.split(',').map((x) => x.trim()).filter((x) => x !== '')
+                : []);
         return (
             <input
                 type="text"
@@ -373,10 +385,23 @@ export default function FilterRowsEditor({
                     // Derived first, remembered second: a saved value the typed
                     // control cannot show must never be hidden behind an empty
                     // widget the next click overwrites.
-                    const unrepresentable = !usesFormula && !isRepresentable(f.value, typedControl, field);
+                    // The list control renders ANY saved value (it splits a
+                    // string on commas), so it never needs the raw-text
+                    // fallback — and taking it would write a string back into a
+                    // field that must hold an array.
+                    const unrepresentable = !usesFormula
+                        && typedControl !== 'list'
+                        && !isRepresentable(f.value, typedControl, field);
                     const isEscaped = escaped.has(f);
                     const control = (isEscaped || unrepresentable) ? 'text' : typedControl;
-                    const canEscape = typedControl !== 'text';
+                    // The raw-text escape exists for controls that CONSTRAIN a
+                    // value (a choice list, a date, yes/no). It cannot be
+                    // offered for the ones that carry a SHAPE: "is one of" takes
+                    // an array and "is between" a pair, and the text box wrote a
+                    // plain string into both — which the compiler then matched
+                    // zero rows against, in silence. Their own controls already
+                    // accept free text anyway.
+                    const canEscape = typedControl !== 'text' && !SHAPE_CONTROLS.has(typedControl);
 
                     const toggleEscape = () => {
                         if (isEscaped) {

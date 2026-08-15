@@ -49,7 +49,10 @@ describe('form style vocabulary', () => {
         const bad = rowInputClass('w-full', { invalid: true });
         expect(bad).toContain('border-[var(--error)]');
         expect(bad).not.toContain('border-[var(--border-default)]');
-        expect(rowInputClass('w-full')).toContain('border-[var(--border-default)]');
+        // The default border is now the STRONG edge (color-mix on
+        // --text-secondary) — the hairline token measured ~1.4:1 on the dark
+        // themes, under WCAG 2.2 SC 1.4.11's 3:1 for control boundaries.
+        expect(rowInputClass('w-full')).toContain('color-mix');
     });
 
     it('extras are appended so callers own width and size', () => {

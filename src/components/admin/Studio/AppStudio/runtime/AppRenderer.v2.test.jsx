@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { render } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import AppRenderer from './AppRenderer';
@@ -110,5 +111,96 @@ describe('AppRenderer v2 — showcase fixture', () => {
         expect(getByText('4')).toBeTruthy();      // formula stat: 2 + 2
         expect(getByText('Alpha')).toBeTruthy();  // repeat item
         expect(getByText('Beta')).toBeTruthy();
+    });
+});
+
+/**
+ * THE SHAPE THAT IS ACTUALLY STORED.
+ *
+ * Every test above uses a bare expression STRING — and a bare string is the one
+ * shape that never reaches the renderer. canonicalize.cleanBoolOrFormula keeps
+ * a boolean or a {kind:'formula',expr} and DROPS a string; builderTools
+ * .normalizeLogicValue wraps the AI's string into the same object before it is
+ * stored. So both authoring paths persist the object, the renderer only
+ * understood the string, and every "Only show when" / "Enabled when" rule in
+ * every saved app quietly did nothing — including the ones written to keep
+ * things away from people who should not see them.
+ *
+ * These run the flags through the REAL canonicalizer first, so the renderer is
+ * fed exactly what the database would hold. The two cannot drift apart again
+ * without this failing.
+ */
+describe('AppRenderer v2 — the logic shape the server actually stores', () => {
+    const require_ = createRequire(import.meta.url);
+    const { canonicalizeAppDefinition } = require_('../../../../../../../server/appStudio/canonicalize.js');
+
+    /** The definition as it comes back out of the server's canonicalizer. */
+    const stored = (children) => canonicalizeAppDefinition(defWith(children)).def;
+
+    it('canonicalize keeps the formula OBJECT and drops a bare string', () => {
+        const def = stored([
+            { id: 'cmp_o', type: 'heading', visible: true, visibleWhen: { kind: 'formula', expr: 'currentUser != null' }, props: { text: 'Object', level: 2 }, style: { span: 12 } },
+            { id: 'cmp_s', type: 'heading', visible: true, visibleWhen: 'currentUser != null', props: { text: 'String', level: 2 }, style: { span: 12 } },
+        ]);
+        const [objNode, strNode] = def.screens[0].sections[0].children;
+        expect(objNode.visibleWhen).toEqual({ kind: 'formula', expr: 'currentUser != null' });
+        expect(strNode.visibleWhen).toBeUndefined();
+    });
+
+    it('hides a node whose stored visibleWhen formula is falsy', () => {
+        const def = stored([
+            { id: 'cmp_h', type: 'heading', visible: true, visibleWhen: { kind: 'formula', expr: 'currentUser != null' }, props: { text: 'Members only', level: 2 }, style: { span: 12 } },
+        ]);
+        expect(render1(def, { mode: 'run' }).queryByText('Members only')).toBeNull();
+    });
+
+    it('shows it once the stored formula is truthy', () => {
+        const def = stored([
+            { id: 'cmp_h', type: 'heading', visible: true, visibleWhen: { kind: 'formula', expr: 'currentUser != null' }, props: { text: 'Members only', level: 2 }, style: { span: 12 } },
+        ]);
+        expect(render1(def, { mode: 'run', currentUser: { id: 'u1' } }).getByText('Members only')).toBeTruthy();
+    });
+
+    it('disables a node whose stored enabledWhen formula is falsy', () => {
+        const def = stored([
+            { id: 'cmp_btn', type: 'button', visible: true, enabledWhen: { kind: 'formula', expr: 'currentUser != null' }, onClick: 'a1', props: { label: 'Go', variant: 'primary', role: 'button' }, style: { span: 3 } },
+        ]);
+        const { container } = render1(def, { mode: 'run' });
+        expect(container.querySelector('[data-app-disabled]')).toBeTruthy();
+    });
+
+    it('leaves it enabled once the stored formula is truthy', () => {
+        const def = stored([
+            { id: 'cmp_btn', type: 'button', visible: true, enabledWhen: { kind: 'formula', expr: 'currentUser != null' }, onClick: 'a1', props: { label: 'Go', variant: 'primary', role: 'button' }, style: { span: 3 } },
+        ]);
+        const { container } = render1(def, { mode: 'run', currentUser: { id: 'u1' } });
+        expect(container.querySelector('[data-app-disabled]')).toBeNull();
+    });
+
+    it('honours a stored readOnly formula, not just readOnly:true', () => {
+        const def = stored([
+            { id: 'cmp_btn', type: 'button', visible: true, readOnly: { kind: 'formula', expr: 'currentUser == null' }, onClick: 'a1', props: { label: 'Go', variant: 'primary', role: 'button' }, style: { span: 3 } },
+        ]);
+        expect(render1(def, { mode: 'run' }).container.querySelector('[data-app-disabled]')).toBeTruthy();
+        expect(render1(def, { mode: 'run', currentUser: { id: 'u1' } }).container.querySelector('[data-app-disabled]')).toBeNull();
+    });
+
+    it('still honours the plain booleans the same flags accept', () => {
+        const def = stored([
+            { id: 'cmp_h', type: 'heading', visible: true, visibleWhen: false, props: { text: 'Never', level: 2 }, style: { span: 12 } },
+            { id: 'cmp_h2', type: 'heading', visible: true, visibleWhen: true, props: { text: 'Always', level: 2 }, style: { span: 12 } },
+        ]);
+        const { queryByText, getByText } = render1(def, { mode: 'run' });
+        expect(queryByText('Never')).toBeNull();
+        expect(getByText('Always')).toBeTruthy();
+    });
+
+    it('flags a stored formula that cannot be parsed', () => {
+        const def = stored([
+            { id: 'cmp_b', type: 'heading', visible: true, visibleWhen: { kind: 'formula', expr: 'form.x ==' }, props: { text: 'Broken', level: 2 }, style: { span: 12 } },
+        ]);
+        const { container, getByText } = render1(def, { mode: 'edit' });
+        expect(getByText('Broken')).toBeTruthy();
+        expect(container.querySelector('[data-app-formula-error]')).toBeTruthy();
     });
 });

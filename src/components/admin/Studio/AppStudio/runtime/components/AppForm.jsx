@@ -1,7 +1,7 @@
 import { tryEvaluate } from '@shared/expr/engine.mjs';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FormContext } from '../formContext';
+import { FormContext, registerFormReset } from '../formContext';
 import { useRuntime } from '../RuntimeContext';
 import { spaceSteps } from '../styleResolver';
 
@@ -57,7 +57,12 @@ function isUrl(v) {
 /** True when the rule REJECTS this value. Never throws — a bad rule passes. */
 function ruleFails(rule, value, fieldScope) {
     const kind = ruleKind(rule);
-    if (kind === 'required') return isEmptyValue(value);
+    // An unchecked box is `false`, which is not "empty" by any of the tests
+    // above — so a consent checkbox marked required submitted unticked, and the
+    // one rule on the form that had to hold was the one that never fired.
+    // Strictly `false`, so a required number of 0 and a required empty-ish
+    // string keep the meanings they already had.
+    if (kind === 'required') return isEmptyValue(value) || value === false;
     // Every other rule only bites on a filled field, so an optional field with
     // a format/bound rule stays optional.
     if (isEmptyValue(value)) return false;
@@ -181,6 +186,10 @@ export default function AppForm({ node, children }) {
         setErrors({});
     }, []);
 
+    // The `reset_form` action step reaches this form by NAME through the
+    // module-level bus — the same key the runtime files form values under.
+    useEffect(() => registerFormReset(formName, handleReset), [formName, handleReset]);
+
     const handleSubmit = (e) => {
         e.preventDefault();
         if (mode !== 'run' || pending) return;
@@ -190,6 +199,14 @@ export default function AppForm({ node, children }) {
             // screen — validating it puts an error the user cannot clear under
             // a control they cannot focus, and the form can never be sent.
             if (meta.disabled) continue;
+            // The browser refused what was typed (a number box holding "12e"
+            // reports '' while still showing the text). The input says so on
+            // screen; without this the form did not, so an optional field
+            // submitted EMPTY under a visible "Enter a number".
+            if (meta.invalid) {
+                nextErrors[name] = meta.invalidMessage || 'This value is not valid.';
+                continue;
+            }
             const v = values[name];
             if (meta.required && isEmptyValue(v)) {
                 nextErrors[name] = 'This field is required.';

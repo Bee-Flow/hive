@@ -6,6 +6,7 @@ import { bindingForField } from './aiFieldMatching';
 import ActionFlowEditor from '../flow/ActionFlowEditor';
 import StepSettings from '../flow/StepSettings';
 import ExpressionInput from './logic/ExpressionInput';
+import { mergeDrafts, splitNamed } from './keyedRows';
 import { INPUT_CLS } from './panels/kit';
 import RoutinePicker from './RoutinePicker';
 import { ACTION_KINDS, TOAST_TONES, TYPE_EVENT_LISTS, INPUT_TYPES } from './styleKnobMeta';
@@ -17,6 +18,7 @@ import Modal from '../../../../shared/Modal';
 import IconButton from '../../../../shared/IconButton';
 import SegmentedControl from '../../../../shared/SegmentedControl';
 import Spinner from '../../../../shared/Spinner';
+import toast from '../../../../shared/Toast';
 import Toggle from '../../../../shared/Toggle';
 import { getComponentEntry } from '../runtime/componentRegistry';
 import { findNode, setAction, setNodeEvent, removeAction, NODE_EVENTS } from '../state/definitionOps';
@@ -161,7 +163,29 @@ export function stepCount(action) {
  */
 function stepFromAction(action) {
     if (!action || action.kind === 'sequence') return null;
-    return { ...action };
+    // Effects are an ACTION-level shape; no step kind carries them, and
+    // canonicalize drops the keys on the next save. Carrying them onto the step
+    // therefore looked like nothing happened and then quietly lost the toast
+    // and the redirect the author had set up. They become real steps instead
+    // (see effectSteps) — everything that CAN survive the conversion does.
+    const { onSuccess: _s, onError: _e, ...step } = action;
+    return step;
+}
+
+/**
+ * An action's bounded `onSuccess` effects ({ toast?, navigateTo? }) as the
+ * steps that do the same thing, in the order the runtime fired them.
+ */
+function effectSteps(effects) {
+    const steps = [];
+    if (!effects || typeof effects !== 'object') return steps;
+    if (effects.toast && typeof effects.toast === 'object' && effects.toast.message) {
+        steps.push({ kind: 'toast', message: effects.toast.message, tone: effects.toast.tone || 'info' });
+    }
+    if (typeof effects.navigateTo === 'string' && effects.navigateTo) {
+        steps.push({ kind: 'navigate', screenId: effects.navigateTo });
+    }
+    return steps;
 }
 
 /**
@@ -291,12 +315,28 @@ function joinNames(names, max = 3) {
  * kept as typed; renaming rewrites the key in place so the order survives.
  */
 function NavigateParamsEditor({ params, onChange, disabled }) {
-    const rows = Object.entries(params && typeof params === 'object' ? params : []);
+    const stored = Object.entries(params && typeof params === 'object' ? params : []);
+    // Rows added or blanked but not yet named. They cannot live in `params`,
+    // which is keyed by name — so they are held here WITH the position they
+    // occupy, or clearing a name would make the row jump to the bottom of the
+    // list while the author was still typing in it.
+    const [drafts, setDrafts] = useState([]);   // [{ at, row }]
+    const rows = mergeDrafts(stored, drafts);
     // The row whose rename was refused because the name is already taken. UI
     // only, and cleared by the next accepted edit.
     const [clash, setClash] = useState(null);
 
-    const commit = (next) => { setClash(null); onChange(next.length ? Object.fromEntries(next) : null); };
+    const commit = (next) => {
+        setClash(null);
+        // A BLANK name is a duplicate too — the guard below exempted it, so
+        // clearing one row's name and then another collapsed both onto the ''
+        // key and threw the first row's value away without a word. Unnamed rows
+        // wait here instead, exactly as the flow editor's keyed-bindings field
+        // does, and reach `params` only once they have a name of their own.
+        const { named, drafts: nextDrafts } = splitNamed(next);
+        setDrafts(nextDrafts);
+        onChange(named.length ? Object.fromEntries(named) : null);
+    };
 
     const setRow = (i, name, entry) => {
         // params is an object, so two rows CANNOT share a name: committing a
@@ -755,7 +795,15 @@ function EventWiring({ event, node, definition, onCommit, onTestActionResult, di
     const onPickKind = (kind) => {
         if (kind === action.kind) return;
         if (kind === 'sequence') {
-            commitAction({ kind: 'sequence', steps: [stepFromAction(action)].filter(Boolean) });
+            const first = stepFromAction(action);
+            // onSuccess becomes the steps that follow. onError has no equivalent
+            // — a sequence ABORTS on a failed step — so it cannot come across,
+            // and saying so beats dropping it in silence.
+            const steps = [first, ...effectSteps(action?.onSuccess)].filter(Boolean);
+            commitAction({ kind: 'sequence', steps });
+            if (action?.onError && Object.keys(action.onError).length) {
+                toast.info('The "on error" part could not come across — a flow stops at the step that fails.');
+            }
             setFlowFor(actionId);
             return;
         }
@@ -828,7 +876,16 @@ function EventWiring({ event, node, definition, onCommit, onTestActionResult, di
             const mapping = {};
             for (const { name, type } of declared) {
                 if (previous[name]) { mapping[name] = previous[name]; continue; }
-                if (type === 'file') mapping[name] = { kind: 'field', name: firstFileField };
+                // A file param with no file input to point at used to commit
+                // {kind:'field', name:''} — a hard validation error, so picking
+                // the routine broke every later save with a message about a
+                // field nobody had named. An empty static is a shape the schema
+                // accepts and the author can fill in.
+                if (type === 'file') {
+                    mapping[name] = firstFileField
+                        ? { kind: 'field', name: firstFileField }
+                        : { kind: 'static', value: '' };
+                }
                 else if (fieldNames.includes(name)) mapping[name] = { kind: 'field', name };
                 else mapping[name] = { kind: 'static', value: '' };
             }
@@ -1205,6 +1262,7 @@ function EventWiring({ event, node, definition, onCommit, onTestActionResult, di
                             definition={definition}
                             node={node}
                             screens={definition?.screens || []}
+                            formFields={formFields}
                             disabled={disabled}
                         />
                     )}
@@ -1263,6 +1321,7 @@ function EventWiring({ event, node, definition, onCommit, onTestActionResult, di
                             onChange={commitAction}
                             definition={definition}
                             node={node}
+                            formFields={formFields}
                             disabled={disabled}
                         />
                     </div>

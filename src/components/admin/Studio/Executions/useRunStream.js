@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 
 /**
@@ -23,9 +23,14 @@ export default function useRunStream({ enabled = true, automationId = null, onEv
     const api = useAutomationApi();
     const onEventRef = useRef(onEvent);
     onEventRef.current = onEvent;
+    // How the updates are actually arriving right now — the filter bar's
+    // indicator reads this instead of showing a hard-coded green dot.
+    // 'live' = SSE, 'polling' = 5s fallback, 'paused' = hidden tab / disabled.
+    const [state, setState] = useState(enabled ? 'live' : 'paused');
 
     useEffect(() => {
-        if (!enabled) return undefined;
+        if (!enabled) { setState('paused'); return undefined; }
+        setState('live');
         let stopped = false;
         let controller = null;
         let timer = null;
@@ -65,6 +70,7 @@ export default function useRunStream({ enabled = true, automationId = null, onEv
             if (polling) return;
             polling = true;
             firstPoll = true;
+            setState('polling');
             pollTick();
         };
 
@@ -100,8 +106,10 @@ export default function useRunStream({ enabled = true, automationId = null, onEv
             if (document.hidden) {
                 controller?.abort();
                 clearTimer();
+                setState('paused');
             } else if (!stopped) {
                 failures = 0; backoff = 1000; polling = false; clearTimer();
+                setState('live');
                 startStream();
             }
         };
@@ -116,4 +124,6 @@ export default function useRunStream({ enabled = true, automationId = null, onEv
             document.removeEventListener('visibilitychange', onVisibility);
         };
     }, [enabled, automationId, api]);
+
+    return { state };
 }

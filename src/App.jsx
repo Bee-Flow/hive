@@ -1,5 +1,5 @@
-import React, { Suspense, useState, useEffect } from 'react';
-import { lazy, lazyWithI18n } from './utils/lazyWithReload';
+import React, { Suspense } from 'react';
+import { lazyWithI18n } from './utils/lazyWithReload';
 /* ── The marketing/app split ──────────────────────────────────────────────
    This module is the PUBLIC router shell: the marketing site, the embeds and
    the handful of anonymous pages. The entire authenticated product lives in
@@ -20,15 +20,6 @@ if (typeof window !== 'undefined' && window.location.pathname.startsWith('/app')
 
 import ProductWebsite from './marketing/ProductWebsite';
 const EmbedChat = lazyWithI18n(() => import('./pages/EmbedChat'));
-/* LegalPage renders markdown, so a static import put react-markdown + remark
-   in the entry chunk for every page — including the 20 CMS pages that render
-   no markdown at all. Only /privacy, /terms and the other legal docs need it.
-   The /privacy and /terms routes bundle their markdown source with the lazy
-   LegalPage wrapper (marketing/PrivacyRoute.jsx, TermsRoute.jsx) instead of
-   inlining ~11 KB gz of legal text into this entry chunk as ?raw imports. */
-const LegalPage = lazyWithI18n(() => import('./marketing/LegalPage'));
-const PrivacyRoute = lazyWithI18n(() => import('./marketing/PrivacyRoute'));
-const TermsRoute = lazyWithI18n(() => import('./marketing/TermsRoute'));
 const DsrRequestPage = lazyWithI18n(() => import('./pages/DsrRequestPage'));
 const PublicFormPage = lazyWithI18n(() => import('./pages/PublicFormPage'));
 /* Lazy although they are marketing surfaces: both render only on the
@@ -54,9 +45,9 @@ function AppBackdrop() {
 
 // Root wrapper — handles embed route before App's hooks
 function AppRoot() {
-    /* One boundary around every branch below. Several of them (LegalPage, the
-       embed, AuthedApp) resolve lazy chunks, and returning a bare lazy element
-       from a component with no Suspense above it throws. */
+    /* One boundary around every branch below. Several of them (the embed,
+       AuthedApp) resolve lazy chunks, and returning a bare lazy element from a
+       component with no Suspense above it throws. */
     return (
         <Suspense fallback={<AppBackdrop />}>
             <AppRoutes />
@@ -126,35 +117,6 @@ function AppRoutes() {
             </Suspense>
         );
     }
-    // Static public legal pages. Served from in-repo markdown so they remain
-    // stable URLs for Google's OAuth consent screen regardless of CMS state.
-    // LegalPage fetches the localized version (English-authoritative) by docId,
-    // falling back to the bundled English ?raw source if the API is unreachable.
-    if (window.location.pathname === '/privacy') {
-        return <PrivacyRoute />;
-    }
-    if (window.location.pathname === '/terms') {
-        return <TermsRoute />;
-    }
-    // Additional public legal documents (DPA, AUP, Cookie Statement, Imprint,
-    // Sub-processor list). No bundled ?raw source — these fetch from the public
-    // legal endpoint (English fallback served by the API).
-    {
-        const legalMatch = window.location.pathname.match(/^\/legal\/(dpa|aup|cookies|imprint|subprocessors|connector-terms)\/?$/);
-        if (legalMatch) {
-            const seg = legalMatch[1];
-            const docId = seg === 'cookies' ? 'cookie-statement' : seg === 'connector-terms' ? 'connector_terms' : seg;
-            const titles = {
-                dpa: 'Data Processing Agreement',
-                aup: 'Acceptable Use Policy',
-                'cookie-statement': 'Cookie Statement',
-                imprint: 'Legal Notice',
-                subprocessors: 'Sub-processor List',
-                connector_terms: 'Nextcloud Connector Terms',
-            };
-            return <LegalPage docId={docId} title={titles[docId]} />;
-        }
-    }
     // NOTE: /pricing is deliberately NOT intercepted here any more. It used to
     // return <PricingPage/> unconditionally, which meant a CMS page at that
     // slug could be authored and edited but never rendered — production had
@@ -168,8 +130,8 @@ function AppRoutes() {
     if (isCmsPathCandidate(window.location.pathname)) {
         return <RootPathGate />;
     }
-    // Mounted ONLY on this authenticated branch: the embed / CMS / legal /
-    // pricing early-returns above stay provider-free (a bare /chat/<id> embed
+    // Mounted ONLY on this authenticated branch: the embed / CMS / pricing
+    // early-returns above stay provider-free (a bare /chat/<id> embed
     // intentionally has no entitlements context → can()/hasFeature() ⇒ false).
     return <AuthedApp />;
 }

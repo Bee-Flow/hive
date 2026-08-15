@@ -303,3 +303,186 @@ describe('EditorNodeWrapper — pointerdown does not swallow the event', () => {
     });
 });
 
+
+/**
+ * The canvas used to draw components and nothing else, so "which of these does
+ * something?" was answerable only by selecting each in turn. These pin that the
+ * marks appear on the cell that carries the logic, say what it does, and stay
+ * off everything else.
+ */
+describe('EditorNodeWrapper — logic marks', () => {
+    const wiredButton = () => ({
+        ...buttonNode(),
+        onClick: 'act_go',
+        visibleWhen: { kind: 'formula', expr: "currentUser.role == 'admin'" },
+    });
+
+    function makeWiredDef(node) {
+        const def = makeDef(node);
+        def.screens.push({ id: 'scr_2', name: 'Detail', showInNav: true, maxWidth: 'medium', sections: [] });
+        def.actions = { act_go: { kind: 'navigate', screenId: 'scr_2' } };
+        return def;
+    }
+
+    function renderWired(node) {
+        const onSelectNode = vi.fn();
+        return render(
+            <AppEditorProvider app={{ id: 'app-1', definition: makeWiredDef(node), version: 1 }}>
+                <RuntimeProvider value={{ mode: 'edit', selectedNodeId: null, onSelectNode }}>
+                    <DndContext>
+                        <SortableContext items={[node.id]}>
+                            <div data-grid>
+                                <EditorNodeWrapper node={node} className="" style={resolveNodeStyle(node).style} onCommit={vi.fn()}>
+                                    <div>child</div>
+                                </EditorNodeWrapper>
+                            </div>
+                        </SortableContext>
+                    </DndContext>
+                </RuntimeProvider>
+            </AppEditorProvider>,
+        );
+    }
+
+    it('marks a component that carries logic, without selecting it', () => {
+        const { container } = renderWired(wiredButton());
+        const strip = container.querySelector('[data-logic-marks]');
+        expect(strip).toBeTruthy();
+        // One per rule: the click action and the visibility condition.
+        expect(strip.getAttribute('data-logic-marks')).toBe('2');
+    });
+
+    it('says what the logic DOES, in the author’s language', () => {
+        const { container } = renderWired(wiredButton());
+        const titles = [...container.querySelectorAll('.ase-logic-mark')].map((el) => el.getAttribute('title'));
+        expect(titles).toEqual([
+            'When clicked: Go to Detail',
+            "Only shown when currentUser.role == 'admin'",
+        ]);
+    });
+
+    it('reaches a screen reader too, not only a hover tooltip', () => {
+        const { container } = renderWired(wiredButton());
+        expect(container.querySelector('.sr-only').textContent).toContain('When clicked: Go to Detail');
+    });
+
+    it('leaves a plain component unmarked', () => {
+        const { container } = renderWired(buttonNode());
+        expect(container.querySelector('[data-logic-marks]')).toBeNull();
+    });
+
+    /**
+     * A node under a repeater is mounted once per row, all copies sharing the
+     * id. Only the primary instance wears the badges — otherwise the strip is
+     * drawn N times down the list.
+     */
+    it('draws the marks once for a repeated node, not once per row', async () => {
+        const node = wiredButton();
+        const onSelectNode = vi.fn();
+        const { container } = render(
+            <AppEditorProvider app={{ id: 'app-1', definition: makeWiredDef(node), version: 1 }}>
+                <RuntimeProvider value={{ mode: 'edit', selectedNodeId: null, onSelectNode }}>
+                    <DndContext>
+                        <SortableContext items={[node.id]}>
+                            <div data-grid>
+                                {Array.from({ length: 3 }, (_, i) => (
+                                    <EditorNodeWrapper key={i} node={node} className="" style={resolveNodeStyle(node).style} onCommit={vi.fn()}>
+                                        <div>child</div>
+                                    </EditorNodeWrapper>
+                                ))}
+                            </div>
+                        </SortableContext>
+                    </DndContext>
+                </RuntimeProvider>
+            </AppEditorProvider>,
+        );
+        await act(async () => {});
+        expect(container.querySelectorAll('[data-logic-marks]').length).toBe(1);
+    });
+
+    it('stays out of the way in preview mode', async () => {
+        // The gate is the EDITOR's mode (the same one that hides the toolbar
+        // and the resize grips), not the renderer's — preview flips that one.
+        const node = wiredButton();
+        const { container } = render(
+            <AppEditorProvider app={{ id: 'app-1', definition: makeWiredDef(node), version: 1 }}>
+                <Capture />
+                <RuntimeProvider value={{ mode: 'edit', selectedNodeId: null, onSelectNode: vi.fn() }}>
+                    <DndContext>
+                        <SortableContext items={[node.id]}>
+                            <div data-grid>
+                                <EditorNodeWrapper node={node} className="" style={resolveNodeStyle(node).style} onCommit={vi.fn()}>
+                                    <div>child</div>
+                                </EditorNodeWrapper>
+                            </div>
+                        </SortableContext>
+                    </DndContext>
+                </RuntimeProvider>
+            </AppEditorProvider>,
+        );
+        expect(container.querySelector('[data-logic-marks]')).toBeTruthy();
+        await act(async () => { editorApi.current.dispatch({ type: 'set_mode', mode: 'preview' }); });
+        expect(container.querySelector('[data-logic-marks]')).toBeNull();
+    });
+});
+
+/**
+ * A marquee drag collects every element whose rect intersects, and a
+ * container's rect encloses its children — so a card and the buttons inside it
+ * arrive in the selection together. Acting on both duplicated the children
+ * twice: once inside the copied card, and once again as new siblings INSIDE THE
+ * ORIGINAL. The card the author never touched grew extra buttons.
+ */
+describe('EditorNodeWrapper — bulk actions act on the selection ROOTS', () => {
+    const card = () => ({
+        id: 'cmp_card1', type: 'card', visible: true, props: {}, style: { span: 12 },
+        children: [
+            { id: 'cmp_btn1', type: 'button', visible: true, props: { label: 'A', variant: 'primary', role: 'button' }, style: { span: 3 } },
+            { id: 'cmp_btn2', type: 'button', visible: true, props: { label: 'B', variant: 'primary', role: 'button' }, style: { span: 3 } },
+        ],
+    });
+
+    function renderSelected(node, ids) {
+        const onCommit = vi.fn();
+        render(
+            <AppEditorProvider app={{ id: 'app-1', definition: makeDef(node), version: 1 }}>
+                <Capture />
+                <RuntimeProvider value={{ mode: 'edit', selectedNodeId: node.id, selectedNodeIds: new Set(ids), onSelectNode: vi.fn() }}>
+                    <DndContext>
+                        <SortableContext items={[node.id]}>
+                            <div data-grid>
+                                <EditorNodeWrapper node={node} className="" style={resolveNodeStyle(node).style} onCommit={onCommit}>
+                                    <div>child</div>
+                                </EditorNodeWrapper>
+                            </div>
+                        </SortableContext>
+                    </DndContext>
+                </RuntimeProvider>
+            </AppEditorProvider>,
+        );
+        return { onCommit };
+    }
+
+    const childIdsOf = (def, id) => findNode(def, id).node.children.map((c) => c.id);
+
+    it('duplicating a card and its children does not grow the original', () => {
+        const node = card();
+        const { onCommit } = renderSelected(node, ['cmp_card1', 'cmp_btn1', 'cmp_btn2']);
+        fireEvent.click(screen.getByRole('button', { name: 'Duplicate selected' }));
+
+        const def = onCommit.mock.calls.at(-1)[0];
+        expect(childIdsOf(def, 'cmp_card1')).toEqual(['cmp_btn1', 'cmp_btn2']);
+
+        // Exactly one copy of the card, carrying two children of its own.
+        const roots = def.screens[0].sections[0].children;
+        expect(roots).toHaveLength(2);
+        expect(roots[1].children).toHaveLength(2);
+    });
+
+    it('still duplicates a plain multi-selection of siblings', () => {
+        // Neither is an ancestor of the other, so both are roots and both copy.
+        const node = card();
+        const { onCommit } = renderSelected(node, ['cmp_btn1', 'cmp_btn2']);
+        fireEvent.click(screen.getByRole('button', { name: 'Duplicate selected' }));
+        expect(childIdsOf(onCommit.mock.calls.at(-1)[0], 'cmp_card1')).toHaveLength(4);
+    });
+});

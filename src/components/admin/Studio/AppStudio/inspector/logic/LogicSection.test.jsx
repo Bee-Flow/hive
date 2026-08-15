@@ -32,10 +32,32 @@ function renderLogic(node) {
     return { onCommit, lastDef, definition, ...utils };
 }
 
+/**
+ * Where a boolean is wanted these fields OPEN on the clickable condition
+ * builder, so a test that wants the raw box has to ask for it — the same click
+ * a formula-writing author makes.
+ */
+function writeAllAsFormula(utils) {
+    for (let links = utils.queryAllByText('Write a formula'); links.length; links = utils.queryAllByText('Write a formula')) {
+        fireEvent.click(links[0]);
+    }
+}
+
 describe('LogicSection', () => {
+    it('offers "Only show when" as a clickable condition, not a code box', () => {
+        const node = { id: 'cmp_b1', type: 'button', props: { label: 'Go' }, style: {} };
+        const { queryByPlaceholderText, getAllByText } = renderLogic(node);
+        expect(queryByPlaceholderText("e.g. form.priority == 'high'")).toBeNull();
+        // Two of them — "Only show when" and "Enabled when" — each with the
+        // escape to a formula still one click away.
+        expect(getAllByText('Write a formula').length).toBe(2);
+    });
+
     it('editing "Only show when" commits node.visibleWhen', () => {
         const node = { id: 'cmp_b1', type: 'button', props: { label: 'Go' }, style: {} };
-        const { onCommit, lastDef, getByPlaceholderText } = renderLogic(node);
+        const utils = renderLogic(node);
+        const { onCommit, lastDef, getByPlaceholderText } = utils;
+        writeAllAsFormula(utils);
         const field = getByPlaceholderText("e.g. form.priority == 'high'");
         fireEvent.change(field, { target: { value: 'form.ok == true' } });
         expect(onCommit).toHaveBeenCalled();

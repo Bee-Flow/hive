@@ -1,7 +1,7 @@
 /**
  * useModelTiers — loads the chat model-tier config and owns the selected tier.
  *
- * Shared by NotebooksPage + LegalStudioPage (both copied the same fetch + the
+ * Used by NotebooksPage (it copied the same fetch + the
  * `selectedTier` state). The tier feeds the chat stream, AI-Fill and Studio
  * generation requests.
  */

@@ -111,14 +111,14 @@ describe('LicenseContext', () => {
                 tier: 'enterprise',
                 mode: 'cloud',
                 degraded: false,
-                effective: { core: ['sso_saml'], beta: ['webpages', 'itil_ticket_assistant'], integration: [] },
-                ceiling: { core: ['sso_saml'], beta: ['webpages', 'itil_ticket_assistant'], integration: [] },
+                effective: { core: ['sso_saml'], beta: ['webpages', 'meeting_notes'], integration: [] },
+                ceiling: { core: ['sso_saml'], beta: ['webpages', 'meeting_notes'], integration: [] },
                 // registry carries licenseFeature so the SPA can resolve a legacy
-                // licence-feature name ('ticket_assistant') to its capability id.
+                // licence-feature name to its capability id when the two differ.
                 registry: [
                     { id: 'sso_saml', kind: 'core', licenseFeature: 'sso_saml' },
                     { id: 'webpages', kind: 'beta', licenseFeature: 'webpages' },
-                    { id: 'itil_ticket_assistant', kind: 'beta', licenseFeature: 'ticket_assistant' },
+                    { id: 'meeting_notes', kind: 'beta', licenseFeature: 'transcriptions' },
                 ],
             },
         });
@@ -135,8 +135,8 @@ describe('LicenseContext', () => {
         expect(captured.hasFeature('webpages')).toBe(true);
         expect(captured.hasFeature('not_a_feature')).toBe(false);
         // Legacy licence-feature name maps to its capability id.
-        expect(captured.hasFeature('itil_ticket_assistant')).toBe(true);
-        expect(captured.hasFeature('ticket_assistant')).toBe(true);
+        expect(captured.hasFeature('meeting_notes')).toBe(true);
+        expect(captured.hasFeature('transcriptions')).toBe(true);
     });
 
     it('surfaces a licence fetch error without crashing', async () => {

@@ -256,3 +256,33 @@ describe('FilterRowsEditor — Literal ↔ Formula carries the value across', ()
         expect(last()[0].value).toEqual(['open', 'closed']);
     });
 });
+
+/**
+ * "is one of" takes an ARRAY (queryCompiler caps it at MAX_IN_VALUES) and "is
+ * between" a pair. The raw-text escape wrote a plain string into both, and the
+ * compiler then matched zero rows against it — in silence, with the list
+ * looking merely empty. The escape exists for controls that CONSTRAIN a value;
+ * these two carry a shape, and their own controls already accept free text.
+ */
+describe('FilterRowsEditor — a shape-bearing value keeps its shape', () => {
+    it('offers no raw-text escape on "is one of"', () => {
+        renderRows([{ field: 'status', op: 'in', value: ['open'] }]);
+        expect(escapeButtons()).toHaveLength(0);
+        // The list control is the one on screen, and it takes commas.
+        expect(screen.getByLabelText('Filter values')).toBeTruthy();
+    });
+
+    it('still offers it where the picker constrains the value', () => {
+        renderRows([{ field: 'status', op: 'eq', value: 'open' }]);
+        expect(escapeButtons()).toHaveLength(1);
+    });
+
+    it('shows a non-array value rather than an empty box, and normalises it', () => {
+        const { last } = renderRows([{ field: 'status', op: 'in', value: 'open, done' }]);
+        const box = screen.getByLabelText('Filter values');
+        expect(box.value).toBe('open, done');
+
+        fireEvent.change(box, { target: { value: 'open, done, new' } });
+        expect(last()[0].value).toEqual(['open', 'done', 'new']);
+    });
+});

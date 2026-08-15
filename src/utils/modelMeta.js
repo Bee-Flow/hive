@@ -155,13 +155,19 @@ export const formatModelId = (id) => {
 };
 
 // Get the display name for a model. Accepts either a raw model ID string or
-// a model object ({ id, name }). Resolution order: local alias → metadata
-// name → server-provided name (object form only) → auto-formatted ID.
+// a model object ({ id, name }). Resolution order: user alias → self-hosted
+// label from the server → metadata name → server-provided name (object form
+// only) → auto-formatted ID.
 export const getModelDisplayName = (model) => {
     const id = typeof model === 'string' ? model : model?.id;
     if (!id) return '';
     const aliases = JSON.parse(localStorage.getItem('modelAliases') || '{}');
     if (aliases[id]) return aliases[id];
+    // Self-hosted models: the server already produced the label (it is the only
+    // side that knows the parameter size / quantisation the runtime reported),
+    // and the tag itself — `qwen3:30b-a3b` — is what the admin recognises.
+    // formatModelId would mangle it into "Qwen3:30b A3b", so never apply it.
+    if (typeof model === 'object' && model?.local) return model.name || id;
     const meta = getModelMeta(id);
     if (meta?.name) return meta.name;
     if (typeof model === 'object' && model?.name && model.name !== id) return model.name;
@@ -187,6 +193,19 @@ export const getModelFamily = (modelId) => {
     if (/^pixtral/.test(modelId)) return 'Pixtral';
     if (/^ministral/.test(modelId)) return 'Ministral';
     if (/^mistral/.test(modelId)) return 'Mistral Other';
+    // Open-weight families served from a self-hosted runtime. Matched loosely
+    // because the same weights arrive under three different id shapes
+    // (`qwen3:8b`, `Qwen/Qwen3-8B`, `Qwen3-8B-Q4_K_M.gguf`).
+    const local = String(modelId).toLowerCase();
+    if (/qwq|qwen/.test(local)) return 'Qwen';
+    if (/deepseek/.test(local)) return 'DeepSeek';
+    if (/llama|llava/.test(local)) return 'Llama';
+    if (/gemma/.test(local)) return 'Gemma';
+    if (/gpt-?oss/.test(local)) return 'gpt-oss';
+    if (/phi-?\d/.test(local)) return 'Phi';
+    if (/glm-?\d/.test(local)) return 'GLM';
+    if (/granite/.test(local)) return 'Granite';
+    if (/embed|bge-|gte-|minilm/.test(local)) return 'Embedding';
     return 'Other';
 };
 
@@ -229,8 +248,13 @@ export const invalidateAllowedModelsCache = () => {
 // allowedConfig is optional: pre-fetched allowedModelsByAgentType object (avoids async)
 export const filterVisibleModels = (models, agentType = null, allowedConfig = null) => {
     const hiddenModels = JSON.parse(localStorage.getItem('hiddenModels') || '{}');
+    // VISIBLE_MODELS is a hand-curated allow-list of cloud model ids, so it can
+    // never contain a self-hosted one — whatever the customer pulled onto their
+    // own box is by definition not in a list shipped with the product. Local
+    // models are admitted on the `local` flag the server stamps on them; they
+    // are still subject to the manual hide list and per-agent-type limits.
     let filtered = models
-        .filter(m => !hiddenModels[m.id] && VISIBLE_MODELS.has(m.id));
+        .filter(m => !hiddenModels[m.id] && (m.local || VISIBLE_MODELS.has(m.id)));
 
     // Apply per-agent-type restrictions if provided
     if (agentType && allowedConfig) {
@@ -242,12 +266,15 @@ export const filterVisibleModels = (models, agentType = null, allowedConfig = nu
 
     return filtered.map(m => {
         const meta = MISTRAL_MODEL_META[m.id] || getModelMeta(m.id);
+        // Pass the model object (not the bare id) so a self-hosted model keeps
+        // the label and category the server derived for it.
+        const displayName = getModelDisplayName(m);
         return {
             ...m,
-            displayName: getModelDisplayName(m.id),
-            name: getModelDisplayName(m.id),
-            desc: meta?.desc || '',
-            cat: meta?.cat || '',
+            displayName,
+            name: displayName,
+            desc: meta?.desc || (m.local ? 'Self-hosted' : ''),
+            cat: meta?.cat || m.cat || '',
         };
     });
 };

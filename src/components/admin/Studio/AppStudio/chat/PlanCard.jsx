@@ -39,6 +39,34 @@ const renameRow = (row, value, key) => {
     return { ...row, [key]: value };
 };
 
+/**
+ * WHICH FIELD IS THE ROW'S IDENTITY.
+ *
+ * The approved artifact is bounded server-side (builderTools.boundPlanArtifact)
+ * before the model ever sees it, and that bounder keeps a fixed set of keys per
+ * list and DROPS any row missing its identity one:
+ *
+ *   tables   → key (+ name)          fields → key (+ type, options, relationTo)
+ *   roles    → key (+ label)         screens/datasets → name
+ *
+ * This card was editing `name` on all of them. On screens and datasets that is
+ * the right field; on tables, fields and roles it is a field the bounder does
+ * not read — so renaming a role did nothing, and every row ADDED here vanished
+ * on approval for having no key. Both silently: the card still showed the edit,
+ * and the app was built from the plan as the model had written it.
+ */
+const IDENTITY = { tables: 'name', fields: 'key', roles: 'label', screens: 'name', datasets: 'name' };
+
+/** A key the bounder will keep, in the shape the model emits them. */
+function slugKey(value) {
+    const slug = String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 40);
+    return slug || `item_${(rowSeq += 1)}`;
+}
+
 // Stable React keys. Rows are edited in place, so an index key hands a deleted
 // row's live state — a half-typed "Add field" — to whatever row slides up into
 // its slot. Each object row carries a client-only id under a SYMBOL: object
@@ -91,6 +119,16 @@ export default function PlanCard({ pendingPlan, onBuild, onDiscuss, disabled = f
     // ---- generic list ops (immutable) ----------------------------------------
     const updateList = (field, next) => setDraft((d) => ({ ...d, [field]: next }));
     const renameAt = (field, i, value, key) => updateList(field, draft[field].map((row, j) => (j === i ? renameRow(row, value, key) : row)));
+    /**
+     * Rename a TABLE. Its human name is what the bounder keeps, but the row is
+     * only kept at all if it has a `key` — so a table the model emitted without
+     * one (or a bare string) gets one here rather than disappearing on approval.
+     */
+    const renameTable = (i, value) => updateList('tables', draft.tables.map((t, j) => {
+        if (j !== i) return t;
+        const row = (t && typeof t === 'object') ? t : { fields: [] };
+        return { ...row, name: value, key: row.key || slugKey(value) };
+    }));
     const removeAt = (field, i) => updateList(field, draft[field].filter((_, j) => j !== i));
     const addRow = (field, row) => updateList(field, [...draft[field], tagRow(row)]);
 
@@ -169,20 +207,20 @@ export default function PlanCard({ pendingPlan, onBuild, onDiscuss, disabled = f
                             ariaLabel="Table name"
                             subtitle={typeof t?.seedCount === 'number' ? `${t.seedCount} sample rows` : ''}
                             disabled={disabled}
-                            onChange={(v) => renameAt('tables', ti, v, 'name')}
+                            onChange={(v) => renameTable(ti, v)}
                             onRemove={() => removeAt('tables', ti)}
                         />
                         <div className="mt-1.5 flex flex-col gap-1 pl-2">
                             {tableFields(t).map((f, fi) => (
                                 <Row
                                     key={rowKey(f, fi)}
-                                    value={labelOf(f, 'name', 'key')}
+                                    value={labelOf(f, 'key', 'name')}
                                     placeholder="Field"
                                     ariaLabel="Field name"
                                     subtitle={labelOf(f, 'type')}
                                     small
                                     disabled={disabled}
-                                    onChange={(v) => setTableFields(ti, tableFields(t).map((row, j) => (j === fi ? renameRow(row, v, 'name') : row)))}
+                                    onChange={(v) => setTableFields(ti, tableFields(t).map((row, j) => (j === fi ? renameRow(row, slugKey(v), IDENTITY.fields) : row)))}
                                     onRemove={() => setTableFields(ti, tableFields(t).filter((_, j) => j !== fi))}
                                 />
                             ))}
@@ -190,12 +228,12 @@ export default function PlanCard({ pendingPlan, onBuild, onDiscuss, disabled = f
                                 label="Add field"
                                 small
                                 disabled={disabled}
-                                onAdd={(v) => setTableFields(ti, [...tableFields(t), tagRow({ name: v })])}
+                                onAdd={(v) => setTableFields(ti, [...tableFields(t), tagRow({ key: slugKey(v), type: 'text' })])}
                             />
                         </div>
                     </div>
                 ))}
-                <AddRow label="Add table" disabled={disabled} onAdd={(v) => addRow('tables', { name: v, fields: [] })} />
+                <AddRow label="Add table" disabled={disabled} onAdd={(v) => addRow('tables', { key: slugKey(v), name: v, fields: [] })} />
             </Section>
 
             {/* Roles */}
@@ -203,15 +241,15 @@ export default function PlanCard({ pendingPlan, onBuild, onDiscuss, disabled = f
                 {draft.roles.map((r, i) => (
                     <Row
                         key={rowKey(r, i)}
-                        value={labelOf(r, 'name', 'key')}
+                        value={labelOf(r, 'label', 'key')}
                         placeholder="Role"
                         ariaLabel="Role name"
                         disabled={disabled}
-                        onChange={(v) => renameAt('roles', i, v, 'name')}
+                        onChange={(v) => renameAt('roles', i, v, IDENTITY.roles)}
                         onRemove={() => removeAt('roles', i)}
                     />
                 ))}
-                <AddRow label="Add role" disabled={disabled} onAdd={(v) => addRow('roles', { name: v })} />
+                <AddRow label="Add role" disabled={disabled} onAdd={(v) => addRow('roles', { key: slugKey(v), label: v })} />
             </Section>
 
             {/* Datasets */}

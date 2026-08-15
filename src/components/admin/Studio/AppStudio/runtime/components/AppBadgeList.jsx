@@ -51,7 +51,9 @@ export default function AppBadgeList({ node }) {
     // action that fires from two components needed two spellings.
     const fire = (item) => {
         if (!clickable) return;
-        runAction(node.onRowClick, { formValues: (item && typeof item === 'object') ? item : { value: item } });
+        runAction(node.onRowClick, (item && typeof item === 'object')
+            ? { formValues: item, item }
+            : { formValues: { value: item }, item, value: item });
     };
 
     return (

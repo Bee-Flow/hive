@@ -24,11 +24,11 @@ const TABS = [
     { id: 'repeating', label: 'Find repeating work' },
     { id: 'steps', label: 'Steps' },
     { id: 'templates', label: 'Templates' },
-    { id: 'history', label: 'Executions' },
+    { id: 'history', label: 'Runs' },
 ];
 const TAB_KEY = 'routinesStartTab';
 
-export default function RoutinesEmptyState({ segment, onCreateAutomation, onCreateTask, onUseExample, onOpenAutomation, onPickTemplate, onBuildSuggestion, onAskSuggestion, steps, stepsLoading, onCreateStep, onOpenStep, onOpenStepRuns, onDeleteStep }) {
+export default function RoutinesEmptyState({ segment, onCreateAutomation, onCreateTask, onUseExample, onOpenAutomation, onPickTemplate, onBuildSuggestion, onAskSuggestion, steps, stepsLoading, onCreateStep, onOpenStep, onOpenStepRuns, onDeleteStep, onEditingChange = null }) {
     const [activeTab, setActiveTab] = useState(() => {
         const saved = scopedStorage.getItem(TAB_KEY);
         return TABS.some(t => t.id === saved) ? saved : 'build';
@@ -45,18 +45,19 @@ export default function RoutinesEmptyState({ segment, onCreateAutomation, onCrea
                     <Clock size={28} className="text-[var(--text-primary)] opacity-60" />
                 </div>
                 <div className="text-lg font-semibold text-[var(--text-primary)] mb-2">
-                    Schedule a routine
+                    Pick an agent routine
                 </div>
                 <div className="text-sm text-[var(--text-tertiary)] mb-6 max-w-md text-center leading-relaxed">
-                    Recurring AI workflows — weekly digests, daily reports, lead summaries.
-                    Results land in your notifications when ready.
+                    Schedules that run through one of your agents. New ones are set up
+                    from the agent that owns them; plain scheduled work lives under
+                    Cowork.
                 </div>
                 <button
                     onClick={onCreateTask}
                     className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white"
                     style={{ background: 'var(--accent-primary, var(--text-primary))' }}
                 >
-                    <Plus size={15} /> New routine
+                    <Plus size={15} /> New agent routine
                 </button>
             </div>
         );
@@ -74,9 +75,10 @@ export default function RoutinesEmptyState({ segment, onCreateAutomation, onCrea
             </div>
 
             {/* Panels. The four "launcher" tabs stay mounted (so each keeps its
-                own state) in a centered column; Executions renders full-width and
-                mounts only while active (it streams live, so we don't run it in
-                the background). */}
+                own state) in a centered column. Runs now mounts the same way,
+                HIDDEN while inactive — its `active` prop stands fetching and
+                streaming down entirely, so the background cost is zero and the
+                list keeps its filters/scroll across tab switches. */}
             <div className="flex-1 min-h-0 flex flex-col">
                 <div className={`flex-1 min-h-0 overflow-y-auto ${activeTab === 'history' ? 'hidden' : ''}`}>
                     <div className="max-w-3xl mx-auto px-6 py-8">
@@ -94,11 +96,14 @@ export default function RoutinesEmptyState({ segment, onCreateAutomation, onCrea
                         </div>
                     </div>
                 </div>
-                {activeTab === 'history' && (
-                    <div className="flex-1 min-h-0">
-                        <ExecutionsPanel scope="global" onOpenEditor={onOpenAutomation} />
-                    </div>
-                )}
+                <div className={`flex-1 min-h-0 ${activeTab === 'history' ? '' : 'hidden'}`}>
+                    <ExecutionsPanel
+                        scope="global"
+                        active={activeTab === 'history'}
+                        onOpenEditor={onOpenAutomation}
+                        onEditingChange={onEditingChange}
+                    />
+                </div>
             </div>
         </div>
     );

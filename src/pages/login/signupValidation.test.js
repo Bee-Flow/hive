@@ -110,7 +110,16 @@ describe('validateSubmit', () => {
 
     it('enforces the password minimum the wizard now shares', () => {
         expect(validateSubmit({ ...valid, password: 'abc' })).toMatchObject({ reason: 'password_too_short' });
-        expect(validateSubmit({ ...valid, password: 'a'.repeat(MIN_PASSWORD_LENGTH) }).ok).toBe(true);
+        expect(validateSubmit({ ...valid, password: 'molenwiek42' }).ok).toBe(true);
+    });
+
+    // A pentest signed up with `password`. Length alone let it through, here
+    // and on the server. The server owns the real deny-list; this catches the
+    // handful people actually type, before the round-trip.
+    it('refuses the passwords everyone tries first', () => {
+        for (const pw of ['password', '12345678', 'Welkom123', 'P@ssw0rd', 'a'.repeat(MIN_PASSWORD_LENGTH)]) {
+            expect(validateSubmit({ ...valid, password: pw })).toMatchObject({ reason: 'password_too_common' });
+        }
     });
 
     it('rejects an obviously malformed email but allows none at all', () => {

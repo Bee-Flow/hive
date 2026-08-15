@@ -389,9 +389,101 @@ export function moveNode(def, nodeId, { toParentId, index } = {}) {
     return inserted ? next : def;
 }
 
+/**
+ * Remove a component (and everything inside it).
+ *
+ * A `modal` node is also an ACTION TARGET: open_modal/close_modal name it by
+ * id. Deleting one used to leave those references behind, and a dangling
+ * modalId is a hard validation error server-side (validate.js checkModalRef) —
+ * so PUT /:id/definition 422s, useAppAutosave records the failure without
+ * advancing its baseline, and every later keystroke re-fires the same rejected
+ * save. The editor then refuses to close, because closing flushes. Deleting a
+ * dialog jammed the whole editor on an error about a component that no longer
+ * existed.
+ *
+ * So the modal references go with it, exactly as removeScreen already does for
+ * screens: an open/close_modal ACTION aimed at a removed dialog is removed
+ * (taking its event wiring with it), and modal steps inside sequences are
+ * stripped. Deleting a container removes the dialogs INSIDE it too, so the
+ * whole subtree is what gets cleaned up, not just the node named.
+ */
 export function removeNode(def, nodeId) {
-    const { def: next, hit } = rewriteNode(def, nodeId, () => []);
-    return hit ? next : def;
+    const found = findNode(def, nodeId);
+    const modalIds = found ? modalIdsIn(found.node) : [];
+    const { def: removed, hit } = rewriteNode(def, nodeId, () => []);
+    if (!hit) return def;
+    let next = removed;
+    for (const modalId of modalIds) next = stripModalRefs(next, modalId);
+    return next;
+}
+
+/** Every `modal` node id in this subtree — the node itself included. */
+function modalIdsIn(node) {
+    const ids = [];
+    const walk = (n) => {
+        if (!n || typeof n !== 'object') return;
+        if (n.type === 'modal' && typeof n.id === 'string') ids.push(n.id);
+        for (const child of n.children || []) walk(child);
+    };
+    walk(node);
+    return ids;
+}
+
+/** Drop every action reference to a dialog that is no longer there. */
+function stripModalRefs(def, modalId) {
+    let next = def;
+    // A whole action whose only job was this dialog goes, with its wiring.
+    for (const [actionId, action] of Object.entries(next.actions || {})) {
+        if (action && (action.kind === 'open_modal' || action.kind === 'close_modal')
+            && action.modalId === modalId) {
+            next = removeAction(next, actionId);
+        }
+    }
+    let dirty = false;
+    const actions = {};
+    for (const [id, action] of Object.entries(next.actions || {})) {
+        let copy = action;
+        if (action && typeof action === 'object') {
+            const steps = stripModalSteps(copy.steps, modalId);
+            if (steps !== copy.steps) copy = { ...copy, steps };
+        }
+        if (copy !== action) dirty = true;
+        actions[id] = copy;
+    }
+    return dirty ? { ...next, actions } : next;
+}
+
+/** The same recursive walk stripNavigateSteps does, for modal steps. */
+function stripModalSteps(steps, modalId) {
+    if (!Array.isArray(steps)) return steps;
+    let dirty = false;
+    const next = [];
+    for (const step of steps) {
+        if (!step || typeof step !== 'object') { next.push(step); continue; }
+        if ((step.kind === 'open_modal' || step.kind === 'close_modal') && step.modalId === modalId) {
+            dirty = true;
+            continue;
+        }
+        let copy = step;
+        for (const key of ['then', 'else', 'steps', 'default']) {
+            const branch = stripModalSteps(step[key], modalId);
+            if (branch !== step[key]) copy = { ...copy, [key]: branch };
+        }
+        if (Array.isArray(step.cases)) {
+            let casesDirty = false;
+            const cases = step.cases.map((c) => {
+                if (!c || typeof c !== 'object') return c;
+                const branch = stripModalSteps(c.steps, modalId);
+                if (branch === c.steps) return c;
+                casesDirty = true;
+                return { ...c, steps: branch };
+            });
+            if (casesDirty) copy = { ...copy, cases };
+        }
+        if (copy !== step) dirty = true;
+        next.push(copy);
+    }
+    return dirty ? next : steps;
 }
 
 /**

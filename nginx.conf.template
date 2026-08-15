@@ -48,19 +48,159 @@ server {
     gzip_min_length 1024;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
 
+    # ── Content-Security-Policy — ONE definition, used everywhere ──────────────
+    #
+    # `add_header` in a location replaces the entire inherited set, so every
+    # block that adds a header of its own must re-declare the policy. It used to
+    # re-declare it by VALUE — five copies that had already drifted apart (the
+    # server-level copy had lost worker-src, the /chat/ copy had lost the
+    # OpenObserve connect-src source). Drift between copies of a security header
+    # is how one response ends up protected and the next one does not, so the
+    # value now lives here once and every block emits the variable.
+    #
+    # Safe against the template renderer: envsubst only substitutes the braced
+    # UPPERCASE names it is handed, and nginx variables are lowercase and
+    # unbraced (see docker-entrypoint.d/18-beeflow-template-vars.envsh).
+    #
+    # script-src — no blanket `https:`.
+    #   `https:` allowed a script from ANY https host, which is close to not
+    #   having a script-src at all: the payload for a stored-XSS in this app —
+    #   and it has plenty of dangerouslySetInnerHTML/innerHTML sinks rendering
+    #   user- and CMS-authored content — is a one-line
+    #   <script src="https://attacker/x.js">. Only the hosts the app genuinely
+    #   loads code from are listed:
+    #     • cdn.jsdelivr.net — @monaco-editor/react fetches the Monaco AMD
+    #       loader from jsdelivr (its built-in default; nothing in the app calls
+    #       loader.config to relocate it). Remove this and every code editor in
+    #       the admin UI stops rendering.
+    #     • ${GA_ORIGIN} — Google Tag Manager (gtag.js), injected by
+    #       marketing/components/GoogleAnalyticsTracker.jsx when a CMS site has
+    #       a GA measurement id configured. EMPTY by default and
+    #       only to be set to https://www.googletagmanager.com on deployments
+    #       that actually run Google Analytics. It is deliberately not hard-coded
+    #       like the others: GTM is a documented CSP bypass vector, because a
+    #       container can be configured in the GTM console to inject arbitrary
+    #       script — so allow-listing it hands script-execution rights to
+    #       whoever holds that console, and undoes much of the benefit of having
+    #       removed the blanket `https:`. An install with no GA should not carry
+    #       that trade at all.
+    #     • https://esm.sh — the Webpages React/MUI preview. buildWebpagePreview.js
+    #       bundles the project with esbuild-wasm into ONE inline module whose
+    #       only external imports are esm.sh URLs resolved through an import map,
+    #       and mounts it as an iframe `srcDoc` — a srcdoc document inherits the
+    #       EMBEDDER's CSP, so this policy governs those imports. Dropping it
+    #       breaks the preview only in nginx-served deploys (Vite dev has no
+    #       CSP), which is exactly the blind spot noted further down. The backend
+    #       already allows the same origin for the published tier — see
+    #       server/routes/publicViewer.js.
+    #     • ${ANALYTICS_ORIGIN} — the Umami tracker/session-recorder script.
+    #       This is now REQUIRED for ANY external analytics origin, https
+    #       included; the blanket `https:` used to cover public stats domains
+    #       silently. Set it to the tracker's origin (e.g.
+    #       https://stats.example.com or http://localhost:3000).
+    #
+    # 'unsafe-inline' and 'unsafe-eval' are NOT removable here, and both were
+    # verified against the built bundle rather than assumed:
+    #   • inline scripts are structural — index.html carries the pre-React theme
+    #     bootstrap AND the <script type="importmap"> that pins the single-React
+    #     contract (import maps are governed by script-src), and the GA tracker
+    #     injects an inline gtag() init block. Nonces would have to be minted by
+    #     the server renderer and threaded through @render/@shell/index.html.
+    #   • runtime code generation is real: @serenity-kit/opaque ships the
+    #     wasm-bindgen glue (`new Function(...)`) that OPAQUE login runs on, and
+    #     mermaid bundles d3-dsv's row-parser factory (also `new Function`).
+    #     esbuild-wasm (the Webpages in-browser preview build) and the OPAQUE
+    #     wasm module additionally need WebAssembly compilation, which without
+    #     'unsafe-eval' would require 'wasm-unsafe-eval'. Dropping 'unsafe-eval'
+    #     would break password login before it broke anything else.
+    #
+    # connect-src USED to keep `https: wss:`, on the reasoning that admins point
+    # the app at their own endpoints at runtime so the set is not knowable from
+    # the build — and that the trade was only worth taking "with per-deployment
+    # configuration behind it". A pentest flagged the wildcard as an
+    # exfiltration path, correctly: it permits a POST of anything the page can
+    # read to any HTTPS host on the internet, which is most of what an XSS
+    # would want, and the `unsafe-inline` above means CSP is not stopping the
+    # XSS itself either.
+    #
+    # So the configuration got built instead. What the browser actually connects
+    # to, audited against the bundle rather than assumed:
+    #   • 'self' — every API call. API_BASE is relative (or VITE_API_URL), and
+    #     there is not one absolute fetch('https://…') in agent-hub/src.
+    #   • https://observe.beeflow.nl — the RUM/telemetry beacon
+    #     (src/telemetry/openobserve.js, VITE_OPENOBSERVE_SITE at build time).
+    #   • ${ANALYTICS_ORIGIN} — the Umami tracker, already a variable.
+    #   • ${EXTRA_CONNECT_SRC} — the escape hatch the old comment was asking
+    #     for. Space-separated origins, empty by default. Set it when an
+    #     operator points the browser at an endpoint of their own.
+    #
+    # `wss:` is gone: there is no `new WebSocket` anywhere in the SPA. The two
+    # live streams are EventSource (support inbox), which is plain HTTP to
+    # 'self'. If a websocket feature lands, this is the line it needs.
+    #
+    # img-src keeps `https:` too: CMS pages, agent avatars and the emoji picker
+    # (jsdelivr emoji-datasource) load images from wherever the operator points
+    # them, and an image source is not an execution sink.
+    #
+    # frame-src/object-src 'self' blob: is REQUIRED for the in-app invoice PDF
+    # viewer (BFSF-250) — InvoicePdfModal renders the proxied PDF in an
+    # <iframe src="blob:...">, and without it frames fall back to default-src
+    # 'self', which never matches blob: URLs (Vite dev has no CSP, so this only
+    # ever bit in nginx-served deploys). worker-src 'self' blob: covers Monaco's
+    # blob workers and Umami session replay.
+    #
+    # ${CAPTCHA_ORIGIN} is EMPTY by default and only needs a value when the
+    # operator enables the signup bot challenge (SIGNUP_CAPTCHA_PROVIDER — see
+    # server/auth/signupCaptcha.js). The widget loads a third-party script AND
+    # renders in a third-party iframe, so it needs both script-src and
+    # frame-src; without them CaptchaWidget.jsx fails to load and signup is
+    # blocked with no obvious cause. Space-separated origins per provider:
+    #   turnstile  https://challenges.cloudflare.com
+    #   hcaptcha   https://js.hcaptcha.com https://newassets.hcaptcha.com
+    #   recaptcha  https://www.google.com https://www.gstatic.com
+    set $csp_common "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://esm.sh ${GA_ORIGIN} ${ANALYTICS_ORIGIN} ${CAPTCHA_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; worker-src 'self' blob:; frame-src 'self' blob: ${CAPTCHA_ORIGIN}; object-src 'self' blob:; connect-src 'self' https://observe.beeflow.nl ${ANALYTICS_ORIGIN} ${EXTRA_CONNECT_SRC}; base-uri 'self'; form-action 'self'";
+    # Default policy. $csp_embed is the same policy WITHOUT frame-ancestors —
+    # see the /chat/ block for why that one exception exists.
+    set $csp       "$csp_common; frame-ancestors 'self'";
+    set $csp_embed "$csp_common";
+
     # ── Security headers (server-level) ────────────────────────────────────────
+    #
+    # Drop the backend's own copies of the headers we set here, so a proxied
+    # response carries exactly one of each. helmet sets several of these too;
+    # with both layers emitting them, every API response through this proxy went
+    # out with the header twice — for a while with CONFLICTING values, which is
+    # how a security header stops meaning anything definite. The values agree
+    # now, but one authority is still better than two that happen to match.
+    #
+    # Unlike add_header, proxy_hide_header IS inherited into locations (as long
+    # as no location declares its own), so this one declaration covers all
+    # twenty proxy blocks below. The backend keeps sending them for anyone
+    # reaching it directly, which is the connector and loopback only.
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header X-XSS-Protection;
+    proxy_hide_header Referrer-Policy;
+    proxy_hide_header Permissions-Policy;
+    proxy_hide_header Content-Security-Policy;
+
     add_header X-Content-Type-Options  "nosniff" always;
     add_header X-Frame-Options         "SAMEORIGIN" always;
-    add_header X-XSS-Protection        "1; mode=block" always;
+    # X-XSS-Protection: 0 — DISABLING the legacy auditor on purpose, and the
+    # value every block below repeats.
+    #
+    # The API (helmet) already sends `0` on its own responses, so the two layers
+    # used to contradict each other on the same origin: whichever hop answered
+    # decided whether the auditor ran. Browsers that still honour the header
+    # implement it with a reflection heuristic that has its own history of
+    # turning non-issues into information leaks (it can be steered to suppress
+    # legitimate script or to confirm cross-origin content); `1; mode=block`
+    # also turns a false positive into a blank page. Chrome removed the auditor
+    # outright. CSP below is the actual defence.
+    add_header X-XSS-Protection        "0" always;
     add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
-    # frame-src/object-src 'self' blob: → in-app invoice PDF viewer (BFSF-250).
-    # ${ANALYTICS_ORIGIN} (empty by default) whitelists a self-hosted Umami that
-    # is NOT served over https — the bare `https:` source below covers a public
-    # stats domain, but an instance on plain http (every local stack, and any
-    # internal-network self-host) is blocked outright, so the tracker script
-    # never loads and analytics silently collects nothing.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https: wss: ${ANALYTICS_ORIGIN}; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+    add_header Content-Security-Policy $csp always;
 
     # ── Self-hosted fonts ──────────────────────────────────────────────────────
     #
@@ -81,7 +221,7 @@ server {
         add_header Cache-Control "public, max-age=2592000" always;
         add_header X-Content-Type-Options  "nosniff" always;
         add_header X-Frame-Options         "SAMEORIGIN" always;
-        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header X-XSS-Protection        "0" always;
         add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
     }
@@ -107,7 +247,9 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy     "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https: wss: ${ANALYTICS_ORIGIN}; base-uri 'self'; form-action 'self'" always;
+        # $csp_embed, not $csp: identical policy minus frame-ancestors, so this
+        # one route stays framable from a third-party origin.
+        add_header Content-Security-Policy $csp_embed always;
     }
 
     # ── Embedded SPA shell for the Nextcloud connector ───────────────────────
@@ -142,6 +284,36 @@ server {
     # the `location /` prefix regardless of order.
     location = /.well-known/microsoft-identity-association.json {
         proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── security.txt (RFC 9116) ──────────────────────────────────────────────────
+    # Same reason as the block above: without an exact-match location this path
+    # falls into `location /` and a researcher looking for a way to report a
+    # vulnerability gets the SPA shell — a 200 full of HTML with no contact in
+    # it, which reads as "there is no channel here". The backend renders the
+    # real file (server/routes/wellKnown.js) so the contact address follows the
+    # DEPLOYMENT's configuration instead of being baked into the shared image.
+    location = /.well-known/security.txt {
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Legacy top-level path. RFC 9116 §3 makes /.well-known/security.txt the
+    # canonical location for web properties but scanners and humans still try
+    # /security.txt first, so serve the same document there. proxy_pass carries
+    # an explicit URI, which replaces the request URI for this exact location —
+    # the backend only mounts the router under /.well-known.
+    location = /security.txt {
+        proxy_pass $backend/.well-known/security.txt;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -187,20 +359,11 @@ server {
         add_header Cache-Control "no-store, no-cache, must-revalidate" always;
         add_header X-Content-Type-Options  "nosniff" always;
         add_header X-Frame-Options         "SAMEORIGIN" always;
-        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header X-XSS-Protection        "0" always;
         add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
-        # CSP for the SPA document. connect-src explicitly allows the OpenObserve
-        # RUM/browser-logs ingest host; worker-src 'self' blob: is only needed if
-        # session replay is ever enabled (it spins a blob: web worker) but is
-        # harmless to pre-allow. frame-src/object-src 'self' blob: is REQUIRED
-        # for the in-app invoice PDF viewer (BFSF-250): InvoicePdfModal renders
-        # the proxied PDF in an <iframe src="blob:..."> — without frame-src,
-        # frames fall back to default-src 'self', which never matches blob:
-        # URLs, and the viewer shows a blank pane in every nginx-served deploy
-        # (Vite dev has no CSP, so this only bites in production). Kept in sync
-        # with the server-level CSP above.
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https://observe.beeflow.nl https: wss: ${ANALYTICS_ORIGIN}; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+        # CSP for the SPA document — defined once at server level ($csp).
+        add_header Content-Security-Policy $csp always;
     }
 
     # ── Server-rendered marketing pages ──────────────────────────────────────────
@@ -237,20 +400,11 @@ server {
         # shell. See routes/publicRender.js for the caching rationale.
         add_header X-Content-Type-Options  "nosniff" always;
         add_header X-Frame-Options         "SAMEORIGIN" always;
-        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header X-XSS-Protection        "0" always;
         add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
-        # CSP for the SPA document. connect-src explicitly allows the OpenObserve
-        # RUM/browser-logs ingest host; worker-src 'self' blob: is only needed if
-        # session replay is ever enabled (it spins a blob: web worker) but is
-        # harmless to pre-allow. frame-src/object-src 'self' blob: is REQUIRED
-        # for the in-app invoice PDF viewer (BFSF-250): InvoicePdfModal renders
-        # the proxied PDF in an <iframe src="blob:..."> — without frame-src,
-        # frames fall back to default-src 'self', which never matches blob:
-        # URLs, and the viewer shows a blank pane in every nginx-served deploy
-        # (Vite dev has no CSP, so this only bites in production). Kept in sync
-        # with the server-level CSP above.
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https://observe.beeflow.nl https: wss: ${ANALYTICS_ORIGIN}; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+        # CSP for the SPA document — defined once at server level ($csp).
+        add_header Content-Security-Policy $csp always;
     }
 
     # The un-rendered shell. Reached when the backend is unreachable, or when it
@@ -263,20 +417,11 @@ server {
         add_header Cache-Control "no-store, no-cache, must-revalidate" always;
         add_header X-Content-Type-Options  "nosniff" always;
         add_header X-Frame-Options         "SAMEORIGIN" always;
-        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header X-XSS-Protection        "0" always;
         add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
-        # CSP for the SPA document. connect-src explicitly allows the OpenObserve
-        # RUM/browser-logs ingest host; worker-src 'self' blob: is only needed if
-        # session replay is ever enabled (it spins a blob: web worker) but is
-        # harmless to pre-allow. frame-src/object-src 'self' blob: is REQUIRED
-        # for the in-app invoice PDF viewer (BFSF-250): InvoicePdfModal renders
-        # the proxied PDF in an <iframe src="blob:..."> — without frame-src,
-        # frames fall back to default-src 'self', which never matches blob:
-        # URLs, and the viewer shows a blank pane in every nginx-served deploy
-        # (Vite dev has no CSP, so this only bites in production). Kept in sync
-        # with the server-level CSP above.
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ${ANALYTICS_ORIGIN}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'self' blob:; connect-src 'self' https://observe.beeflow.nl https: wss: ${ANALYTICS_ORIGIN}; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+        # CSP for the SPA document — defined once at server level ($csp).
+        add_header Content-Security-Policy $csp always;
     }
 
     # Block source-map files. We build with sourcemap:'hidden' for post-mortem
@@ -291,9 +436,34 @@ server {
         add_header Cache-Control "public, immutable" always;
         add_header X-Content-Type-Options  "nosniff" always;
         add_header X-Frame-Options         "SAMEORIGIN" always;
-        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header X-XSS-Protection        "0" always;
         add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
         add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
+    }
+
+    # ── Meeting-notes audio upload ───────────────────────────────────────────
+    # The API accepts audio up to 500 MB (the multer cap in
+    # server/routes/transcriptions.js), so the proxy in front of it must not be
+    # the one that says no: at the server-level 100 MB a long recording was
+    # refused here, before routing, and the browser got a bare "HTTP 413" with
+    # no JSON body — no engine, no note, nothing to retry.
+    #
+    # Scoped to this one prefix so the 100 MB default keeps guarding every
+    # other endpoint. `^~` makes it win over `location /api/` without a regex.
+    # Request buffering is off so a large upload streams straight through
+    # instead of being spooled to disk first, and the timeouts match the
+    # client's 10-minute upload abort.
+    location ^~ /api/transcriptions {
+        client_max_body_size 512m;
+        proxy_request_buffering off;
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_buffering off;
     }
 
     # ── Proxy ALL /api/* requests to the backend server ──────────────────────────
@@ -323,6 +493,17 @@ server {
     # `add_header` directives (nginx behavior), so the backend's strict
     # per-route CSP isn't shadowed by the SPA's permissive CSP. We re-add
     # only the headers that are safe to apply uniformly.
+    #
+    # The `proxy_hide_header` block below is NOT redundant with the server-level
+    # one. Those directives de-duplicate headers the app and nginx both set, and
+    # `proxy_hide_header` IS inherited — which quietly broke exactly what the
+    # paragraph above is trying to achieve: the server-level list strips
+    # Content-Security-Policy, so the backend's `default-src 'none'` was being
+    # deleted in transit while this block added no CSP of its own, and the public
+    # viewer went out with no policy at all. Re-declaring the list here replaces
+    # the inherited one (array directives do not merge across levels), so every
+    # header nginx owns is still hidden EXCEPT the CSP, which is the one the
+    # backend is authoritative for on this route.
     location /p/ {
         proxy_pass $backend;
         proxy_http_version 1.1;
@@ -330,6 +511,11 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header X-XSS-Protection;
+        proxy_hide_header Referrer-Policy;
+        proxy_hide_header Permissions-Policy;
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy        "no-referrer" always;
     }

@@ -362,7 +362,7 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
                                     Beta features require Enterprise
                                 </h3>
                                 <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-                                    Advanced capabilities — voice chat, meeting notes, ticket assistant, security scan — ship with the Enterprise tier. Enable a licence key to expose them to your organisation.
+                                    Advanced capabilities — voice chat, meeting notes, security scan — ship with the Enterprise tier. Enable a licence key to expose them to your organisation.
                                 </p>
                                 <a
                                     href={upgradeUrl}

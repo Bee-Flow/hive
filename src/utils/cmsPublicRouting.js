@@ -18,9 +18,8 @@
 // slug could be created and edited but never rendered — App.jsx served the
 // hardcoded marketing/PricingPage.jsx instead. Pricing copy changes far more
 // often than a deploy cycle, so the CMS page now wins and PricingPage is the
-// FALLBACK for installs with no CMS site (see RootPathGate). `privacy`,
-// `terms` and `legal` stay reserved: those are served from in-repo markdown
-// and must keep stable URLs for Google's OAuth consent screen.
+// FALLBACK for installs with no CMS site (see RootPathGate). `privacy` stays
+// reserved: it frames the public DSR request form.
 export const RESERVED_TOP_LEVEL = new Set([
     'app', 'api', 'admin', 'auth', 'login', 'logout', 'register', 'signup',
     'dashboard', 'settings', 'embed', 'oauth', 'callback',
@@ -29,8 +28,8 @@ export const RESERVED_TOP_LEVEL = new Set([
     // catch-all would claim the path and every published form URL would render
     // a 404 page instead of the form.
     'f',
-    'org-settings', 'email-kb', 'ticket-assistant',
-    'privacy', 'terms', 'legal',
+    'org-settings',
+    'privacy',
     '__cms_preview__',
 ]);
 
@@ -118,8 +117,8 @@ export function isCmsPathCandidate(pathname) {
 
 /**
  * Is `pathname` part of the anonymous public marketing surface — a CMS page,
- * or one of the static pages the marketing shell frames (the legal docs
- * including the public DSR form, and the /__demo__ feature demos)?
+ * or one of the static pages the marketing shell frames (the public DSR form
+ * and the /__demo__ feature demos)?
  *
  * This is the consent boundary for trackers and telemetry: on these paths the
  * visitor is a member of the public and the CookieBanner decision governs
@@ -130,7 +129,7 @@ export function isCmsPathCandidate(pathname) {
 export function isPublicMarketingPath(pathname) {
     if (typeof pathname !== 'string') return false;
     if (isCmsPathCandidate(pathname)) return true;
-    return /^\/(privacy|terms|legal|__demo__)(\/|$)/.test(pathname);
+    return /^\/(privacy|__demo__)(\/|$)/.test(pathname);
 }
 
 /**

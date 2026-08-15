@@ -81,6 +81,19 @@ export function collectVariableUsage(def) {
     const addReads = (expr, site) => {
         for (const name of namesIn(expr)) add(reads, name, site);
     };
+    /**
+     * A boolean-or-formula flag (visible / visibleWhen / enabledWhen /
+     * readOnly). These reach us as {kind:'formula',expr} — the only expression
+     * shape canonicalize keeps — so reading them as plain strings found
+     * nothing: a variable used ONLY to decide what is shown counted as unused,
+     * the manager offered to delete it with no confirmation, and every rule
+     * built on it silently stopped working. The legacy bare string is still
+     * accepted, for a definition held in memory before its first save.
+     */
+    const addFlagReads = (flag, site) => {
+        if (typeof flag === 'string') { addReads(flag, site); return; }
+        eachFormula(flag, (expr) => addReads(expr, site));
+    };
 
     // ── components ──────────────────────────────────────────────────────────
     for (const screen of Array.isArray(def?.screens) ? def.screens : []) {
@@ -94,10 +107,10 @@ export function collectVariableUsage(def) {
                 eachFormula(node.props, (expr) => addReads(expr, { ...at, kind: 'prop', label: 'a setting' }));
                 eachFormula(node.computed, (expr) => addReads(expr, { ...at, kind: 'computed', label: 'a computed value' }));
                 eachFormula(node.validations, (expr) => addReads(expr, { ...at, kind: 'validation', label: 'a validation rule' }));
-                addReads(node.visibleWhen, { ...at, kind: 'visibleWhen', label: 'when it is shown' });
-                addReads(node.enabledWhen, { ...at, kind: 'enabledWhen', label: 'when it is enabled' });
-                if (typeof node.visible === 'string') addReads(node.visible, { ...at, kind: 'visibleWhen', label: 'when it is shown' });
-                if (typeof node.readOnly === 'string') addReads(node.readOnly, { ...at, kind: 'readOnly', label: 'when it is read-only' });
+                addFlagReads(node.visibleWhen, { ...at, kind: 'visibleWhen', label: 'when it is shown' });
+                addFlagReads(node.enabledWhen, { ...at, kind: 'enabledWhen', label: 'when it is enabled' });
+                addFlagReads(node.visible, { ...at, kind: 'visibleWhen', label: 'when it is shown' });
+                addFlagReads(node.readOnly, { ...at, kind: 'readOnly', label: 'when it is read-only' });
 
                 // A filter bar owns the reserved `filters` name.
                 if (node.type === 'filter_bar' && Array.isArray(node.props?.fields) && node.props.fields.length) {
@@ -117,7 +130,11 @@ export function collectVariableUsage(def) {
         if (!isObject(action)) continue;
         const at = { actionId, kind: 'action', nodeId: null };
 
-        if (typeof action.resultVar === 'string') {
+        // A bare action is walked as a one-step sequence below, which already
+        // records its resultVar — adding it here too counted the same write
+        // twice, so the manager said "used 2x" for one action and the delete
+        // dialog listed the same site on two rows.
+        if (action.kind === 'sequence' && typeof action.resultVar === 'string') {
             add(writes, action.resultVar, { ...at, kind: 'resultVar', label: `the result of ${actionId}` });
         }
 

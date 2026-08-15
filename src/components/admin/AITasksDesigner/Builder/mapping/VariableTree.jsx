@@ -1,7 +1,10 @@
 import { ChevronDown, ChevronRight, Database, MousePointer2, Clock, Webhook, Zap, Sparkles, GitBranch, Repeat, Code, Bell, Workflow, GripVertical, Globe, ClipboardList } from 'lucide-react';
 import React, { useState } from 'react';
 import { previewValue, walkPath } from '../../../../../utils/bindingHelpers';
+import { useTranslation } from '../../../../../hooks/useTranslation';
+import { listBadgeClass } from '../flow/settings/formStyles';
 import { startPathDrag } from './bindingDnd';
+import { fieldListShape } from './listShape';
 
 // Resolve the value to SHOW for a path: prefer the real last-run / pinned
 // value (from previewSample) so the user sees actual data, falling back to the
@@ -160,20 +163,25 @@ function GroupNode({ group, onInsert, previewSample }) {
  */
 export function FieldRow({ field, onInsert, depth, previewSample }) {
     const [open, setOpen] = useState(false);
+    const { t } = useTranslation();
     const indent = 12 + depth * 14;
     const hasChildren = Array.isArray(field.children) && field.children.length > 0;
 
     const onClick = (e) => {
         // For children-bearing rows clicking the chevron expands; clicking
-        // the rest of the row inserts the parent path.
+        // the rest of the row inserts the parent path. Alt held = insert the
+        // list as it is (skips the chooser downstream).
         if (hasChildren && e.target.closest('[data-expand-btn]')) {
             setOpen(o => !o);
             return;
         }
-        onInsert?.(field.path);
+        onInsert?.(field.path, { raw: e.altKey });
     };
 
     const value = shownValue(field.path, field.sample, previewSample);
+    // Say a value IS a list before it is picked — a 201-element array and a
+    // string used to render identically here.
+    const shape = fieldListShape(field, previewSample);
 
     return (
         <div>
@@ -183,7 +191,7 @@ export function FieldRow({ field, onInsert, depth, previewSample }) {
                 onClick={onClick}
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert?.(field.path); } }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert?.(field.path, { raw: e.altKey }); } }}
                 className="group flex items-center gap-2 py-1 text-[11px] cursor-grab active:cursor-grabbing select-none hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-secondary)] focus:outline-none"
                 style={{ paddingLeft: indent, paddingRight: 8 }}
                 title={typeof value === 'string' ? `${field.path}\n${value}` : field.path}
@@ -201,6 +209,11 @@ export function FieldRow({ field, onInsert, depth, previewSample }) {
                     <span className="shrink-0 w-3" />
                 )}
                 <span className="text-[var(--text-primary)] truncate min-w-0">{field.key}</span>
+                {shape && (
+                    <span className={listBadgeClass()} title={t(shape.explainKey, shape.explainEn, shape.explainParams)}>
+                        {shape.count != null ? `${t('routines.builder.list_word', 'list')} · ${shape.count}` : t('routines.builder.list_word', 'list')}
+                    </span>
+                )}
                 <span className="ml-auto text-[10px] text-[var(--text-secondary)] truncate max-w-[150px] font-mono">
                     {previewValue(value, 40)}
                 </span>

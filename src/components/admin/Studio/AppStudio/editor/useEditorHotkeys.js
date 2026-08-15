@@ -113,7 +113,13 @@ export default function useEditorHotkeys({ enabled = true, onUndo, onRedo, onFlu
                 let target = { screenId: c.screenId };
                 if (c.selectedNodeId) {
                     const found = findNode(c.definition, c.selectedNodeId);
-                    if (found) {
+                    // ...but only when the anchor is on the screen being
+                    // EDITED. Switching screens leaves the selection alone (the
+                    // reducer's set_screen does not clear it), so pasting after
+                    // a tab change landed the copy back on the screen you had
+                    // left — off-screen, silently, with the canvas in front of
+                    // you unchanged.
+                    if (found && found.screen?.id === c.screenId) {
                         const sameSectionParent = found.parent.id === found.section.id;
                         target = {
                             sectionId: found.section.id,

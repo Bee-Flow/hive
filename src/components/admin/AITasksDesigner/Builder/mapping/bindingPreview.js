@@ -55,3 +55,31 @@ export default function previewBinding(binding, sampleRoot, { raw = true } = {})
     }
     return null;
 }
+
+/**
+ * The SHAPE a binding resolves to — the honesty layer under the example line.
+ * `previewBinding` renders "[2 items]" for a list, which reads like a value;
+ * this sibling answers "is it a list, how many, is it empty" so the field can
+ * warn instead of implying success. Resolves through the SAME walkPath /
+ * tryEvaluate as the string preview — never a second resolver.
+ *
+ * Returns { isList, count, empty, first } or null (unresolvable / no sample).
+ */
+export function previewBindingShape(binding, sampleRoot) {
+    if (!binding || !sampleRoot) return null;
+    let v;
+    if (binding.kind === 'ref') {
+        if (!binding.path) return null;
+        v = walkPath(binding.path, sampleRoot);
+    } else if (binding.kind === 'expr') {
+        if (!binding.value) return null;
+        const { value, error } = tryEvaluate(binding.value, sampleRoot);
+        if (error) return null;
+        v = value;
+    } else {
+        return null; // literals and templates always resolve to text
+    }
+    if (v === undefined) return null;
+    if (!Array.isArray(v)) return { isList: false, count: null, empty: false, first: v };
+    return { isList: true, count: v.length, empty: v.length === 0, first: v[0] };
+}

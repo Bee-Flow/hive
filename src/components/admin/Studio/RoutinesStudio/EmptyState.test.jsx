@@ -16,7 +16,7 @@ vi.mock('./BuildWithAITab', () => ({ default: () => <div data-testid="panel-buil
 vi.mock('./FindRepeatingWorkTab', () => ({ default: () => <div data-testid="panel-repeating">repeating</div> }));
 vi.mock('./TemplatesTab', () => ({ default: () => <div data-testid="panel-templates">templates</div> }));
 vi.mock('./StepsTab', () => ({ default: () => <div data-testid="panel-steps">steps</div> }));
-// Executions mounts only while active (it streams live); stub the panel.
+// The runs panel is heavy (list + streaming); stub it — activity gating is its own concern.
 vi.mock('../Executions/ExecutionsPanel', () => ({ default: () => <div data-testid="panel-executions">executions</div> }));
 
 import RoutinesEmptyState from './EmptyState.jsx';
@@ -38,7 +38,7 @@ describe('RoutinesEmptyState — tabbed launcher', () => {
 
     it('renders the launcher tabs', () => {
         render(<RoutinesEmptyState {...props} />);
-        for (const label of ['Build with AI', 'Find repeating work', 'Templates', 'Executions']) {
+        for (const label of ['Build with AI', 'Find repeating work', 'Templates', 'Runs']) {
             expect(screen.getByRole('button', { name: label })).toBeTruthy();
         }
     });
@@ -48,8 +48,9 @@ describe('RoutinesEmptyState — tabbed launcher', () => {
         expect(isHidden('panel-build')).toBe(false);
         expect(isHidden('panel-repeating')).toBe(true);
         expect(isHidden('panel-templates')).toBe(true);
-        // Executions is full-width and mounts only when active.
-        expect(screen.queryByTestId('panel-executions')).toBeNull();
+        // Runs stays MOUNTED but hidden — its `active` prop stands
+        // fetching/streaming down, and hiding keeps its filters and scroll.
+        expect(isHidden('panel-executions')).toBe(true);
     });
 
     it('switching a tab shows that panel and hides the rest', () => {
@@ -57,9 +58,9 @@ describe('RoutinesEmptyState — tabbed launcher', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Templates' }));
         expect(isHidden('panel-templates')).toBe(false);
         expect(isHidden('panel-build')).toBe(true);
-        // Executions mounts (full-width) and the narrow launcher column hides.
-        fireEvent.click(screen.getByRole('button', { name: 'Executions' }));
-        expect(screen.getByTestId('panel-executions')).toBeTruthy();
+        // Runs shows (full-width) and the narrow launcher column hides.
+        fireEvent.click(screen.getByRole('button', { name: 'Runs' }));
+        expect(isHidden('panel-executions')).toBe(false);
         expect(isHidden('panel-templates')).toBe(true);
     });
 
@@ -73,9 +74,11 @@ describe('RoutinesEmptyState — tabbed launcher', () => {
         expect(isHidden('panel-build')).toBe(true);
     });
 
-    it('prompt_task segment keeps its simple CTA, no tabs', () => {
+    it('the agent-routine pane keeps its simple CTA, no tabs', () => {
+        // Reachable by deep link only now — the segmented control is gone and
+        // the tab is Automations.
         render(<RoutinesEmptyState {...props} segment="prompt_task" onCreateTask={vi.fn()} />);
-        expect(screen.getByRole('button', { name: /New routine/ })).toBeTruthy();
+        expect(screen.getByRole('button', { name: /New agent routine/ })).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Templates' })).toBeNull();
     });
 });

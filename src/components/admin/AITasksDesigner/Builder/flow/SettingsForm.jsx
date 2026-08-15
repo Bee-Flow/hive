@@ -14,8 +14,8 @@ import ScheduleBuilder from './ScheduleBuilder';
 import TriggerProviderPicker from './TriggerProviderPicker';
 import { getIntegrationIcon } from '../../../../../config/integrationIcons';
 import { sectionsWithErrors } from './sectionForIssue';
-import { useFormDensity } from './settings/formDensity';
-import { inputClass, textareaClass, rowInputClass, cardClass, subLabelClass, controlSurfaceClass, FormRow, ValidationLine } from './settings/formPrimitives';
+import { useFormDensity, useFormMode } from './settings/formDensity';
+import { inputClass, textareaClass, rowInputClass, cardClass, subLabelClass, controlSurfaceClass, hintTextClass, FormRow, ValidationLine } from './settings/formPrimitives';
 import HttpAuthPicker from './settings/HttpAuthPicker';
 import ParseJsonFields, { parseSampleSource, suggestFieldName } from './settings/ParseJsonFields';
 import SetOperationsEditor from './settings/SetOperationsEditor';
@@ -129,6 +129,8 @@ export default function SettingsForm({
 
     const dirty = useMemo(() => !deepEqual(draft, baseline), [draft, baseline]);
     const { density } = useFormDensity();
+    const formMode = useFormMode();
+    const { t } = useTranslation();
 
     // Which accordion sections hold a validation error — those are forced
     // open so an error is never hidden behind a collapsed section. Cheap
@@ -206,7 +208,20 @@ export default function SettingsForm({
         <div className="flex-1 min-h-0 flex flex-col">
             {(stepIssues.errors.length > 0 || stepIssues.warnings.length > 0) && (
                 <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-default)]">
+                    {/* Say what KIND of problem this is before listing it — a
+                        blocking error and a nice-to-know used to look the same
+                        apart from their hue. */}
+                    {stepIssues.errors.length > 0 && (
+                        <div className="text-[11px] font-semibold text-red-600 dark:text-red-400 mb-0.5">
+                            {t('routines.builder.fix_before_run', 'Fix this before the routine can run:')}
+                        </div>
+                    )}
                     {stepIssues.errors.map((e, i) => <ValidationLine key={`e-${i}`} record={e} />)}
+                    {stepIssues.warnings.length > 0 && (
+                        <div className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 mb-0.5 mt-1 first:mt-0">
+                            {t('routines.builder.worth_checking', 'Worth checking:')}
+                        </div>
+                    )}
                     {stepIssues.warnings.map((w, i) => <ValidationLine key={`w-${i}`} record={w} />)}
                 </div>
             )}
@@ -351,10 +366,10 @@ export default function SettingsForm({
                     <SummarizeFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} previewSample={previewSample} errorSections={errorSections} />
                 )}
 
-                {/* Not in the quick view: that panel's whole point is that it
-                    doesn't talk about JSON. Its own "More options" button is
-                    the way deeper. */}
-                {density !== 'quick' && (
+                {/* Not in Simple mode: that view's whole point is that it
+                    doesn't talk about JSON. The mode toggle is the way
+                    deeper. */}
+                {formMode !== 'simple' && (
                     <div className="text-[11px] text-[var(--text-tertiary)]">
                         Advanced options are available in the JSON view.
                     </div>
@@ -369,17 +384,26 @@ export default function SettingsForm({
             <div className="flex-shrink-0 flex items-center gap-3 px-3 py-2 border-t border-[var(--border-default)] bg-[var(--bg-secondary)] text-[11px]">
                 {footerLeft}
                 <div className="ml-auto flex items-center gap-2">
+                    {/* Autosave is the real save path; say so, or the Save
+                        button implies edits are lost without it. It stays as
+                        the immediate-save escape (and the tests' landmark —
+                        its text is queried by name across 10 suites). */}
+                    {!footerLeft && (
+                        <span className={`${hintTextClass()} text-[var(--text-tertiary)]`}>
+                            {t('routines.builder.autosave_note', 'Changes save automatically.')}
+                        </span>
+                    )}
                     <button
                         onClick={reset}
                         disabled={!dirty || saving}
                         className="flex items-center gap-1.5 px-3 py-1 text-xs rounded text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition"
                     >
-                        <RotateCcw size={12} /> Reset
+                        <RotateCcw size={12} /> {t('routines.builder.undo_changes', 'Undo changes')}
                     </button>
                     <button
                         onClick={onSave}
                         disabled={!dirty || saving}
-                        className="flex items-center gap-1.5 px-3 py-1 text-xs rounded bg-[var(--accent)] text-[var(--accent-primary-fg,#ffffff)] hover:opacity-90 disabled:opacity-40 transition"
+                        className={controlSurfaceClass('flex items-center gap-1.5 px-3 py-1 text-xs hover:bg-[var(--bg-tertiary)] disabled:opacity-40')}
                     >
                         <Save size={12} /> {saving ? 'Saving…' : 'Save'}
                     </button>
@@ -484,7 +508,6 @@ const LEGACY_PROVIDER_LABELS = {
     'google-calendar': 'Google Calendar',
     'google-drive': 'Google Drive',
     'nextcloud': 'Nextcloud',
-    'ticket-assistant': 'Ticket Assistant',
     'support': 'Support Inbox',
     'msgraph': 'Microsoft 365 (Outlook)',
     'github': 'GitHub',
@@ -615,7 +638,7 @@ function AiStepFields({ draft, set, modelTiers, catalog = null, groups = [], onF
     const hasOutput = (draft.outputFields || []).length > 0;
     return (
         <>
-            <FormRow label="Prompt" hint="What the AI should do. Drag data from the Input panel (or use the {} button) to drop in a value from a previous step — it's filled in with the real value when the step runs.">
+            <FormRow label="Prompt" required hint="What the AI should do. Drag data from the Input panel (or use the {} button) to drop in a value from a previous step — it's filled in with the real value when the step runs.">
                 <TemplateField
                     value={draft.prompt || ''}
                     onChange={(next) => set('prompt', next)}
@@ -629,7 +652,11 @@ function AiStepFields({ draft, set, modelTiers, catalog = null, groups = [], onF
                 honours the quick/full density, and this block (system prompt,
                 model tier, tool allowlist) is the definition of "advanced".
                 Cost of the switch is one reset collapse preference. */}
-            <AccordionSection stepType="ai_step" sectionKey="advanced" title="Advanced" forceOpen={errorSections.has('advanced')}>
+            {/* hasContent must test the keys the draft actually carries: the tier is
+    `modelTier` (`model` kept for legacy steps), `allowTools` is a boolean,
+    and the allowlist array is `tools` — testing draft.model/allowTools.length
+    hid a configured section in Simple mode with no way to reach it. */}
+            <AccordionSection stepType="ai_step" sectionKey="advanced" title="Advanced" forceOpen={errorSections.has('advanced')} hasContent={!!draft.systemPrompt || !!draft.modelTier || !!draft.model || !!draft.forEach || !!draft.allowTools || (draft.tools?.length > 0)}>
                 <FormRow label="System prompt" hint="Optional. Overrides the default 'You are a step inside a no-code automation' framing — set a tone, role, or domain.">
                     <textarea rows={3} value={draft.systemPrompt || ''} onChange={(e) => set('systemPrompt', e.target.value)} placeholder="(default: a generic automation-step system prompt)" className={textareaClass()} />
                 </FormRow>
@@ -682,6 +709,7 @@ function AiStepFields({ draft, set, modelTiers, catalog = null, groups = [], onF
             <AccordionSection
                 stepType="ai_step" sectionKey="output" title="Structured output"
                 defaultOpen={hasOutput} forceOpen={errorSections.has('output')}
+                hasContent={!!(draft.outputFields?.length)}
                 meta={<FieldHint title="About Structured output">Define the JSON fields the AI should return. Downstream steps can then reference them by name. Leave empty for free-form text.</FieldHint>}
             >
                 <StructuredOutputFields
@@ -787,7 +815,11 @@ function AiStepToolSelect({ draft, set, catalog }) {
                 Browse tools
             </button>
             {selected.length === 0 ? (
-                <p className="text-xs text-[var(--text-tertiary)]">No tools — the AI step answers from its prompt only.</p>
+                <p className="text-xs text-[var(--text-tertiary)]">
+                    No tools — the AI step answers from its prompt only.
+                    {' '}You can also drag an app from the ribbon onto this step&apos;s
+                    {' '}<span className="whitespace-nowrap">Tools</span> port on the canvas.
+                </p>
             ) : (
                 <div className="flex flex-wrap gap-1.5">
                     {selected.map((name) => (
@@ -835,6 +867,14 @@ function IntegrationActionFields({ step, draft, set, catalog, groups = [], onFoc
         const patch = autoMapInputs(inputSchema, draft.inputs || {}, groups || []);
         if (Object.keys(patch).length) set('inputs', { ...(draft.inputs || {}), ...patch });
     };
+    // A list-pick chooser choice of "run this step once for each row" lands
+    // here: write the forEach and force the Advanced section (which holds its
+    // editor) open once, so the change is visible where it can be undone.
+    const [foreachJustSet, setForeachJustSet] = useState(false);
+    const requestForEach = React.useCallback((fe) => {
+        set('forEach', fe ? { itemVar: 'item', maxIterations: 100, ...(draft.forEach || {}), ...fe } : null);
+        setForeachJustSet(!!fe);
+    }, [draft.forEach, set]);
     // Same app = one node with a switchable operation (n8n-style). Keep the
     // inputs that also exist in the new operation; drop the rest.
     const onChangeOperation = (e) => {
@@ -885,6 +925,7 @@ function IntegrationActionFields({ step, draft, set, catalog, groups = [], onFoc
                     previewSample={previewSample}
                     autoMappedKeys={step.autoMapped || []}
                     onAutoMap={onAutoMap}
+                    onRequestForEach={requestForEach}
                     // Only let the user add ad-hoc fields when the tool can
                     // actually accept them: a fixed schema (gmail_search etc.)
                     // doesn't, so hide "Add custom field"; a tool with no
@@ -892,7 +933,7 @@ function IntegrationActionFields({ step, draft, set, catalog, groups = [], onFoc
                     allowExtraFields={inputSchema ? inputSchema.additionalProperties === true : true}
                 />
             </AccordionSection>
-            <AccordionSection stepType="integration_action" sectionKey="advanced" title="Advanced" defaultOpen={!!draft.forEach} forceOpen={errorSections.has('advanced')}>
+            <AccordionSection stepType="integration_action" sectionKey="advanced" title="Advanced" defaultOpen={!!draft.forEach} forceOpen={errorSections.has('advanced') || foreachJustSet} hasContent={!!draft.forEach}>
                 <ForEachSection draft={draft} set={set} groups={groups} onFocusField={onFocusField} />
             </AccordionSection>
         </>
@@ -908,9 +949,17 @@ function IntegrationActionFields({ step, draft, set, catalog, groups = [], onFoc
 function ForEachSection({ draft, set, groups, onFocusField }) {
     const fe = draft.forEach || null;
     const enabled = !!fe;
+    const { previewSample } = useVariablePickerContext();
     const toggle = (on) => set('forEach', on
         ? { overRef: fe?.overRef || '', itemVar: fe?.itemVar || 'item', maxIterations: fe?.maxIterations ?? 100 }
         : null);
+    // How many times this step would actually run — resolved from the merged
+    // real/sample root, so it is the same number the run will produce.
+    const overCount = (() => {
+        if (!enabled || !fe?.overRef || !previewSample) return null;
+        const arr = walkPath(fe.overRef, previewSample);
+        return Array.isArray(arr) ? arr.length : null;
+    })();
     return (
         <div className="rounded-lg border border-[var(--border-default)] p-3 space-y-2">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -919,10 +968,16 @@ function ForEachSection({ draft, set, groups, onFocusField }) {
                     <Repeat size={13} /> Run once per item
                 </span>
             </label>
-            <p className="text-[11px] text-[var(--text-tertiary)]">
-                Iterate over an upstream array — this step runs once per element. Reference each one as{' '}
-                <code className="font-mono">loop.{fe?.itemVar || 'item'}</code>.
+            {/* Plain words first; the raw loop.<var> syntax is demoted to the
+                tooltip — it used to LEAD this sentence. */}
+            <p className="text-[11px] text-[var(--text-secondary)]" title={`Reference each one as loop.${fe?.itemVar || 'item'}`}>
+                Each row is available to this step as its current row.
             </p>
+            {overCount != null && (
+                <p className="text-[11px] text-[var(--text-secondary)] font-medium">
+                    This step will run {overCount} time{overCount === 1 ? '' : 's'} — once for each row.
+                </p>
+            )}
             {enabled && (
                 <div className="space-y-3 pt-1">
                     <LoopOverPicker
@@ -1044,7 +1099,7 @@ function CodeFields({ draft, set, groups = [], onFocusField = null, errorSection
                 forEach here, but only integration_action had the editor —
                 a code step's fan-out was set-once-by-auto-map, then invisible
                 and unremovable (C16/C18). */}
-            <AccordionSection stepType="code" sectionKey="advanced" title="Advanced" defaultOpen={!!draft.forEach} forceOpen={errorSections.has('advanced')}>
+            <AccordionSection stepType="code" sectionKey="advanced" title="Advanced" defaultOpen={!!draft.forEach} forceOpen={errorSections.has('advanced')} hasContent={!!draft.forEach}>
                 <ForEachSection draft={draft} set={set} groups={groups} onFocusField={onFocusField} />
             </AccordionSection>
         </>
@@ -1065,7 +1120,7 @@ function NotificationFields({ draft, set, groups = [], onFocusField, previewSamp
                     placeholder="New invoice received"
                 />
             </FormRow>
-            <FormRow label="Body" hint="Click a value in the right panel to insert it.">
+            <FormRow label="Body" required hint="Click a value in the right panel to insert it.">
                 <TemplateField
                     value={draft.body || ''}
                     onChange={(next) => set('body', next)}
@@ -1097,7 +1152,7 @@ function NotificationFields({ draft, set, groups = [], onFocusField, previewSamp
                 </div>
             </FormRow>
             </AccordionSection>
-            <AccordionSection stepType="notification" sectionKey="advanced" title="Advanced" defaultOpen={!!draft.forEach} forceOpen={errorSections.has('advanced')}>
+            <AccordionSection stepType="notification" sectionKey="advanced" title="Advanced" defaultOpen={!!draft.forEach} forceOpen={errorSections.has('advanced')} hasContent={!!draft.forEach}>
                 <ForEachSection draft={draft} set={set} groups={groups} onFocusField={onFocusField} />
             </AccordionSection>
         </>
@@ -1135,7 +1190,7 @@ function HttpRequestFields({ draft, set, onFocusField, previewSample, errorSecti
     return (
         <>
             <AccordionSection stepType="http_request" sectionKey="request" title="Request" defaultOpen forceOpen={errorSections.has('request')}>
-                <FormRow label="URL" hint="Click a value in the right panel to insert it, e.g. https://api.example.com/users/{{trigger.output.id}}.">
+                <FormRow label="URL" required hint="Click a value in the right panel to insert it, e.g. https://api.example.com/users/{{trigger.output.id}}.">
                     <TemplateField
                         value={draft.url || ''}
                         onChange={(next) => set('url', next)}
@@ -1145,7 +1200,7 @@ function HttpRequestFields({ draft, set, onFocusField, previewSample, errorSecti
                         placeholder="https://api.example.com/endpoint"
                     />
                 </FormRow>
-                <FormRow label="Method">
+                <FormRow label="Method" required>
                     <select value={method} onChange={(e) => set('method', e.target.value)} className={inputClass()}>
                         {HTTP_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
@@ -1167,7 +1222,7 @@ function HttpRequestFields({ draft, set, onFocusField, previewSample, errorSecti
                 </FormRow>
             </AccordionSection>
 
-            <AccordionSection stepType="http_request" sectionKey="headers" title="Headers" forceOpen={errorSections.has('headers')}>
+            <AccordionSection stepType="http_request" sectionKey="headers" title="Headers" forceOpen={errorSections.has('headers')} hasContent={headerEntries.length > 0}>
                 {headerEntries.length === 0 && (
                     <div className="text-xs text-[var(--text-tertiary)] italic mb-2">No headers set.</div>
                 )}
@@ -1224,7 +1279,7 @@ function HttpRequestFields({ draft, set, onFocusField, previewSample, errorSecti
                 </AccordionSection>
             )}
 
-            <AccordionSection stepType="http_request" sectionKey="options" title="Options" forceOpen={errorSections.has('options')}>
+            <AccordionSection stepType="http_request" sectionKey="options" title="Options" forceOpen={errorSections.has('options')} hasContent={draft.timeoutMs != null && draft.timeoutMs !== 10_000}>
                 <FormRow label="Timeout (ms)">
                     <input
                         type="number"
@@ -1304,12 +1359,12 @@ function FieldsSection({
  */
 function SetFields({ step, draft, set, groups = [], onFocusField, previewSample, errorSections = new Set() }) {
     const pickerCtx = useVariablePickerContext();
-    const { density } = useFormDensity();
-    // Quick view = "only what you need". Which list this step walks through is
-    // detected on wire and is right the overwhelming majority of the time, so
-    // it belongs with the other overrides — UNLESS it's still unset, in which
-    // case the step can't run and hiding the control would be a dead end.
-    const compact = density === 'quick';
+    // Simple mode = "only what you need". Which list this step walks through
+    // is detected on wire and is right the overwhelming majority of the time,
+    // so it belongs with the other overrides — UNLESS it's still unset, in
+    // which case the step can't run and hiding the control would be a dead
+    // end. Follows the user's MODE, not the window size.
+    const compact = useFormMode() === 'simple';
     const listMode = typeof draft.arrayRef === 'string';
     const elementSample = useElementSample(listMode ? draft.arrayRef : '', previewSample);
 
@@ -1419,7 +1474,7 @@ function SetFields({ step, draft, set, groups = [], onFocusField, previewSample,
                     />
                 </AccordionSection>
             )}
-            <AccordionSection stepType="set" sectionKey="advanced" title="Advanced" defaultOpen={!listMode && !!draft.forEach} forceOpen={errorSections.has('advanced')}>
+            <AccordionSection stepType="set" sectionKey="advanced" title="Advanced" defaultOpen={!listMode && !!draft.forEach} forceOpen={errorSections.has('advanced')} hasContent={!listMode && !!draft.forEach}>
                 <FormRow label="Works on" hint="Detected from the step above — override it here if the guess is wrong.">
                     <select
                         value={listMode ? 'items' : 'single'}
@@ -2044,7 +2099,7 @@ function WaitFields({ draft, set, errorSections = new Set() }) {
     const controlSize = 'px-2 py-1.5 text-sm';
     return (
         <AccordionSection stepType="wait" sectionKey="config" title="Configuration" defaultOpen forceOpen={errorSections.has('config')}>
-            <FormRow label="Wait for" hint="Up to 24 hours. Dry-run skips the wait.">
+            <FormRow label="Wait for" required hint="Up to 24 hours. Dry-run skips the wait.">
                 <div className="flex items-stretch gap-1.5">
                     <input
                         type="number"
@@ -2641,7 +2696,7 @@ function RouteFields({ step, draft, set, groups, onFocusField, previewSample, er
                                     onClick={opt.onClick}
                                     className={`px-2 py-1 text-[11px] rounded border transition ${opt.active
                                         ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10'
-                                        : 'border-[var(--border)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'}`}
+                                        : 'border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'}`}
                                 >
                                     {opt.label}
                                 </button>
@@ -2906,10 +2961,15 @@ function describeSourceList(source, groups, previewSample) {
     const match = collectArrayPaths(groups, previewSample).find(a => a.path === path);
     if (!match) return null;
     const owner = (groups || []).find(g => g.basePath && path.startsWith(g.basePath));
+    // Count from the RESOLVED value: for a `[*]` path `match.sample` is the
+    // first element (the collectionItemsFields convention), so its length was
+    // the first ROW's size, not the list's.
+    const resolved = previewSample ? walkPath(path, previewSample) : undefined;
+    const arr = Array.isArray(resolved) ? resolved : (Array.isArray(match.sample) ? match.sample : null);
     return {
         stepLabel: owner?.label || 'Previous step',
         fieldLabel: humanizeFieldKey(match.key),
-        count: Array.isArray(match.sample) ? match.sample.length : null,
+        count: arr ? arr.length : null,
     };
 }
 
@@ -3012,7 +3072,7 @@ function CollectionArrayRefField({ draft, set, groups, onFocusField, previewSamp
     const quickPicks = useMemo(() => collectArrayPaths(groups, previewSample), [groups, previewSample]);
     return (
         <>
-            <FormRow label="Source list" hint="Pick a list from a previous step — or type a path manually.">
+            <FormRow label="Source list" required hint="Pick a list from a previous step — or type a path manually.">
                 <PathField
                     value={draft.arrayRef || ''}
                     onChange={(v) => set('arrayRef', v)}

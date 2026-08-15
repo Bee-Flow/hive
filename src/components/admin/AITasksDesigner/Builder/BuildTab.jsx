@@ -102,7 +102,7 @@ export default function BuildTab({
     state, automation = null, rootDef, scopedDef, scopeKey, setScopeKey, onVisualEditRoot,
     chatInput, setChatInput, modelTiers, selectedTier, setSelectedTier, user,
     onSend, messagesContainerRef, messagesEndRef,
-    ndvStepId, ndvDensity = 'full', setNdvDensity = null, openNdv, closeNdv, stepById, runStepById, onSaveStep,
+    ndvStepId, ndvDensity = 'full', setNdvDensity = null, ndvMode = null, onNdvModeChange = null, openNdv, closeNdv, stepById, runStepById, onSaveStep,
     onVisualEdit,
     onExecuteStep, onRetryFromStep, onStopRun, pollRunProgress,
     fatalError, onDismissFatal,
@@ -1126,6 +1126,8 @@ export default function BuildTab({
                     key={ndvStep.id}
                     density={ndvDensity}
                     onDensityChange={setNdvDensity}
+                    mode={ndvMode}
+                    onModeChange={onNdvModeChange}
                     step={ndvStep}
                     runStep={ndvRunStep(ndvStep.id)}
                     runSteps={state.steps}

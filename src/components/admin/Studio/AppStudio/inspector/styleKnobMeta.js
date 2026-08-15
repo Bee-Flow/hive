@@ -22,7 +22,7 @@ export const STYLE_KNOBS = {
     padding:    { type: 'int', min: 0, max: 6, step: 1, default: 0 },
     gap:        { type: 'int', min: 0, max: 6, step: 1, default: 3 },
     weight:     { type: 'enum', values: ['regular', 'medium', 'semibold'], default: 'regular' },
-    height:     { type: 'enum', values: ['auto', 'sm', 'md', 'lg', 'fill'], default: 'auto' },
+    height:     { type: 'enum', values: ['auto', 'sm', 'md', 'lg', 'xl', 'fill'], default: 'auto' },
     background: { type: 'enum', values: ['none', 'surface', 'tint'], default: 'none' },
     border:     { type: 'enum', values: ['none', 'subtle', 'default'], default: 'none' },
 };

@@ -71,6 +71,17 @@ function renderLogic(node) {
 const BUTTON = { type: 'button', props: { label: 'Go', variant: 'primary' }, style: {} };
 const TEXT = { type: 'text', props: { text: '—' }, style: {} };
 
+/**
+ * Where a boolean is wanted these fields OPEN on the clickable condition
+ * builder, so a test that wants the raw box has to ask for it — the same click
+ * a formula-writing author makes.
+ */
+function writeAllAsFormula(utils) {
+    for (let links = utils.queryAllByText('Write a formula'); links.length; links = utils.queryAllByText('Write a formula')) {
+        fireEvent.click(links[0]);
+    }
+}
+
 describe('LogicSection — server contract', () => {
     it('a bare expression string is dropped on save — the shape the editor emits is not', () => {
         const kept = roundTrip(defWith({ id: NODE_ID, ...BUTTON, visibleWhen: { kind: 'formula', expr: 'form.ok == true' } }));
@@ -82,7 +93,9 @@ describe('LogicSection — server contract', () => {
     });
 
     it('"Only show when" / "Enabled when" commit formulas that round-trip', () => {
-        const { lastNode, lastDef, getByPlaceholderText } = renderLogic(BUTTON);
+        const utils = renderLogic(BUTTON);
+        const { lastNode, lastDef, getByPlaceholderText } = utils;
+        writeAllAsFormula(utils);
         fireEvent.change(getByPlaceholderText("e.g. form.priority == 'high'"), { target: { value: 'form.ok == true' } });
         expect(lastNode().visibleWhen).toEqual({ kind: 'formula', expr: 'form.ok == true' });
 
@@ -95,10 +108,30 @@ describe('LogicSection — server contract', () => {
         expect(saved.errors).toEqual([]);
     });
 
+    /**
+     * The two modes edit ONE value. Opening on the builder and switching back
+     * must hand the formula box exactly what was stored — a mode switch that
+     * re-serialised through the row model could quietly rewrite a working rule
+     * (or drop the half it could not represent) without the author touching it.
+     */
+    it('switching between the builder and the formula box leaves the value alone', () => {
+        const stored = "form.priority == 'high'";
+        const utils = renderLogic({ ...BUTTON, visibleWhen: { kind: 'formula', expr: stored } });
+        // It opened on the builder, not the code box.
+        expect(utils.getAllByText('Write a formula').length).toBeGreaterThan(0);
+
+        writeAllAsFormula(utils);
+        expect(utils.getByPlaceholderText("e.g. form.priority == 'high'").value).toBe(stored);
+        // Nothing was committed by merely looking at it.
+        expect(utils.onCommit).not.toHaveBeenCalled();
+    });
+
     it('clearing a visibility formula drops the key instead of storing a blank one', () => {
-        const { lastNode, getByPlaceholderText } = renderLogic({
+        const utils = renderLogic({
             ...BUTTON, visibleWhen: { kind: 'formula', expr: 'form.ok == true' },
         });
+        const { lastNode, getByPlaceholderText } = utils;
+        writeAllAsFormula(utils);
         fireEvent.change(getByPlaceholderText("e.g. form.priority == 'high'"), { target: { value: '' } });
         expect(lastNode().visibleWhen).toBeUndefined();
         // A blank expression would not merely be dropped — it is a hard error.

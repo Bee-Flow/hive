@@ -3,7 +3,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { remarkLegalCitations } from '../utils/legalCitations';
 import 'katex/dist/katex.min.css';
 import hljs from 'highlight.js/lib/core';
 import python from 'highlight.js/lib/languages/python';
@@ -638,7 +637,7 @@ const MarkdownRenderer = ({ content, className = '', isLoading = false, ...props
     return (
         <div className={`markdown-content ${className}`}>
             <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath, remarkLegalCitations]}
+                remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[rehypeKatex]}
                 components={{
                     // Fenced/indented code arrives wrapped in a <pre>; mark the

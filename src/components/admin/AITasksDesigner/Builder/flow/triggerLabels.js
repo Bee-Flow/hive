@@ -67,8 +67,6 @@ export const APP_EVENT_TYPE_LABEL = {
     'nextcloud.share.received':        'Share received (Nextcloud)',
     'nextcloud.activity.new':          'Nextcloud activity',
     'nextcloud.notification.new':      'Nextcloud notification',
-    'ticket-assistant.ticket.new':     'New ticket (Assistant)',
-    'ticket-assistant.sync.completed': 'Ticket sync finished',
 };
 
 const appEventKey = (step) => (

@@ -64,7 +64,7 @@ describe('InputDataPanel', () => {
     it('clicking a field inserts its path', () => {
         const { onPick } = renderPanel();
         fireEvent.click(screen.getByText('count'));
-        expect(onPick).toHaveBeenCalledWith('steps.s1.output.count');
+        expect(onPick).toHaveBeenCalledWith('steps.s1.output.count', { raw: false });
     });
 
     it('dragging a field carries BOTH mime types', () => {
@@ -119,7 +119,7 @@ describe('InputDataPanel', () => {
         expect(screen.getByText('subject')).toBeTruthy();
         expect(onPick).not.toHaveBeenCalled();
         fireEvent.click(screen.getByText('results'));            // the row
-        expect(onPick).toHaveBeenCalledWith('steps.s1.output.results');
+        expect(onPick).toHaveBeenCalledWith('steps.s1.output.results', { raw: false });
     });
 
     it('says so when there is no upstream data at all', () => {

@@ -1,9 +1,12 @@
 import { compile as compileExpr } from '@shared/expr/engine.mjs';
-import { Braces, ChevronDown, ChevronRight, FunctionSquare, Type } from 'lucide-react';
+import { ChevronDown, ChevronRight, FunctionSquare, Type } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import previewBinding from './bindingPreview';
+import previewBinding, { previewBindingShape } from './bindingPreview';
+import InsertDataButton from './InsertDataButton';
 import { onBindingDragOver, getBindingDropPath } from './bindingDnd';
 import { ExpressionHelpBody } from './ExpressionHelp';
+import ListPickChooser from './ListPickChooser';
+import { pathListShape } from './listShape';
 import RefTokenInput from './RefTokenInput';
 import useVariablePicker from './useVariablePicker';
 import VariablePicker from './VariablePicker';
@@ -18,7 +21,8 @@ import {
     getAutocompleteTokenFromPrefix,
 } from '../../../../../utils/bindingHelpers';
 import FieldHint from '../flow/FieldHint';
-import { denseInputClass, fieldLabelClass, requiredMarkClass, FOCUS_RING, FOCUS_RING_INSET } from '../flow/settings/formStyles';
+import { useFormMode } from '../flow/settings/formDensity';
+import { denseInputClass, fieldLabelClass, listBadgeClass, requiredMarkClass, AMBER_NOTE, FOCUS_RING_INSET } from '../flow/settings/formStyles';
 
 /**
  * Single mapping-aware field. The user sees one input and one mode
@@ -61,6 +65,12 @@ export default function BindingField({
     // are a path picker and a value slot, and that component already carries
     // its own syntax help for raw-expression mode.
     showExpressionHelp = true,
+    // 'list' | 'scalar' | 'unknown' | null — what the parameter's schema wants
+    // (listShape.expectedShapeFor). The list chooser only ever opens for
+    // 'scalar', and only into an EMPTY field: typed text is never destroyed.
+    expectShape = null,
+    // (forEach|null) => void — lets the chooser offer "run once per row".
+    onRequestForEach = null,
 }) {
     const seed = inputFromBinding(value);
     const [mode, setMode] = useState(seed.mode);
@@ -69,6 +79,7 @@ export default function BindingField({
     const [helpOpen, setHelpOpen] = useState(false);
     const inputRef = useRef(null);
     const { t } = useTranslation();
+    const formMode = useFormMode();
     const picker = useVariablePicker();
     const pickerCtx = useVariablePickerContext();
     const effectivePreviewSample = previewSample ?? pickerCtx.previewSample;
@@ -141,9 +152,36 @@ export default function BindingField({
         inputRef.current?.focus();
     };
 
-    const insertPath = (path) => {
+    // A pick that resolves to a LIST going into a scalar field asks first —
+    // unless Alt bypasses (`opts.raw`), or the field already holds text (a
+    // template being composed): typed text is never destroyed, the advisory
+    // line below warns instead.
+    const [listPick, setListPick] = useState(null); // { path, shape } | null
+    const insertPath = (path, opts = {}) => {
+        if (!opts.raw && expectShape === 'scalar' && String(text || '').trim() === '') {
+            const shape = pathListShape(path, effectivePreviewSample);
+            if (shape) { setListPick({ path, shape }); return; }
+        }
         const snippet = formatPathForInsert(path, mode);
         if (snippet) inputRef.current?.insertSnippet(snippet);
+    };
+
+    // Adopt a chooser result wholesale. Every choice forces EXPRESSION mode:
+    // `each` must stay a bare {kind:'ref'} — as a `{{path}}` template the
+    // runtime would JSON.stringify the array into the text (bind.js), which
+    // is the silent failure the chooser exists to prevent.
+    const applyBinding = (b) => {
+        const s = inputFromBinding(b);
+        setMode(s.mode);
+        setText(s.text);
+        lastEmittedRef.current = b;
+        onChange?.(b);
+    };
+    const onListChoice = (choice) => {
+        setListPick(null);
+        if (!choice) return;
+        if (choice.mode === 'foreach' && onRequestForEach) onRequestForEach(choice.forEach);
+        applyBinding(choice.binding);
     };
 
     // Expose an `insert(path)` method to the parent via the focus
@@ -167,11 +205,12 @@ export default function BindingField({
         setTimeout(() => setFocused(false), 150);
     };
 
-    // Drag-drop a path from the VariableTree onto the field.
+    // Drag-drop a path from the VariableTree onto the field. Alt held during
+    // the drop bypasses the list chooser, mirroring Alt-click.
     const onDragOver = onBindingDragOver;
     const onDrop = (e) => {
         const path = getBindingDropPath(e);
-        if (path) insertPath(path);
+        if (path) insertPath(path, { raw: e.altKey });
     };
 
     const binding = bindingFromInput(text, mode);
@@ -240,55 +279,52 @@ export default function BindingField({
                         className={inputClass}
                     />
                 </div>
-                <button
-                    type="button"
+                <InsertDataButton
                     onClick={(e) => { autocompleteLength.current = 0; picker.openPicker(e.currentTarget); }}
-                    title={t('routines.builder.insert_from_step', 'Insert data from a previous step')}
-                    aria-label="Insert variable"
-                    aria-haspopup="dialog"
-                    aria-expanded={picker.open}
-                    className={`shrink-0 px-2 rounded border border-[var(--border-default)] text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] flex items-center justify-center opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity ${FOCUS_RING}`}
-                >
-                    <Braces size={12} />
-                </button>
-                {/* Mode toggle — a two-segment switch that is ALWAYS present and
-                    always shows both options with the current one selected.
-                    The previous design had two independent state variables
-                    (`mode` and a `showAdvanced` revealed by a "⋯" button)
-                    fighting each other: clicking "⋯" added a third button,
-                    clicking that one removed two, and nothing ever reset
-                    `showAdvanced`. Controls appearing and disappearing read as a
-                    rendering bug rather than a mode switch (BFSF-321). */}
-                <div
+                    open={picker.open}
+                />
+                {/* Mode toggle — a two-segment switch that always shows both
+                    options with the current one selected (the earlier "⋯"
+                    reveal design read as a rendering bug — BFSF-321).
+                    In SIMPLE mode the toggle is not rendered at all: a person
+                    who has never met a formula should not be offered one. The
+                    one exception is a field that ALREADY holds a formula —
+                    hiding the switch then would trap them in expression mode
+                    with no way back to plain text. */}
+                {(formMode !== 'simple' || mode === 'expression') && <div
                     role="group"
                     aria-label={t('routines.builder.mode_group', 'Value mode')}
                     className="shrink-0 flex items-center rounded border border-[var(--border-default)] overflow-hidden"
                 >
+                    {/* A word beside each glyph: "Aa vs fx" is editor-culture
+                        shorthand a non-technical author has never met. Titles
+                        stay byte-identical — tests and muscle memory match on
+                        them. */}
                     <button
                         type="button"
                         onClick={() => { if (mode !== 'fixed') toggleMode(); }}
                         aria-pressed={mode === 'fixed'}
                         title={t('routines.builder.mode_text', 'Plain text — type a value. Use {{ }} to insert data from a previous step.')}
-                        className={`px-1.5 py-0.5 text-[11px] flex items-center justify-center transition-colors ${FOCUS_RING_INSET}
+                        className={`px-1.5 py-0.5 text-[11px] flex items-center justify-center gap-1 transition-colors ${FOCUS_RING_INSET}
                             ${mode === 'fixed'
                                 ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
                                 : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'}`}
                     >
-                        <Type size={12} />
+                        <Type size={12} /><span>{t('routines.builder.mode_text_word', 'Text')}</span>
                     </button>
                     <button
                         type="button"
                         onClick={() => { if (mode !== 'expression') toggleMode(); }}
                         aria-pressed={mode === 'expression'}
                         title={t('routines.builder.mode_expression', 'Expression — compute the value, e.g. steps.s1.output.total > 100')}
-                        className={`px-1.5 py-0.5 text-[11px] font-mono border-l border-[var(--border-default)] flex items-center justify-center transition-colors ${FOCUS_RING_INSET}
+                        className={`px-1.5 py-0.5 text-[11px] font-mono border-l border-[var(--border-default)] flex items-center justify-center gap-1 transition-colors ${FOCUS_RING_INSET}
                             ${mode === 'expression'
                                 ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
                                 : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'}`}
                     >
-                        <FunctionSquare size={12} />
+                        <FunctionSquare size={12} /><span>{t('routines.builder.mode_formula_word', 'Formula')}</span>
                     </button>
-                </div>
+                </div>}
             </div>
 
             {/* In expression mode the field accepts a restricted grammar most
@@ -307,23 +343,76 @@ export default function BindingField({
                         aria-expanded={helpOpen}
                         className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
                     >
-                        {helpOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {t('routines.builder.syntax_help', 'Syntax help')}
+                        {helpOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {t('routines.builder.what_can_i_write', 'What can I write here?')}
                     </button>
                     {helpOpen && <ExpressionHelpBody />}
                 </div>
             )}
-            {preview != null && (focused || binding.kind !== 'literal') && (
-                <div className="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1.5">
-                    <span className="uppercase tracking-wide">example</span>
-                    <span className="font-mono text-[var(--text-secondary)] truncate">{preview}</span>
-                </div>
-            )}
+            {/* The example line, made SHAPE-HONEST. "[2 items]" alone reads as
+                a value; the pill says it is a list, the amber lines say when
+                that is a problem — and offer the chooser as the way out. All
+                rendered BELOW the row, never inside the role="group" control
+                cluster (its three controls are a test contract). */}
+            {(() => {
+                const shape = previewBindingShape(binding, effectivePreviewSample);
+                const showLine = preview != null && (focused || binding.kind !== 'literal');
+                return (
+                    <>
+                        {showLine && (
+                            <div className="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1.5 min-w-0">
+                                <span className="uppercase tracking-wide">example</span>
+                                <span className="font-mono text-[var(--text-secondary)] truncate">{preview}</span>
+                                {shape?.isList && !shape.empty && (
+                                    <span className={listBadgeClass()}>
+                                        {t('routines.builder.list_of_n', 'list of {n}', { n: shape.count })}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                        {shape?.isList && shape.empty && (
+                            <div className={AMBER_NOTE}>
+                                {t('routines.builder.list_empty_sample', 'Nothing found here in the sample data — check the field name, or run the step above to get real data.')}
+                            </div>
+                        )}
+                        {shape?.isList && !shape.empty && expectShape === 'scalar' && (
+                            <div className={`${AMBER_NOTE} flex items-center gap-2 flex-wrap`}>
+                                {t('routines.builder.list_wants_one', 'This field wants one value, but you gave it a list of {n}.', { n: shape.count })}
+                                {binding.kind === 'ref' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const s = pathListShape(binding.path, effectivePreviewSample);
+                                            if (s) setListPick({ path: binding.path, shape: s });
+                                        }}
+                                        className="underline hover:no-underline"
+                                    >
+                                        {t('routines.builder.choose_list_use', 'Choose how to use the list')}
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </>
+                );
+            })()}
             <VariablePicker
                 {...picker.pickerProps}
                 groups={pickerGroups}
                 previewSample={effectivePreviewSample}
                 onPick={insertFromPicker}
                 title={label ? `Insert into ${label}` : 'Insert variable'}
+            />
+            <ListPickChooser
+                open={!!listPick}
+                anchorEl={inputRef.current?.element || null}
+                path={listPick?.path}
+                shape={listPick?.shape}
+                sampleRoot={effectivePreviewSample}
+                stepLabelById={stepLabelById}
+                expectShape={expectShape || 'unknown'}
+                allowForEach={!!onRequestForEach}
+                fieldLabel={label}
+                onChoose={onListChoice}
+                onCancel={() => setListPick(null)}
             />
         </div>
     );

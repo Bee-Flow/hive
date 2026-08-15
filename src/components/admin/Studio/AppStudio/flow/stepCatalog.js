@@ -1,7 +1,7 @@
 import {
-    ArrowRight, Bell, Bot, Braces, CheckCircle2, Database, ExternalLink, FileSearch,
-    GitBranch, Layers, Mail, MessageSquare, Pencil, RefreshCw, Repeat, Search,
-    SquareStack, Trash2, Workflow,
+    ArrowRight, Bell, Bot, Braces, CheckCircle2, Database, ExternalLink, FileDown,
+    FileSearch, GitBranch, Inbox, Layers, Mail, MessageSquare, Pencil, RefreshCw,
+    Repeat, Search, SquareStack, Trash2, Workflow,
 } from 'lucide-react';
 
 /**
@@ -43,6 +43,10 @@ export const STEP_CATALOG = {
         label: 'Ask first', group: 'On screen', icon: CheckCircle2,
         blurb: 'Stop and ask. Declining cancels everything after it.',
     },
+    reset_form: {
+        label: 'Clear a form', group: 'On screen', icon: RefreshCw,
+        blurb: 'Empty a form’s fields back to their defaults, by form name.',
+    },
     refresh: {
         label: 'Reload the data', group: 'On screen', icon: RefreshCw,
         blurb: 'Fetch the rows again after something changed.',
@@ -72,6 +76,14 @@ export const STEP_CATALOG = {
     send_email: {
         label: 'Send an email', group: 'Data', icon: Mail, server: true,
         blurb: 'Send a message from the app owner’s mailbox.',
+    },
+    generate_file: {
+        label: 'Make a file', group: 'Data', icon: FileDown, server: true,
+        blurb: 'Turn rows into a CSV or spreadsheet people can download.',
+    },
+    file_intake: {
+        label: 'File the attachments', group: 'Data', icon: Inbox, server: true,
+        blurb: 'Store a conversation’s mailed files and pair drawings with their CAD files.',
     },
 
     // ── AI ──────────────────────────────────────────────────────────────────
@@ -132,6 +144,7 @@ export function newStep(kind, { screenId = '', modalId = '' } = {}) {
         case 'open_url': return { kind, url: '', newTab: true };
         case 'open_modal': return { kind, modalId };
         case 'close_modal': return { kind, modalId };
+        case 'reset_form': return { kind, form: '' };
         case 'confirm': return { kind, message: 'Are you sure?' };
         case 'refresh': return { kind };
         case 'set_variable': return { kind, name: '', value: { kind: 'static', value: '' } };
@@ -151,8 +164,16 @@ export function newStep(kind, { screenId = '', modalId = '' } = {}) {
         case 'ai_extract': return { kind, source: { kind: 'static', value: '' }, schema: [{ name: 'field1', type: 'string', description: '', required: false }] };
         case 'ai_generate': return { kind, prompt: '', output: 'text', resultVar: 'result' };
         case 'kb_query': return { kind, query: { kind: 'static', value: '' }, knowledgeBaseIds: [], resultVar: 'results' };
+        case 'generate_file': return { kind, rows: { kind: 'static', value: [] }, fileName: { kind: 'static', value: 'export.csv' }, format: 'csv', resultVar: 'file' };
+        // connectorId names the mailbox, exactly as send_email: no sensible
+        // default, so it starts blank and the validator says which one to pick.
+        case 'file_intake': return { kind, connectorId: '', threadKey: { kind: 'static', value: '' }, resultVar: 'intake' };
         case 'condition': return { kind, expr: '', then: [], else: [] };
-        case 'switch': return { kind, expr: '', cases: [{ name: 'first', steps: [] }], default: [] };
+        // A case is matched on `value` — canonicalize keeps { value, steps } and
+        // drops anything else, and the runner compares against c.value. This
+        // used to seed `{ name: 'first' }`, which was deleted on the first save,
+        // so every hand-built switch fell through to "Otherwise" for ever.
+        case 'switch': return { kind, expr: '', cases: [{ value: '', steps: [] }], default: [] };
         case 'loop': return { kind, source: { kind: 'static', value: [] }, itemVar: 'item', steps: [] };
         default: return { kind };
     }

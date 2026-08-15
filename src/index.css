@@ -53,6 +53,12 @@
     --accent-primary: #9ca3af;
     --accent-secondary: #d1d5db;
     --accent-primary-hover: #6b7280;
+    /* Foreground for text ON the accent. ~20 call sites read it with a #fff
+       fallback, but it was never declared in CSS — so with the default grey
+       accent every filled button rendered white-on-#9ca3af at 2.54:1
+       (applyTheme.js only sets it when an admin picks a CUSTOM accent).
+       Near-black on the default grey measures ≈ 7:1. */
+    --accent-primary-fg: #111827;
     --accent-glow: rgba(156, 163, 175, 0.2);
 
     --success: #10b981;
@@ -62,12 +68,14 @@
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
-    /* Legacy alias — several pre-existing components reach for --text-tertiary
-       (e.g. SearchOverlay, profile menu, chat input placeholder). It was never
-       formally defined, so it resolved to nothing and rendered as inherited
-       white/currentColor. Aliasing it to --text-muted fixes the readability
-       gap globally without having to swap each call site. */
-    --text-tertiary: var(--text-muted);
+    /* Caption/hint tier. Declared LITERALLY in every theme block, not aliased
+       to --text-muted: the builder uses it ~490× at 9–11px, where the muted
+       value failed WCAG AA in three themes (#64748b on #16161d ≈ 3.7:1).
+       Dark/light/sepia get a stronger step (this one ≈ 6.9:1); the other five
+       themes reuse their --text-muted value, which already measures 6.4–9.1:1.
+       A theme block missing its own declaration would silently inherit this
+       dark-theme value — every block below declares it. */
+    --text-tertiary: #8b9bb0;
 
     --border-subtle: rgba(255, 255, 255, 0.06);
     --border-default: rgba(255, 255, 255, 0.1);
@@ -97,6 +105,15 @@
     --surface-1: var(--bg-primary);
     --surface-2: var(--bg-secondary);
     --surface-3: var(--bg-tertiary);
+
+    /* Menu/list row states. Sidebar, NotificationCenter and the designer
+       headers read these at ~15 call sites, but they were never declared —
+       and an undefined var() substitutes to transparent, so hovered and
+       active rows painted NOTHING in every theme. Derived from the theme's
+       own ink and accent (resolved at the element that uses them), so every
+       theme block below picks them up without declaring anything. */
+    --item-hover-bg: color-mix(in srgb, var(--text-primary) 7%, transparent);
+    --item-active-bg: color-mix(in srgb, var(--accent-primary) 12%, transparent);
 
     /* Radii — multiplied by --radius-scale (defaults to 1) so admins can dial
        roundness globally without touching every component. */
@@ -136,11 +153,13 @@
     --accent-primary: #9ca3af;
     --accent-secondary: #d1d5db;
     --accent-primary-hover: #6b7280;
+    --accent-primary-fg: #111827;
     --accent-glow: rgba(156, 163, 175, 0.12);
 
     --text-primary: #0f172a;
     --text-secondary: #334155;
     --text-muted: #64748b;
+    --text-tertiary: #55606d;
 
     --success: #059669;
     --warning: #d97706;
@@ -206,11 +225,13 @@
     --accent-primary: #6b7280;
     --accent-secondary: #9ca3af;
     --accent-primary-hover: #4b5563;
+    --accent-primary-fg: #ffffff;
     --accent-glow: rgba(107, 114, 128, 0.22);
 
     --text-primary: #0f172a;
     --text-secondary: #1e293b;
     --text-muted: #475569;
+    --text-tertiary: #475569;
 
     --success: #059669;
     --warning: #d97706;
@@ -270,11 +291,13 @@
     --accent-primary: #9ca3af;
     --accent-secondary: #cbd5e1;
     --accent-primary-hover: #d1d5db;
+    --accent-primary-fg: #111827;
     --accent-glow: rgba(156, 163, 175, 0.30);
 
     --text-primary: #f8fafc;
     --text-secondary: #cbd5e1;
     --text-muted: #94a3b8;
+    --text-tertiary: #94a3b8;
 
     --success: #34d399;
     --warning: #fbbf24;
@@ -313,11 +336,13 @@
     --accent-primary: #ffd400;
     --accent-secondary: #ffeb70;
     --accent-primary-hover: #fff080;
+    --accent-primary-fg: #000000;
     --accent-glow: rgba(255, 212, 0, 0.35);
 
     --text-primary: #ffffff;
     --text-secondary: #e5e5e5;
     --text-muted: #b0b0b0;
+    --text-tertiary: #b0b0b0;
 
     --success: #00ff66;
     --warning: #ffaa00;
@@ -360,11 +385,13 @@
     --accent-primary: #b45309;             /* amber-700, muted clay */
     --accent-secondary: #d97706;
     --accent-primary-hover: #92400e;
+    --accent-primary-fg: #ffffff;
     --accent-glow: rgba(180, 83, 9, 0.18);
 
     --text-primary: #1c1917;               /* stone-900, espresso */
     --text-secondary: #292524;
     --text-muted: #57534e;
+    --text-tertiary: #57534e;
 
     --success: #15803d;
     --warning: #b45309;
@@ -405,11 +432,13 @@
     --accent-primary: #e7e5e4;             /* stone-200, warm pearl */
     --accent-secondary: #f5f5f4;
     --accent-primary-hover: #d6d3d1;
+    --accent-primary-fg: #000000;
     --accent-glow: rgba(231, 229, 228, 0.15);
 
     --text-primary: #fafaf9;               /* stone-50 */
     --text-secondary: #d6d3d1;
     --text-muted: #a8a29e;
+    --text-tertiary: #a8a29e;
 
     --success: #4ade80;
     --warning: #fbbf24;
@@ -452,11 +481,13 @@
     --accent-primary: #c2410c;             /* orange-700, terracotta */
     --accent-secondary: #ea580c;
     --accent-primary-hover: #9a3412;
+    --accent-primary-fg: #ffffff;
     --accent-glow: rgba(194, 65, 12, 0.18);
 
     --text-primary: #44322c;               /* deep fountain-pen brown */
     --text-secondary: #5c443a;
     --text-muted: #8a6f5e;
+    --text-tertiary: #6f5849;
 
     --success: #166534;
     --warning: #a16207;
@@ -1430,6 +1461,32 @@ body,
 
 .markdown-content h4 {
     font-size: 0.95rem;
+}
+
+/* A cowork run's output is read inside a collapsed history row, not a chat
+   bubble. The headings above are rem-based, so an h1 landed at ~21px in a
+   12.5px box and every digest opened like a press release. Step them down to
+   the row, and drop the outer margins so the first line starts where the
+   border ends. */
+.cowork-run-output h1 {
+    font-size: 1.02rem;
+}
+
+.cowork-run-output h2 {
+    font-size: 0.95rem;
+}
+
+.cowork-run-output h3,
+.cowork-run-output h4 {
+    font-size: 0.88rem;
+}
+
+.cowork-run-output> :first-child {
+    margin-top: 0;
+}
+
+.cowork-run-output> :last-child {
+    margin-bottom: 0;
 }
 
 .markdown-content ul,

@@ -194,6 +194,11 @@ export const authFetch = async (url, options = {}) => {
         !url.includes('/auth/') &&
         !url.includes('/api/health') &&
         !url.includes('/api/languages/') &&
+        // The connector's /setup/* routes are admin-gated: a 401 there means
+        // "this Nextcloud user isn't an admin", which no reload can change.
+        // Reloading would just re-ask on every mount of the not-yet-paired
+        // embedded view.
+        !url.includes('/setup/') &&
         !onPublicMarketingPage()
     ) {
         // Loop breaker: if a 401 caused a reload within the last 30s, the

@@ -19,7 +19,6 @@ import ConsumerBetaFeaturesSection from './settings/ConsumerBetaFeaturesSection'
 import AppearanceSection from './settings/AppearanceSection';
 import SecuritySection from './settings/SecuritySection';
 import HelpSupportSection from './settings/HelpSupportSection';
-import LegalConsentSection from './settings/LegalConsentSection';
 import LearningCenterSection from './settings/LearningCenterSection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
 import OrgAzureConfigPanel from '../components/admin/OrgAzureConfigPanel';
@@ -52,7 +51,7 @@ const COMPLIANCE_PERMS = ['admin_compliance'];
  * friendlier URL names (`users`, `license`) — disambiguated by the parent
  * path segment.
  */
-const TOP_LEVEL_TAB_IDS = ['preferences', 'appearance', 'memory', 'integrations', 'learning', 'help_support', 'legal_consent'];
+const TOP_LEVEL_TAB_IDS = ['preferences', 'appearance', 'memory', 'integrations', 'learning', 'help_support'];
 const TOP_LEVEL_ID_TO_URL = {};
 const TOP_LEVEL_URL_TO_ID = Object.fromEntries(Object.entries(TOP_LEVEL_ID_TO_URL).map(([id, url]) => [url, id]));
 // Legacy URL: Simple Mode used to live at /app/settings/simple-mode. It now
@@ -159,7 +158,7 @@ export const AvatarDisplay = ({ user, size = 40, className = '' }) => {
  * are hidden. These are the top-level NAV_ITEMS ids that stay visible on mobile.
  * Derived from the NAV_ITEMS ids below (NOT TOP_LEVEL_TAB_IDS, which omits
  * 'security'). */
-const MOBILE_VISIBLE_TOP_TABS = ['preferences', 'appearance', 'security', 'memory', 'help_support', 'legal_consent'];
+const MOBILE_VISIBLE_TOP_TABS = ['preferences', 'appearance', 'security', 'memory', 'help_support'];
 const MOBILE_VISIBLE_TAB_SET = new Set(MOBILE_VISIBLE_TOP_TABS);
 
 /* ── Nav items (use labelKey for i18n) ────────────────────────────────────── */
@@ -191,10 +190,6 @@ const NAV_ITEMS = [
     {
         id: 'help_support', labelKey: 'settings.help_support',
         icon: <LifeBuoy width="15" height="15" strokeWidth={1.75} />,
-    },
-    {
-        id: 'legal_consent', labelKey: 'settings.legal_consent',
-        icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
     },
 ];
 
@@ -355,11 +350,10 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
         }
     }, [isSimpleMode, activeTab, setActiveTab]);
 
-    // Legal & Consent and Help & Support are hidden on self-hosted — bounce a
-    // deep-link/hard-refresh that lands on either (the nav items are filtered
-    // out, but the routes still exist).
+    // Help & Support is hidden on self-hosted — bounce a deep-link/hard-refresh
+    // that lands on it (the nav item is filtered out, but the route still exists).
     useEffect(() => {
-        if (isSelfHosted && (activeTab === 'legal_consent' || activeTab === 'help_support')) {
+        if (isSelfHosted && activeTab === 'help_support') {
             setActiveTab('preferences');
         }
     }, [isSelfHosted, activeTab, setActiveTab]);
@@ -607,7 +601,6 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
             case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
             case 'learning': return canUseLearning ? <LearningCenterSection user={user} /> : null;
             case 'help_support': return isSelfHosted ? null : <HelpSupportSection user={user} />;
-            case 'legal_consent': return isSelfHosted ? null : <LegalConsentSection user={user} />;
             case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection={isSelfHosted ? 'auth' : 'license'} /> : null;
             default: return null;
         }
@@ -738,10 +731,8 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
                         ) : (
                             NAV_ITEMS.filter(item => {
                                 if (item.id === 'learning' && !canUseLearning) return false;
-                                // Legal & Consent and Help & Support are Bee Flow Cloud
-                                // surfaces (the support inbox talks to the Bee Flow team) —
-                                // hidden on self-hosted, where neither applies.
-                                if (item.id === 'legal_consent' && isSelfHosted) return false;
+                                // Help & Support is a Bee Flow Cloud surface (the support
+                                // inbox talks to the Bee Flow team) — hidden on self-hosted.
                                 if (item.id === 'help_support' && isSelfHosted) return false;
                                 // Mobile hides Connections + Learning Center.
                                 if (isMobile && !MOBILE_VISIBLE_TAB_SET.has(item.id)) return false;

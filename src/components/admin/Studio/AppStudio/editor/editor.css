@@ -252,3 +252,46 @@
     0%, 55% { opacity: 1; }
     100% { opacity: 0; }
 }
+
+/*
+ * "What does this component do" — the logic marks on a canvas cell.
+ *
+ * The canvas drew components and nothing else, so which button runs something,
+ * which field refuses a bad value and which card is conditionally hidden were
+ * answerable only by selecting each node in turn. These say it at a glance.
+ *
+ * Always visible in edit mode rather than on hover: the job is sweeping a whole
+ * screen without touching it. Absolutely positioned INSIDE the cell — an
+ * unselected cell is `contain: layout paint`, so anything overflowing would be
+ * clipped — and painted with the editor accent so it reads as tool chrome
+ * rather than as part of the app being built. Shape carries the meaning; the
+ * colour is only there to separate the strip from the app's own surface.
+ */
+.ase-logic-marks {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 3px;
+    border-radius: 9999px;
+    background: var(--editor-accent);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    /* Tooltips need hover, but the strip must never eat a click meant for the
+       component underneath it — so the container is inert and only the glyphs
+       take pointer events. */
+    pointer-events: none;
+    opacity: 0.85;
+    transition: opacity 120ms ease;
+}
+.ase-cell:hover > .ase-logic-marks,
+.ase-cell[data-selected] > .ase-logic-marks {
+    opacity: 1;
+}
+.ase-logic-mark {
+    display: inline-flex;
+    pointer-events: auto;
+    color: var(--editor-accent-contrast);
+}

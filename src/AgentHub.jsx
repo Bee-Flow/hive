@@ -9,6 +9,11 @@ import SearchOverlay from './components/SearchOverlay';
 import Sidebar from './components/Sidebar';
 import WelcomeScreen from './components/WelcomeScreen';
 import useChatEngine from './hooks/useChatEngine';
+import useCoworkComposer from './components/cowork/useCoworkComposer';
+import CoworkModeToggle from './components/cowork/CoworkModeToggle';
+import CoworkWelcome from './components/cowork/CoworkWelcome';
+import { describeSchedule } from './components/cowork/coworkSchedule';
+import { showToast, ToastHost } from './components/admin/guardrails/Toast';
 import { lazy } from './utils/lazyWithReload';
 
 // ── Chat-critical (eager) ────────────────────────────────────────────
@@ -35,9 +40,15 @@ const AgentStudio = lazy(() => import('./components/admin/AgentStudio'));
 const Studio = lazy(() => import('./components/admin/Studio'));
 const AITasksDesigner = lazy(() => import('./components/admin/AITasksDesigner'));
 const SkillsPanel = lazy(() => import('./components/SkillsPanel'));
-const EmailKBSettings = lazy(() => import('./components/EmailKBSettings'));
 const NotebooksPage = lazy(() => import('./pages/NotebooksPage'));
-const LegalStudioPage = lazy(() => import('./pages/legal/LegalStudioPage'));
+const CoworkPage = lazy(() => import('./components/cowork/CoworkPage'));
+
+// Top-level pages rendered ABOVE the overlay branches in the main-content
+// ternary. A page in this list hides any overlay opened while it is on screen,
+// so closeAllOverlays() has to navigate away from it too. Keep it in sync with
+// the branch order below — adding a page above the overlays without adding it
+// here reintroduces BFSF-267 ("the sidebar item does nothing").
+const PAGES_ABOVE_OVERLAYS = ['cowork'];
 
 import { useViewport } from './hooks/useViewport';
 
@@ -68,6 +79,7 @@ const AgentHub = ({
     showAgentWizard = false, onCloseAgentWizard,
     showStudio = false, studioRoute = { section: 'agents', id: null }, onCloseStudio,
     showAITasks = false, onCloseAITasks, initialAITaskId = null,
+    initialCoworkId = null,
     // Projects is URL-driven now. `initialProjectRoute` is null when we are not
     // on a projects path, { projectId: null } for the list, and
     // { projectId, tab } for one project — so the list and the detail view are
@@ -75,10 +87,8 @@ const AgentHub = ({
     // view is closed.
     showProjects = false, initialProjectRoute = null, onProjectRouteChange, onCloseProjects,
     showSkillsPanel = false, onCloseSkillsPanel,
-    showEmailKB = false, onCloseEmailKB,
     // Notebooks rendered inline (previously a standalone page at App level).
     showNotebooks = false, onCloseNotebooks, initialNotebookId = null, onNotebookChange,
-    showLegal = false, onCloseLegal, initialMatterId = null, onMatterChange,
 }) => {
     // Share/collaboration copy is user-facing and Dutch-translated, so it goes
     // through the same dictionary as the rest of the UI rather than being
@@ -114,6 +124,40 @@ const AgentHub = ({
     // Settings toggle keeps reading the raw `user.simpleMode` so it still
     // reflects the real saved preference.
     const simpleMode = !!user?.simpleMode || isMobile;
+
+    // ── Chat ⇄ Cowork ───────────────────────────────────────────────────
+    // The composer can either talk to you (chat) or go do something (cowork).
+    // One composer state for the whole hub, so flipping the switch in the
+    // welcome composer and in the docked one is the same flip.
+    const [coworkMode, setCoworkMode] = useState('chat');
+    // In Cowork the composer produces a scheduled run, not a conversation, so
+    // the chat-side panels have nothing to attach to: a Notebook and a Webpage
+    // are things you read ALONGSIDE a conversation you are having.
+    const inCoworkMode = coworkMode === 'cowork';
+    const coworkComposer = useCoworkComposer({
+        onCreated: (created) => {
+            // Say what it understood, not just that it worked: the schedule was
+            // read out of the user's own sentence, so it has to be visible and
+            // correctable rather than silently assumed.
+            const schedule = describeSchedule({
+                presetId: 'custom',
+                runAt: created?.nextRunAt,
+                repeatInterval: created?.repeatInterval,
+            });
+            showToast('success', `"${created?.title || 'Untitled cowork'}" scheduled — ${schedule}. Change it under Cowork in the sidebar.`);
+        },
+    });
+    // Agent chat defaults the work to that agent: if you're mid-conversation
+    // with an agent and delegate something, you mean that agent to do it.
+    // Only seed an agent the picker actually offers — outside the
+    // agent_routines beta the create call would 403 on the agentId.
+    const coworkAgentIds = coworkComposer.agents;
+    const setCoworkModeForAgent = useCallback((mode, agentId) => {
+        setCoworkMode(mode);
+        if (mode === 'cowork' && agentId && coworkAgentIds.some(a => a.id === agentId)) {
+            coworkComposer.setAgentId(agentId);
+        }
+    }, [coworkAgentIds, coworkComposer.setAgentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Notebook layout: split-pane sibling column at every breakpoint above
     // mobile. On compact (13" laptops) it takes a fixed ~420 px width so the
@@ -566,6 +610,15 @@ const AgentHub = ({
         }, [directChatMode, currentDirectConversation?.id, currentConversation?.id, selectedAgent?.id]),
     });
 
+    // Once a thread has a message in it the mode is settled — see
+    // CoworkModeToggle for why. `coworkMode` is hub-level state, so without this
+    // reset, flipping to Work and then opening an existing conversation would
+    // strand that chat in Cowork mode with the switch already hidden.
+    const conversationStarted = messages.length > 0;
+    useEffect(() => {
+        if (conversationStarted && coworkMode === 'cowork') setCoworkMode('chat');
+    }, [conversationStarted, coworkMode]);
+
     // Voice Chat (Beta) — completed voice turns flow up from the embedded
     // VoiceInlinePanel and are injected into the chat conversation here so
     // they render as regular MessageItem bubbles. Voice messages carry a
@@ -830,13 +883,13 @@ const AgentHub = ({
     // Close KB and Projects views when the user navigates to a chat (agent or direct).
     // Mirrors how the agent marketplace closes itself in handleSelectAgent etc.
     useEffect(() => {
-        if (showMarketplace || showSettings || showAgentDesigner || showAgentWizard || showStudio || showSkillsPanel || showEmailKB || showAITasks) {
+        if (showMarketplace || showSettings || showAgentDesigner || showAgentWizard || showStudio || showSkillsPanel || showAITasks) {
             setShowKBStore(false);
             setActiveKBId(null);
             setShowProjectsStore(false);
             setActiveProjectId(null);
         }
-    }, [showMarketplace, showSettings, showAgentDesigner, showAgentWizard, showStudio, showSkillsPanel, showEmailKB, showAITasks]);
+    }, [showMarketplace, showSettings, showAgentDesigner, showAgentWizard, showStudio, showSkillsPanel, showAITasks]);
 
     // KB favourites: load from server, with one-time migration of any legacy
     // localStorage favorites left over from the client-side implementation.
@@ -1168,8 +1221,11 @@ const AgentHub = ({
     // Listen for "Open in Direct Chat" events from NotificationCenter (AI Task results)
     useEffect(() => {
         const handler = async (e) => {
-            const { title, content, agentId, conversationId } = e.detail || {};
+            const { title, content, agentId, conversationId, surface } = e.detail || {};
             if (!content) return;
+            // What the seeded first message calls the thing — a cowork result
+            // announcing itself as "my routine" is the wrong feature's name.
+            const noun = surface === 'cowork' ? 'cowork' : 'routine';
 
             // R2: routine result came from an agent — open the agent's chat
             // (continuing the same conversation the routine ran in when
@@ -1196,7 +1252,7 @@ const AgentHub = ({
                         setCurrentConversation(null);
                         setMessages([
                             { id: generateMessageId(), role: 'user',
-                              content: `Show me the result from my routine "${title}"`, timestamp: now },
+                              content: `Show me the result from my ${noun} "${title}"`, timestamp: now },
                             { id: generateMessageId(), role: 'assistant',
                               content, timestamp: now,
                               respondingAgentAvatar: pickAgentAvatar(agent) || DEFAULT_AGENT_EMOJI },
@@ -1228,7 +1284,7 @@ const AgentHub = ({
             setTimeout(() => {
                 setMessages([
                     { id: generateMessageId(), role: 'user',
-                      content: `Show me the result from my routine "${title}"`, timestamp: now },
+                      content: `Show me the result from my ${noun} "${title}"`, timestamp: now },
                     { id: generateMessageId(), role: 'assistant',
                       content, timestamp: now, respondingAgentAvatar: '🤖' },
                 ]);
@@ -1483,20 +1539,24 @@ const AgentHub = ({
     // marketplace while Studio (or AgentWizard / SkillsPanel / etc) is open
     // leaves the overlay sitting on top of the new content. Every navigation
     // entry point should call this before changing state.
-    const closeAllOverlays = () => {
+    // `keepPage` is for callers that open something *on top of* the main
+    // content (the search palette) rather than replacing it — those have no
+    // reason to throw the user off the page they were on.
+    const closeAllOverlays = ({ keepPage = false } = {}) => {
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
         if (onCloseAgentWizard) onCloseAgentWizard();
         if (onCloseStudio) onCloseStudio();
         if (onCloseAITasks) onCloseAITasks();
         if (onCloseSkillsPanel) onCloseSkillsPanel();
-        if (onCloseEmailKB) onCloseEmailKB();
         if (onCloseNotebooks) onCloseNotebooks();
-        // BFSF-267: Legal is the FIRST branch of the main-content ternary, so
-        // while it's open no chat-context navigation (New Chat, Agents, a
-        // conversation, the KB store) could visibly do anything — the user was
-        // stuck until a reload. Mirror the Notebooks close.
-        if (onCloseLegal) onCloseLegal();
+        // Same trap one level up: Cowork is a top-level PAGE, and it is matched
+        // ABOVE the overlay branches in the main ternary. Closing the overlays
+        // is not enough — while `currentPage` is still 'cowork' the page keeps
+        // winning, so opening the marketplace / KB store / search from the
+        // sidebar flipped a flag nothing rendered and the click did nothing.
+        // Leaving the page is part of closing what's on screen.
+        if (!keepPage && PAGES_ABOVE_OVERLAYS.includes(currentPage) && onNavigate) onNavigate('agents');
         setShowMarketplace(false);
         setShowKBStore(false);
         setActiveKBId(null);
@@ -1896,7 +1956,7 @@ const AgentHub = ({
                 onSelectAgent={handleSelectAgent}
                 onOpenMarketplace={() => { closeAllOverlays(); setShowMarketplace(true); }}
                 onOpenKBStore={() => { closeAllOverlays(); setShowKBStore(true); }}
-                onOpenSearch={() => { closeAllOverlays(); setShowSearch(true); }}
+                onOpenSearch={() => { closeAllOverlays({ keepPage: true }); setShowSearch(true); }}
                 hasPermission={hasPermission}
                 user={user}
                 onLogout={onLogout}
@@ -1907,7 +1967,6 @@ const AgentHub = ({
                 showAgentDesigner={showAgentDesigner}
                 showAITasks={showAITasks}
                 showSkillsPanel={showSkillsPanel}
-                showEmailKB={showEmailKB}
                 showMarketplace={showMarketplace}
                 onDirectChat={handleDirectChat}
                 directChatMode={directChatMode}
@@ -1935,7 +1994,7 @@ const AgentHub = ({
                 activeProject={activeProject}
                 onSelectProject={(p) => setActiveProject(p)}
                 onCreateProject={() => {
-                    // BFSF-267: these hand-rolled subset closes missed Legal
+                    // BFSF-267: these hand-rolled subset closes missed overlays
                     // (and Studio/AgentWizard/Notebooks) — route through the
                     // single source of truth, then navigate.
                     closeAllOverlays();
@@ -1998,19 +2057,7 @@ const AgentHub = ({
 
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col min-w-0 relative">
-                {showLegal ? (
-                    /* Legal Studio (Dutch legal matters) — same inline slot as
-                       Notebooks. A matter is a notebook of type 'legal_matter',
-                       so it shares the notebooks licence gate. */
-                    <RequireTier feature="notebooks">
-                        <LegalStudioPage
-                            user={user}
-                            onBack={onCloseLegal}
-                            initialMatterId={initialMatterId}
-                            onMatterChange={onMatterChange}
-                        />
-                    </RequireTier>
-                ) : showNotebooks ? (
+                {showNotebooks ? (
                     /* Notebooks rendered inline in conversation area (same slot as
                        Settings / Agent Designer) so the app sidebar stays visible.
                        NotebooksPage self-gates on the `notebooks` licence feature:
@@ -2039,6 +2086,10 @@ const AgentHub = ({
                         initialFlowletKey={studioRoute.section === 'aiTasks' ? (studioRoute.sub || null) : null}
                         initialWebpageId={studioRoute.section === 'webpages' ? studioRoute.id : null}
                         initialStudioAppId={studioRoute.section === 'apps' ? studioRoute.id : null}
+                        // Builder query state (?view/run/step) — a run deep-link.
+                        initialBuilderView={studioRoute.section === 'aiTasks' ? (studioRoute.view || null) : null}
+                        initialRunId={studioRoute.section === 'aiTasks' ? (studioRoute.runId || null) : null}
+                        initialRunStepId={studioRoute.section === 'aiTasks' ? (studioRoute.stepId || null) : null}
                         onClose={onCloseStudio}
                         onNavigate={onNavigate}
                         modelTiers={modelTiers}
@@ -2088,9 +2139,17 @@ const AgentHub = ({
                             return perms.includes('all') || perms.includes(perm);
                         }}
                     />
+                ) : currentPage === 'cowork' ? (
+                    /* Cowork (/app/cowork[/:id]) — the front door for prompt
+                       automation and the only place it lives. Same inline slot
+                       as Notebooks/Settings so the sidebar stays put. Driven
+                       straight off currentPage: navigateToPage already clears
+                       every overlay flag for a top-level page, so there's no
+                       separate `showCowork` boolean to keep in sync. */
+                    <CoworkPage user={user} isMobile={isMobile} initialCoworkId={initialCoworkId} onNavigate={onNavigate} />
                 ) : showAITasks ? (
                     /* AI Tasks designer rendered inline in conversation area */
-                    <AITasksDesigner initialTaskId={initialAITaskId} onClose={onCloseAITasks} modelTiers={modelTiers} />
+                    <AITasksDesigner initialTaskId={initialAITaskId} onClose={onCloseAITasks} onNavigate={onNavigate} modelTiers={modelTiers} />
                 ) : showSkillsPanel ? (
                     /* Skills panel rendered inline in conversation area */
                     <SkillsPanel
@@ -2100,17 +2159,6 @@ const AgentHub = ({
                         onToggleSkill={handleToggleSkill}
                         agents={agents}
                     />
-                ) : showEmailKB ? (
-                    /* Email Knowledge Base settings rendered inline.
-                       Wrapped in RequireTier so community installs see the
-                       upgrade panel rather than an empty page when the
-                       backend gates `/api/ticket-assistant` at the router. */
-                    <RequireTier feature="ticket_assistant">
-                        <EmailKBSettings
-                            user={user}
-                            onNavigateBack={onCloseEmailKB}
-                        />
-                    </RequireTier>
                 ) : showMarketplace ? (
                     /* Agent Marketplace rendered inline in conversation area */
                     <AgentMarketplace
@@ -2211,7 +2259,7 @@ const AgentHub = ({
                 ) : selectedAgent ? (
                     <>
                         {/* New Inline Header for Agent */}
-                        <div className={`h-14 flex items-center justify-between ${isMobile ? 'px-3' : 'px-6'} bg-[var(--bg-primary)]/80 backdrop-blur-md sticky top-0 z-20 border-b border-[var(--border-subtle)]/50`}>
+                        <div className={`relative h-14 flex items-center justify-between ${isMobile ? 'px-3' : 'px-6'} bg-[var(--bg-primary)]/80 backdrop-blur-md sticky top-0 z-20 border-b border-[var(--border-subtle)]/50`}>
                             <div className="flex items-center gap-2">
                                 {isMobile && (
                                     <button
@@ -2290,8 +2338,22 @@ const AgentHub = ({
                                     )}
                                 </div>
                             </div>
+                            {/* Centred on the pane, not tucked in with Notebook and
+                                Webpage: those open a panel beside the conversation,
+                                while this decides what the composer below it even
+                                does. Absolutely positioned so it stays on the
+                                header's centre line however wide the two groups
+                                either side of it grow. */}
+                            <div className="absolute left-1/2 -translate-x-1/2 flex items-center">
+                                <CoworkModeToggle
+                                    enabled
+                                    value={coworkMode}
+                                    onChange={(mode) => setCoworkModeForAgent(mode, selectedAgent?.id)}
+                                    locked={conversationStarted}
+                                />
+                            </div>
                             <div className="flex items-center gap-2 relative">
-                                {!isMobile && notebooksEnabled && (
+                                {!isMobile && notebooksEnabled && !inCoworkMode && (
                                     <button
                                         onClick={toggleNotebookPanel}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
@@ -2300,7 +2362,7 @@ const AgentHub = ({
                                         📓 {showNotebook ? 'Close' : 'Notebook'}
                                     </button>
                                 )}
-                                {!isMobile && canUseWebpagesSide && (
+                                {!isMobile && canUseWebpagesSide && !inCoworkMode && (
                                     <>
                                         <button
                                             ref={webpageButtonRef}
@@ -2355,6 +2417,9 @@ const AgentHub = ({
                                                     onToggleSkill={handleToggleSkill}
                                                     messages={messages}
                                                     onVoiceTurnComplete={handleVoiceTurnComplete}
+                                                    cowork={coworkComposer}
+                                                    coworkMode={coworkMode}
+                                                    onCoworkModeChange={(mode) => setCoworkModeForAgent(mode, selectedAgent?.id)}
                                                 />
                                             </WelcomeScreen>
                                         </div>
@@ -2402,6 +2467,9 @@ const AgentHub = ({
                                             onToggleSkill={handleToggleSkill}
                                             messages={messages}
                                             onVoiceTurnComplete={handleVoiceTurnComplete}
+                                            cowork={coworkComposer}
+                                            coworkMode={coworkMode}
+                                            onCoworkModeChange={(mode) => setCoworkModeForAgent(mode, selectedAgent?.id)}
                                         />
                                     </div>
                                 )}
@@ -2413,9 +2481,12 @@ const AgentHub = ({
                 ) : directChatMode ? (
                     /* Direct Chat Mode */
                     <>
-                        {/* Minimal toolbar for Direct Chat */}
-                        {(isMobile || (!isMobile && notebooksEnabled)) && (
-                            <div className={`h-14 flex items-center justify-between ${isMobile ? 'px-3' : 'px-6'} bg-[var(--bg-primary)]/80 backdrop-blur-md sticky top-0 z-20 border-b border-[var(--border-subtle)]/50`}>
+                        {/* Minimal toolbar for Direct Chat. It also has to appear
+                            for the Chat ⇄ Cowork switch alone: the switch lives
+                            in here now, and a workspace without Notebooks would
+                            otherwise have no header to put it in. */}
+                        {(isMobile || notebooksEnabled || !conversationStarted) && (
+                            <div className={`relative h-14 flex items-center justify-between ${isMobile ? 'px-3' : 'px-6'} bg-[var(--bg-primary)]/80 backdrop-blur-md sticky top-0 z-20 border-b border-[var(--border-subtle)]/50`}>
                                 <div className="flex items-center gap-2">
                                     {isMobile && (
                                         <button
@@ -2426,8 +2497,17 @@ const AgentHub = ({
                                         </button>
                                     )}
                                 </div>
+                                {/* Centred — see the agent header above. */}
+                                <div className="absolute left-1/2 -translate-x-1/2 flex items-center">
+                                    <CoworkModeToggle
+                                        enabled
+                                        value={coworkMode}
+                                        onChange={setCoworkMode}
+                                        locked={conversationStarted}
+                                    />
+                                </div>
                                 <div className="flex items-center gap-2 relative">
-                                    {!isMobile && notebooksEnabled && (
+                                    {!isMobile && notebooksEnabled && !inCoworkMode && (
                                         <button
                                             onClick={toggleNotebookPanel}
                                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
@@ -2436,7 +2516,7 @@ const AgentHub = ({
                                             📓 {showNotebook ? 'Close' : 'Notebook'}
                                         </button>
                                     )}
-                                    {!isMobile && canUseWebpagesSide && (
+                                    {!isMobile && canUseWebpagesSide && !inCoworkMode && (
                                         <>
                                             <button
                                                 ref={webpageButtonRefDirect}
@@ -2468,12 +2548,25 @@ const AgentHub = ({
                                 <div ref={messagesContainerRef} className={`flex-1 overflow-y-auto ${isMobile ? 'p-2' : 'p-4'} custom-scrollbar`}>
                                     {messages.length === 0 ? (
                                         <div className="flex flex-col flex-1 h-full items-center justify-center -mt-10">
-                                            <DirectChatWelcome
-                                                tiers={modelTiers}
-                                                selectedTier={selectedTier}
-                                                onTierChange={setSelectedTier}
-                                                onPromptClick={(text) => setChatInput(text)}
-                                            >
+                                            {/* In Cowork the next thing typed is not
+                                                answered here — it goes off and runs.
+                                                "How can I help you?" over a composer
+                                                that schedules work promises the wrong
+                                                thing, so the empty state follows the
+                                                mode. */}
+                                            {React.createElement(
+                                                coworkMode === 'cowork' ? CoworkWelcome : DirectChatWelcome,
+                                                coworkMode === 'cowork'
+                                                    ? {
+                                                        isMobile,
+                                                        onStarterClick: (text) => setChatInput(text),
+                                                    }
+                                                    : {
+                                                        tiers: modelTiers,
+                                                        selectedTier,
+                                                        onTierChange: setSelectedTier,
+                                                        onPromptClick: (text) => setChatInput(text),
+                                                    },
                                                 <InputArea
                                                     onSendMessage={(text, attachments) => { shouldForceScrollRef.current = true; sendMessage(text, attachments); }}
                                                     onStopGenerating={stopGenerating}
@@ -2493,11 +2586,14 @@ const AgentHub = ({
                                                     onToggleSkill={handleToggleSkill}
                                                     messages={messages}
                                                     onVoiceTurnComplete={handleVoiceTurnComplete}
+                                                    cowork={coworkComposer}
+                                                    coworkMode={coworkMode}
+                                                    onCoworkModeChange={setCoworkMode}
                                                     availableKBs={directChatKbs}
                                                     selectedKBIds={directChatKBIds}
                                                     onChangeKBIds={setDirectChatKBIds}
-                                                />
-                                            </DirectChatWelcome>
+                                                />,
+                                            )}
                                         </div>
                                     ) : (
                                         <div className="max-w-full px-6 mx-auto space-y-6 pb-4">
@@ -2571,6 +2667,9 @@ const AgentHub = ({
                                             onToggleSkill={handleToggleSkill}
                                             messages={messages}
                                             onVoiceTurnComplete={handleVoiceTurnComplete}
+                                            cowork={coworkComposer}
+                                            coworkMode={coworkMode}
+                                            onCoworkModeChange={setCoworkMode}
                                             availableKBs={directChatKbs}
                                             selectedKBIds={directChatKBIds}
                                             onChangeKBIds={setDirectChatKBIds}
@@ -2608,6 +2707,10 @@ const AgentHub = ({
 
 
 
+
+            {/* Toasts — currently the confirmation for work created from the
+                chat composer, which has no message bubble to land in. */}
+            <ToastHost />
 
             {/* Global Search Overlay */}
             <SearchOverlay

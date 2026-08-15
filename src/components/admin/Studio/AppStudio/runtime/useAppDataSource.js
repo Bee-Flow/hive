@@ -168,7 +168,7 @@ export default function useAppDataSource(binding, { appId: appIdOverride, sample
     // Depend on the stable setEntry, NOT the whole ctx: the context value embeds
     // dataState, so a ctx dep would refire this effect after its own write —
     // with the fresh entry object below, an infinite update loop.
-    const { setEntry, removeEntry } = ctx;
+    const { setEntry, retainEntry, releaseEntry } = ctx;
     // Read the ids ONCE, defensively. `binding` is null whenever a required
     // filter has nothing to resolve against (nothing selected yet), and a
     // dependency array is evaluated on every render — the `enabled` guard
@@ -201,10 +201,15 @@ export default function useAppDataSource(binding, { appId: appIdOverride, sample
     // the whole session. Kept in its OWN effect — the mirror effect above
     // re-runs on each query tick, and evicting there would blank the entry
     // (isLoading) between two paints.
+    //
+    // REFCOUNTED, because a cache key is shared: two fetchers with the same
+    // binding hold the same entry, and an unconditional evict on one unmount
+    // blanked it under the other. The entry goes when the LAST holder does.
     useEffect(() => {
         if (!enabled || !key) return undefined;
-        return () => removeEntry(key);
-    }, [enabled, key, removeEntry]);
+        retainEntry(key);
+        return () => releaseEntry(key);
+    }, [enabled, key, retainEntry, releaseEntry]);
 
     return { ...query, cacheKey: key };
 }

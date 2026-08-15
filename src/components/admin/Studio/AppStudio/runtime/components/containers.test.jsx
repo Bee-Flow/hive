@@ -225,6 +225,6 @@ describe('AppRepeater', () => {
         const runAction = vi.fn();
         const { getAllByText } = render1(repeaterDef({ act_pick: { kind: 'toast', message: 'x', tone: 'info' } }), { mode: 'run', runAction });
         fireEvent.click(getAllByText('Pick')[0]);
-        expect(runAction).toHaveBeenCalledWith('act_pick', { formValues: { name: 'Ann' } });
+        expect(runAction).toHaveBeenCalledWith('act_pick', { formValues: { name: 'Ann' }, item: { name: 'Ann' } });
     });
 });

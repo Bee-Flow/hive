@@ -59,7 +59,7 @@ describe('AppFileGallery', () => {
         const runAction = vi.fn();
         renderGallery({ ...node(), onRowClick: 'act_pick01' }, { runAction });
         fireEvent.click(screen.getByText('drawing.pdf').closest('button'));
-        expect(runAction).toHaveBeenCalledWith('act_pick01', { formValues: ROWS[0] });
+        expect(runAction).toHaveBeenCalledWith('act_pick01', { formValues: ROWS[0], item: ROWS[0] });
     });
 
     it('shows the empty state instead of an empty grid', () => {

@@ -18,29 +18,47 @@
  */
 
 // L2 — section heading ("Basics", "Inputs"). The only uppercase text in the
-// form, and it always sits on a band (see bandClass).
+// form, and it always sits on a band (see bandClass). One point larger and one
+// colour step above the field label: case alone was the entire difference
+// between the two levels, which made a heading and a label read as the same
+// object at a glance.
 export function sectionHeaderClass() {
-    return 'text-[11px] uppercase tracking-[0.08em] font-semibold text-[var(--text-secondary)]';
+    return 'text-[12px] uppercase tracking-[0.08em] font-semibold text-[var(--text-primary)]';
 }
 
-// L3 — field label ("Operation", "query"). Sentence case is the cue that
-// separates it from L2. Matches what BindingField already used, so the two
-// competing label systems become one.
+// L3 — field label ("Operation", "query"). Sentence case + the secondary
+// colour is the cue that separates it from L2. Matches what BindingField
+// already used, so the two competing label systems become one.
 export function fieldLabelClass() {
-    return 'text-[11px] font-medium text-[var(--text-secondary)]';
+    return 'text-[12px] font-medium text-[var(--text-secondary)]';
 }
 
 // L4 — slot label inside a repeatable row, helper captions.
 export function subLabelClass() {
-    return 'text-[10px] text-[var(--text-tertiary)]';
+    return 'text-[11px] text-[var(--text-tertiary)]';
+}
+
+// Explanatory prose under a field or section — the text that tells a
+// non-technical author what a setting DOES. Secondary, not tertiary: this is
+// often the only explanation on screen, so it must not read as switched off.
+export function hintTextClass() {
+    return 'text-[11px] leading-relaxed text-[var(--text-secondary)]';
 }
 
 // L5 — disclosure ("Show 1 more option"). Deliberately shaped like the
 // Auto-map button next to it: this is a control, not a heading. Not tinted
 // with --accent, which is an admin-configurable neutral grey by default and
-// lands around 2.3:1 on the panel.
+// lands around 2.3:1 on the panel. Border is the strong control edge — the
+// default hairline composites under 1.4:1 on the dark themes.
 export function disclosureClass() {
-    return 'inline-flex items-center gap-1.5 shrink-0 px-2 py-1 rounded border border-[var(--border-default)] text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition';
+    return `inline-flex items-center gap-1.5 shrink-0 px-2 py-1 rounded border ${CONTROL_BORDER_STRONG} text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition`;
+}
+
+// Small tertiary action beside a section's content ("Auto-map", "Add field
+// from a previous step" as a boxed button). Hoisted from ToolInputForm so the
+// half-dozen hand-rolled copies converge on one string.
+export function actionButtonClass() {
+    return `inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border ${CONTROL_BORDER_STRONG} text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition ${FOCUS_RING}`;
 }
 
 // The section band. --bg-tertiary is used by nothing else in the panel, so it
@@ -86,10 +104,11 @@ const FIELD_BORDER = 'border-[var(--border-default)]';
  *
  * So the edge is derived instead from --text-secondary, which is contrasty by
  * construction in every theme (light #334155, obsidian #d6d3d1, high-contrast
- * #e5e5e5, paper #292524). Measured at 60%: 3.33:1 in the default dark theme
- * against --bg-secondary. 50% gives 2.70 — not enough.
+ * #e5e5e5, paper #292524). Measured at 70%: clears 3:1 against --bg-secondary
+ * in all eight themes. 60% measured 3.33:1 in the default dark theme but only
+ * 2.82:1 on sepia; 50% gives 2.70 — not enough anywhere.
  */
-export const CONTROL_BORDER_STRONG = 'border-[color-mix(in_srgb,var(--text-secondary)_60%,transparent)]';
+export const CONTROL_BORDER_STRONG = 'border-[color-mix(in_srgb,var(--text-secondary)_70%,transparent)]';
 
 /**
  * The control surface with no size baked in — for the handful of controls that
@@ -100,11 +119,19 @@ export const CONTROL_BORDER_STRONG = 'border-[color-mix(in_srgb,var(--text-secon
  * resolve by stylesheet order, not by the order they are written in the class
  * list. The invalid border likewise *replaces* the default instead of racing
  * it.
+ *
+ * The STRONG edge is the default: --border-default composites to ~1.4:1
+ * against the input fill in the dark themes, under the 3:1 WCAG 2.2 SC 1.4.11
+ * asks of a control boundary. `strongBorder` is kept as an accepted no-op so
+ * existing callers (App Studio's inspector kit imports this too) compile
+ * unchanged; `quietBorder` opts back into the hairline for surfaces where the
+ * control sits in an already-outlined row.
  */
-export function controlSurfaceClass(extra = '', { invalid = false, strongBorder = false } = {}) {
+export function controlSurfaceClass(extra = '', { invalid = false, quietBorder = false, strongBorder = false } = {}) {
+    void strongBorder; // now the default — accepted for back-compat
     const border = invalid
         ? 'border-[var(--error)]'
-        : (strongBorder ? CONTROL_BORDER_STRONG : FIELD_BORDER);
+        : (quietBorder ? FIELD_BORDER : CONTROL_BORDER_STRONG);
     return `${FIELD_SHAPE} ${border} ${FOCUS_RING} ${extra}`.trim();
 }
 
@@ -136,3 +163,26 @@ export function cardClass(extra = '') {
 export function requiredMarkClass() {
     return 'text-[var(--error)] text-[12px] leading-none';
 }
+
+// The word "Required" as a chip beside a label — for the ~12 validator-
+// blocking fields that used to look exactly as optional as everything else.
+// A word, not an asterisk: the asterisk convention is not universal knowledge.
+export function requiredChipClass() {
+    return 'inline-flex items-center shrink-0 rounded px-1 py-px text-[10px] font-semibold text-[var(--error)] border border-[var(--error)]/40 bg-[var(--error)]/10';
+}
+
+// The word "optional" beside a label, quietly.
+export function optionalMarkClass() {
+    return 'text-[11px] font-normal text-[var(--text-tertiary)]';
+}
+
+// Small pill marking a value as a LIST wherever data is offered (variable
+// tree, picker, output table cells). One shape everywhere, so "this is a
+// list" always looks the same.
+export function listBadgeClass(extra = '') {
+    return `inline-flex items-center gap-0.5 shrink-0 rounded px-1 py-px text-[10px] font-medium border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] text-[var(--text-secondary)] ${extra}`.trim();
+}
+
+// THE amber for advisory notes (shape warnings, "not valid yet"). One string,
+// so the builder stops mixing amber-500/600 tints per file.
+export const AMBER_NOTE = 'text-[10px] text-amber-600 dark:text-amber-400';

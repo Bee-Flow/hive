@@ -8,6 +8,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { useUrlTab } from '../../hooks/useUrlTab';
 import { useUserFilters } from '../../hooks/useUserFilters';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import ConfirmDialog from '../shared/ConfirmDialog';
 import RoleBadge from '../shared/RoleBadge';
 import UserListSkeleton from '../shared/UserListSkeleton';
 import UserFilterBar from './shared/UserFilterBar';
@@ -45,6 +46,9 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
 
     // User role editing
     const [editingUserRole, setEditingUserRole] = useState(null);
+    // A refused role change now says so instead of silently doing nothing.
+    const [roleChangeError, setRoleChangeError] = useState('');
+    const [pendingSelfDemotion, setPendingSelfDemotion] = useState(null);
 
     // Expanded role details
     const [expandedRole, setExpandedRole] = useState(null);
@@ -282,19 +286,37 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
         }
     };
 
-    const handleUserRoleChange = async (userId, newRole) => {
+    // A role change can now be REFUSED by the server, and silence was the wrong
+    // answer to that: this used to check `res.ok` and, when it was false, simply
+    // leave the dropdown showing the role it had failed to set. Two refusals are
+    // possible — 'last_org_admin' (the change would leave the organisation with
+    // no administrator at all, which nothing in the app could undo) and
+    // 'confirm_self_demotion' (you are giving up your own admin rights, which is
+    // allowed but must be deliberate). The first is reported; the second is
+    // confirmed and re-sent.
+    const handleUserRoleChange = async (userId, newRole, opts = {}) => {
+        setRoleChangeError('');
         try {
             const res = await authFetch(`${API_BASE}/auth/users/${userId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ orgRole: newRole }),
+                body: JSON.stringify({ orgRole: newRole, ...opts }),
             });
             if (res.ok) {
                 setEditingUserRole(null);
+                setPendingSelfDemotion(null);
                 await fetchData();
+                return;
             }
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 409 && data.code === 'confirm_self_demotion') {
+                setPendingSelfDemotion({ userId, newRole, message: data.hint?.message || data.error });
+                return;
+            }
+            setRoleChangeError(data.error || t('admin.role_change_failed', 'That role change could not be applied.'));
         } catch (err) {
             console.error('Failed to update user role:', err);
+            setRoleChangeError(t('admin.role_change_failed', 'That role change could not be applied.'));
         }
     };
 
@@ -1416,6 +1438,37 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
             {activeSection === 'sync' && isNcOrg && (
                 <NextcloudSyncPanel user={user} />
             )}
+
+            {/* A refused role change — most often "this would leave the
+                organisation without an administrator", which no in-app route
+                could undo. Silence here used to leave the dropdown showing a
+                role that was never saved. */}
+            {roleChangeError && (
+                <div className="flex items-start gap-2 rounded-xl p-3 text-sm"
+                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: 'var(--accent-danger, #dc2626)' }} />
+                    <span>{roleChangeError}</span>
+                    <button type="button" onClick={() => setRoleChangeError('')} className="ml-auto shrink-0">
+                        <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                    </button>
+                </div>
+            )}
+
+            <ConfirmDialog
+                open={!!pendingSelfDemotion}
+                title={t('admin.sec_self_demote_title', 'Give up your admin rights?')}
+                description={pendingSelfDemotion?.message
+                    || t('admin.sec_self_demote_desc', 'This removes your own administrator rights over this organisation. Another administrator would have to give them back.')}
+                confirmLabel={t('admin.sec_self_demote_confirm', 'Yes, step down')}
+                cancelLabel={t('admin.sec_cancel', 'Cancel')}
+                destructive
+                onConfirm={() => {
+                    const p = pendingSelfDemotion;
+                    setPendingSelfDemotion(null);
+                    if (p) handleUserRoleChange(p.userId, p.newRole, { confirmSelfDemotion: true });
+                }}
+                onCancel={() => setPendingSelfDemotion(null)}
+            />
         </div>
     );
 };

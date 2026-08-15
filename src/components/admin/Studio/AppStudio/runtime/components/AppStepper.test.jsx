@@ -71,9 +71,13 @@ describe('AppStepper', () => {
         const clickable = { ...node('new'), onRowClick: 'act_pick01' };
         renderStepper(clickable, { runAction });
         fireEvent.click(screen.getByText('Done').closest('button'));
-        expect(runAction).toHaveBeenCalledWith('act_pick01', {
+        // The step itself rides along as `item`/`value`/`index`, so a navigate
+        // param can carry which step was clicked.
+        expect(runAction).toHaveBeenCalledWith('act_pick01', expect.objectContaining({
             formValues: { value: 'done', label: 'Done', index: 2 },
-        });
+            value: 'done',
+            index: 2,
+        }));
     });
 
     it('renders nothing without steps, rather than an empty rail', () => {

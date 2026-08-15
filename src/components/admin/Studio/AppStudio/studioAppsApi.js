@@ -68,6 +68,31 @@ export const studioAppsApi = {
     /** body: { isPublished, sharedGroups? } */
     publish: (id, body) => request(`${base}/${enc(id)}/publish`, { method: 'PATCH', body: JSON.stringify(body) }),
 
+    /**
+     * Upgrade a pristine created-from-template app to the registry template's
+     * newer version. → { ok, fromVersion, toVersion, version, dataInstall? }.
+     * 409s (not_pristine / no_newer_version / not_from_template) throw with
+     * .status/.code like every other wrapper here.
+     */
+    templateUpgrade: (id) => request(`${base}/${enc(id)}/template-upgrade`, { method: 'POST' }),
+
+    /**
+     * Toggle the app's entry in the organisation's Nextcloud app menu.
+     * → { success, nextcloudMenu, ncConnected } — ncConnected=false means the
+     * flag is stored but no Nextcloud is bound to the org yet.
+     */
+    setNextcloudMenu: (id, enabled) =>
+        request(`${base}/${enc(id)}/nextcloud-menu`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
+
+    /**
+     * Pre-flight the saved draft, read-only (server: appDryRun). Owner-only.
+     * → { ok, static:{errors,warnings}, bindings, roleFindings, actions,
+     *     emptyTables, _hints }
+     * opts: { screenId?, asRole? } — omit both to check the whole app.
+     */
+    checkApp: (id, opts = {}) =>
+        request(`${base}/${enc(id)}/check`, { method: 'POST', body: JSON.stringify(opts) }),
+
     // Versions
     listVersions: (id) => request(`${base}/${enc(id)}/versions`),
     restoreVersion: (id, versionId) =>

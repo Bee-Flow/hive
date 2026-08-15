@@ -47,7 +47,7 @@ describe('the demo route', () => {
     // demo added on one side and forgotten on the other shows up as a failing
     // test rather than as a validator warning nobody reads.
     it('registers exactly the features the server knows about', () => {
-        expect([...DEMO_FEATURE_IDS].sort()).toEqual(['agents', 'app-studio', 'compliance', 'knowledge', 'legal', 'meeting-notes', 'monitoring', 'notebooks', 'privacy-shield', 'routines', 'skills', 'support']);
+        expect([...DEMO_FEATURE_IDS].sort()).toEqual(['agents', 'app-studio', 'compliance', 'knowledge', 'meeting-notes', 'monitoring', 'notebooks', 'privacy-shield', 'routines', 'skills', 'support']);
     });
 
     it('shows a clear message for an unknown feature instead of a blank frame', async () => {

@@ -69,7 +69,7 @@ const ConsumerBetaFeaturesSection = () => {
                         deploymentMode={deploymentMode}
                         upgradeUrl={upgradeUrl}
                         title={t('settings.beta_requires_enterprise', 'Beta features require Enterprise')}
-                        description={t('settings.beta_upgrade_blurb', 'Beta capabilities — voice chat, webpages, automations, meeting notes, ticket assistant — ship with the Enterprise tier.')}
+                        description={t('settings.beta_upgrade_blurb', 'Beta capabilities — voice chat, webpages, automations, meeting notes — ship with the Enterprise tier.')}
                     />
                 </div>
             </div>

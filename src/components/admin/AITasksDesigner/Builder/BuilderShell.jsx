@@ -7,6 +7,7 @@ import {
 } from './flow/flowletScope';
 import { normalizeDefinitionShape, isBlankDefinition } from './flow/normalizeDefinition';
 import { densityForOpen } from './flow/settings/formDensity';
+import useFormModePreference from './flow/settings/useFormModePreference';
 import useRoutineDraftHistory from './flow/useRoutineDraftHistory';
 import ExecutionsPanel from '../../Studio/Executions/ExecutionsPanel';
 import SettingsTab from './SettingsTab';
@@ -56,7 +57,7 @@ function makeBlockSkeleton() {
     };
 }
 
-export default function BuilderShell({ automationId, onBack, user, initialChatInput = '', autoSendInput = null, onAutomationIdResolved = null, initialScopeKey = null, onScopeChange = null, mode = 'automation', onPublished = null, initialTab = null }) {
+export default function BuilderShell({ automationId, onBack, user, initialChatInput = '', autoSendInput = null, onAutomationIdResolved = null, initialScopeKey = null, onScopeChange = null, mode = 'automation', onPublished = null, initialTab = null, initialRunId = null, initialRunStepId = null, onBuilderStateChange = null }) {
     const api = useAutomationApi();
     // Step mode (kind='block'): same builder, but persistence targets the
     // /api/step router, the root is an input/output contract (no real trigger),
@@ -85,6 +86,9 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
     // double click did the same thing. Inside an open dialog the ⤢ / simple
     // buttons still switch freely.
     const [ndvDensity, setNdvDensity] = useState('quick');
+    // How much of the step's FORM exists (Simple / All options) — the user's
+    // persisted choice, orthogonal to the gesture-owned density above.
+    const { mode: ndvMode, setMode: setNdvMode } = useFormModePreference();
     const openNdv = useCallback((id, density) => {
         if (!id) return;
         setNdvStepId(id);
@@ -107,6 +111,49 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
     // open the builder to do; the other tabs are jump-points for specific
     // tasks (settings, history, raw JSON).
     const [tab, setTab] = useState(initialTab || 'build');
+
+    // Adopt a CHANGED initialTab (browser Back/Forward moving ?view=). The
+    // guard ignores null on purpose: a cleared prop (URL back to the default
+    // Editor view elsewhere in the tree) must never yank the user off Runs.
+    const lastInitialTabRef = useRef(initialTab);
+    useEffect(() => {
+        if (initialTab !== lastInitialTabRef.current) {
+            lastInitialTabRef.current = initialTab;
+            if (initialTab) setTab(initialTab);
+        }
+    }, [initialTab]);
+
+    // ── URL reporter (?view/run/step) ───────────────────────────────────
+    // The shell owns the VIEW word; the runs panel reports the open run and
+    // selected step through reportBuilderState. Pure navigation — no save
+    // side effects (the PUT count is a test contract).
+    const TAB_TO_VIEW = { build: 'build', settings: 'settings', history: 'runs', versions: 'versions' };
+    const tabForUrlRef = useRef(tab);
+    tabForUrlRef.current = tab;
+    const runUrlStateRef = useRef({ runId: initialRunId || null, stepId: initialRunStepId || null });
+    const reportBuilderState = useCallback((patch = {}, opts = {}) => {
+        if ('runId' in patch || 'stepId' in patch) {
+            runUrlStateRef.current = {
+                runId: 'runId' in patch ? (patch.runId || null) : runUrlStateRef.current.runId,
+                stepId: 'stepId' in patch ? (patch.stepId || null) : runUrlStateRef.current.stepId,
+            };
+        }
+        onBuilderStateChange?.({
+            view: TAB_TO_VIEW[tabForUrlRef.current] || null,
+            runId: runUrlStateRef.current.runId,
+            stepId: runUrlStateRef.current.stepId,
+            replace: opts.replace !== false,
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onBuilderStateChange]);
+    const prevTabRef = useRef(tab);
+    useEffect(() => {
+        if (prevTabRef.current === tab) return; // mount — the URL already says this
+        prevTabRef.current = tab;
+        // Leaving Runs drops the open run from the URL with the view change.
+        if (tab !== 'history') reportBuilderState({ runId: null, stepId: null }, { replace: true });
+        else reportBuilderState({}, { replace: true });
+    }, [tab, reportBuilderState]);
 
     // The AI assistant is a summonable, right-docked panel — the canvas is
     // full-width by default (assistant closed). Persisted so the choice
@@ -963,7 +1010,11 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
         step: isStep ? serverAutomation : null, orgGroups, onPublishStep,
         onSetStepSharing, onSetStepExpose, onSetStepIcon, onSetStepCategory, scope, onExitScope,
         onDeleteLayer, diagnoseAnchorRef, savingState, tab, onTabChange: setTab,
-        onUndo: draftHistory.undo, onRedo: draftHistory.redo,
+        // Undo/redo act on the CANVAS draft — pressing them from Settings or
+        // Runs used to mutate a definition the user could not see. Jump to
+        // the Editor first, so the change lands in view.
+        onUndo: () => { if (tab !== 'build') setTab('build'); draftHistory.undo(); },
+        onRedo: () => { if (tab !== 'build') setTab('build'); draftHistory.redo(); },
         canUndo: draftHistory.canUndo, canRedo: draftHistory.canRedo,
     };
 
@@ -1018,6 +1069,8 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
                         ndvStepId={ndvStepId}
                         ndvDensity={ndvDensity}
                         setNdvDensity={setNdvDensity}
+                        ndvMode={ndvMode}
+                        onNdvModeChange={setNdvMode}
                         openNdv={openNdv}
                         closeNdv={closeNdv}
                         stepById={stepById}
@@ -1060,14 +1113,41 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
                         </div>
                     </div>
                 )}
-                {tab === 'history' && (
-                    <ExecutionsPanel
-                        scope={isStep ? 'step' : 'automation'}
-                        automationId={isStep ? undefined : aidForHistory}
-                        stepId={isStep ? aidForHistory : undefined}
-                        onOpenEditor={() => setTab('build')}
-                    />
-                )}
+                {/* Mounted HIDDEN rather than conditionally: a run open on the
+                    canvas view would otherwise unmount and lose its scroll,
+                    zoom and filters every time the user peeks at the Editor.
+                    `active` gates fetching/streaming, so the hidden panel
+                    costs nothing. */}
+                <div className={tab === 'history' ? 'h-full' : 'hidden'}>
+                    {aidForHistory ? (
+                        <ExecutionsPanel
+                            scope={isStep ? 'step' : 'automation'}
+                            automationId={isStep ? undefined : aidForHistory}
+                            stepId={isStep ? aidForHistory : undefined}
+                            active={tab === 'history'}
+                            initialRunId={initialRunId}
+                            initialStepId={initialRunStepId}
+                            onRunStateChange={reportBuilderState}
+                            onOpenEditor={() => setTab('build')}
+                        />
+                    ) : (
+                        // Never fire GET /api/automation/null/runs for a draft
+                        // that has no server row yet.
+                        tab === 'history' && (
+                            <div className="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
+                                <div className="text-sm text-[var(--text-primary)] font-medium">This routine hasn't run yet.</div>
+                                <div className="text-xs text-[var(--text-secondary)]">Run a test to see what happens, step by step.</div>
+                                <button
+                                    type="button"
+                                    onClick={() => { setTab('build'); onDryRun?.(); }}
+                                    className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition"
+                                >
+                                    Run a test
+                                </button>
+                            </div>
+                        )
+                    )}
+                </div>
             </div>
         </div>
         </BuilderConfirmProvider>

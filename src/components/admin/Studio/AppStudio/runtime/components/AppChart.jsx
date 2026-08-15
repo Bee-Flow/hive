@@ -18,7 +18,10 @@ import { EmptyText, ErrorText, SkeletonLines, useStickyBinding } from '../uiBits
 
 const MAX_SERIES = 12;
 const MAX_SCAN_ROWS = 200; // enough to type a column without walking a full page
-const HEIGHT_MAP = { sm: 120, md: 200, lg: 320 };
+// Mirrors styleResolver.HEIGHT_PX — a height the inspector can pick must
+// resolve here too, or the canvas silently falls back to md inside a cell the
+// resolver already sized to the requested value.
+const HEIGHT_MAP = { sm: 120, md: 200, lg: 320, xl: 620 };
 
 /**
  * A column plots as a series when it holds at least one finite number and no

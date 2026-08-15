@@ -94,10 +94,9 @@ export function EntitlementsProvider({ children }) {
             integration: new Set([...(state.ceiling.integration || []), ...(state.ceiling.mcp || [])]),
         };
         // Accept either a capability id OR a legacy licence-feature name: map
-        // licence-feature → capability id (e.g. 'ticket_assistant' →
-        // 'itil_ticket_assistant') so every hasFeature('X')/can('X') call site
-        // resolves to the same effective set the server's requireCapability uses,
-        // regardless of which namespace the caller passes.
+        // licence-feature → capability id so every hasFeature('X')/can('X') call
+        // site resolves to the same effective set the server's requireCapability
+        // uses, regardless of which namespace the caller passes.
         const featureToCapId = {};
         for (const c of (state.registry || [])) {
             if (!c || !c.id) continue;

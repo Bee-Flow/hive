@@ -253,6 +253,41 @@ export default function EditorHeader({
         }
     };
 
+    // ---- publish -----------------------------------------------------------
+    /**
+     * Publishing freezes the definition AS THE SERVER HAS IT. Autosave is
+     * debounced, so clicking Publish within that window froze the PREVIOUS
+     * draft while the modal promised "a copy of the app as it is now" — the
+     * edit you made just before publishing was the one that did not go live,
+     * and nothing said so. Closing the editor already flushed for exactly this
+     * reason; publishing has more at stake and did not.
+     *
+     * Same contract as handleClose: flush RESOLVES on failure (autosave turns
+     * every error into a status, it never rejects), so the result has to be
+     * read. A draft that could not be saved must not be published — it would
+     * freeze a version the author cannot see.
+     */
+    const [preparingPublish, setPreparingPublish] = useState(false);
+    // The command palette's action list is memoised on what changes the LIST,
+    // so it must not capture this closure directly — it would go stale on
+    // `onFlush`, which is exactly the part that has to be current.
+    const openPublishRef = useRef(null);
+    const openPublish = async () => {
+        if (preparingPublish) return;
+        setPreparingPublish(true);
+        try {
+            const res = await onFlush?.();
+            if (res && res.ok === false) {
+                toast.error(`${res.error || 'Saving failed.'} Publishing would freeze the last version that saved, so it has not opened.`);
+                return;
+            }
+            setPublishOpen(true);
+        } finally {
+            setPreparingPublish(false);
+        }
+    };
+    openPublishRef.current = openPublish;
+
     // Roles and row rules live in each panel's local draft until its own Save
     // button runs, so closing the modal mid-edit is a silent discard.
     const requestRolesClose = () => {
@@ -276,14 +311,15 @@ export default function EditorHeader({
         acts.push({ id: 'cmd-ai', group: 'AI', label: 'Ask the AI builder', hint: 'chat', run: focusAiComposer });
         acts.push({ id: 'cmd-variables', group: 'App', label: 'Open Variables', run: () => setVariablesOpen(true) });
     acts.push({ id: 'cmd-roles', group: 'App', label: 'Open Roles & access', run: () => setRolesOpen(true) });
-        acts.push({ id: 'cmd-publish', group: 'App', label: 'Publish app', run: () => setPublishOpen(true) });
+        acts.push({ id: 'cmd-publish', group: 'App', label: 'Publish app', run: () => { openPublishRef.current?.(); } });
         acts.push({ id: 'cmd-role-owner', group: 'Preview as', label: 'View as Owner (full view)', run: () => setPreviewRole(null) });
         for (const r of roles) {
             acts.push({ id: `cmd-role-${r.id}`, group: 'Preview as', label: `View as ${r.name || r.id}`, run: () => setPreviewRole(r.id) });
         }
         return acts;
-    // setTablesOpen/setRolesOpen/setPublishOpen are stable useState setters;
-    // setPreviewRole/dispatch close over `dispatch` (stable). deps cover
+    // setTablesOpen/setRolesOpen/setVariablesOpen are stable useState setters;
+    // setPreviewRole/dispatch close over `dispatch` (stable); publishing goes
+    // through a ref because it closes over `onFlush`, which is not. deps cover
     // everything that changes the LIST of actions.
     }, [mode, definition, roles, dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -473,8 +509,8 @@ export default function EditorHeader({
             {/* Publish */}
             <button
                 type="button"
-                disabled={streamLock}
-                onClick={() => setPublishOpen(true)}
+                disabled={streamLock || preparingPublish}
+                onClick={openPublish}
                 title={publishState === 'behind'
                     ? 'The version people use is older than what you see here — publish to make these changes live.'
                     : publishState === 'current'

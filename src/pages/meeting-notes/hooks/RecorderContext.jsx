@@ -177,7 +177,11 @@ export function RecorderProvider({ children }) {
         uploadFromNextcloud,
         importFromGoogleMeet,
         retryWithProvider,
-        canRetry: !!lastFailedFile,
+        // Nothing to retry when the bytes never reached the API: the same file
+        // over the same proxy limit fails identically, and switching engine
+        // cannot help a request that was refused before routing. The error text
+        // carries the actual way forward.
+        canRetry: !!lastFailedFile && uploadError?.code !== 'payload_too_large',
         version,
         clearError: () => { setUploadError(null); setLastFailedFile(null); },
     }), [recorder, settings, uploading, uploadStage, uploadError, lastResultId, lastResultMeta, consumeLastResult, uploadFile, uploadFromNextcloud, importFromGoogleMeet, retryWithProvider, lastFailedFile, version]);

@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('./useAppRoles', () => ({ default: vi.fn(), useOrgDirectory: vi.fn() }));
 
-import RolesManager from './RolesManager';
+import RolesManager, { describeRoleAccess } from './RolesManager';
 import useAppRoles, { useOrgDirectory } from './useAppRoles';
 
 let saveRoles; let assignMember; let removeMember;
@@ -147,5 +147,42 @@ describe('RolesManager', () => {
         expect(getByTestId('member-role-unsaved').textContent).toMatch(/Save your roles first/i);
         expect(getByText('Assign').closest('button').disabled).toBe(true);
         expect(assignMember).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * The summary used to re-derive the gateway's resolution by hand, recognising
+ * only a STRING read permission — so an entry of { read: true, create: true },
+ * a shape normalizePerm handles and rowRuleModel.test.js pins, fell through to
+ * the table's default. On a table defaulting to 'none' the panel then reported
+ * no access at all for a role the gateway grants full read, and an owner
+ * reading that would go and grant access that was already there.
+ */
+describe("describeRoleAccess — the gateway's resolution, in words", () => {
+    const salaries = (access) => ({
+        id: 't2', key: 'salaries', name: 'Salaries', fields: [], access,
+    });
+
+    it('reports the access a BOOLEAN permission actually grants', () => {
+        // { read: true } normalises to 'all' — the shape rowRuleModel handles
+        // and the gateway honours. The old resolution only recognised a STRING
+        // and fell through to the table default, which here is 'none'.
+        const tables = [salaries({ default: 'none', roles: { member: { read: true, create: true } }, rowFilters: {} })];
+        expect(describeRoleAccess('member', tables)).toBe('can see, add and edit rows in Salaries');
+    });
+
+    it('reads a boolean false as no access, not as the default', () => {
+        const tables = [salaries({ default: 'app', roles: { member: { read: false } }, rowFilters: {} })];
+        expect(describeRoleAccess('member', tables)).toBe('cannot open any of this app’s data');
+    });
+
+    it('still reports genuinely absent access', () => {
+        const tables = [salaries({ default: 'none', roles: {}, rowFilters: {} })];
+        expect(describeRoleAccess('member', tables)).toBe('cannot open any of this app’s data');
+    });
+
+    it('still reports the ordinary string shapes', () => {
+        const own = [salaries({ default: 'owner', roles: {}, rowFilters: {} })];
+        expect(describeRoleAccess('member', own)).toBe('can add and see only their own rows in Salaries');
     });
 });

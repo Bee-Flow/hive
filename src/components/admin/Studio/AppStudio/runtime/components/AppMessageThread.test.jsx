@@ -122,7 +122,7 @@ describe('AppMessageThread', () => {
         const runAction = vi.fn();
         const { container } = renderThread(node({}, { onRowClick: 'act_1' }), { runAction, mode: 'run' });
         fireEvent.click(container.querySelectorAll('button')[0]);
-        expect(runAction).toHaveBeenCalledWith('act_1', { formValues: MESSAGES[0] });
+        expect(runAction).toHaveBeenCalledWith('act_1', { formValues: MESSAGES[0], item: MESSAGES[0] });
 
         runAction.mockClear();
         const edit = renderThread(node({}, { onRowClick: 'act_1' }), { runAction, mode: 'edit' });

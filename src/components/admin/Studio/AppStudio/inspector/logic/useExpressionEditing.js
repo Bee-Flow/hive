@@ -6,6 +6,7 @@ import {
 import { onBindingDragOver, getBindingDropPath } from '../../../../AITasksDesigner/Builder/mapping/bindingDnd';
 import useVariablePicker from '../../../../AITasksDesigner/Builder/mapping/useVariablePicker';
 import { useVariablePickerContext } from '../../../../AITasksDesigner/Builder/mapping/VariablePickerContext';
+import { parseExprToRows } from '../../../../AITasksDesigner/Builder/utils/conditionModel';
 
 /**
  * The behaviour behind every App Studio expression field, with no JSX.
@@ -135,8 +136,33 @@ export default function useExpressionEditing({
  * currently showing the clickable condition builder instead of the raw
  * expression. Kept out of the hook above so a caller that never offers the
  * builder (an inline filter row) pays nothing for it.
+ *
+ * `initial` may be a function, evaluated once on mount (React's lazy
+ * useState) — deciding the opening mode means parsing the expression, and
+ * that must not run on every keystroke, nor flip the mode out from under
+ * somebody mid-edit.
  */
 export function useConditionToggle(initial = false) {
     const [asCondition, setAsCondition] = useState(initial);
     return { asCondition, setAsCondition };
+}
+
+/**
+ * Can the clickable builder hold this expression?
+ *
+ * `parseExprToRows` is the same predicate ConditionBuilder uses to decide
+ * whether to drop into its own raw textarea, so asking it here means the two
+ * never disagree: a field that opens in the builder is one the builder can
+ * actually render.
+ *
+ * Empty counts as yes — an unset "Only show when" should open on
+ * [field][is][value], which is the whole question being asked. A bare
+ * `true`/`false` counts as yes too, for the same reason ConditionBuilder
+ * treats it as trivial: it is "not configured yet", not a real condition.
+ */
+export function conditionCanHold(expr) {
+    const src = String(expr ?? '').trim();
+    if (!src) return true;
+    if (/^(true|false)$/.test(src)) return true;
+    try { return !!parseExprToRows(src); } catch { return false; }
 }

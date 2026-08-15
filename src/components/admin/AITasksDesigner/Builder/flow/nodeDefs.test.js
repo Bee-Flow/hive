@@ -190,3 +190,44 @@ describe('nodeDefs — accessors', () => {
         expect(nodeDefaultLabel('no_such_type')).toBe('');
     });
 });
+
+describe('nodeDefs — simpleSections (what Simple mode shows)', () => {
+    // The per-type Simple view can only SHOW sections the editor actually
+    // renders — a typo here would silently hide a section in Simple with no
+    // way in but the mode toggle.
+    for (const type of STEP_TYPE_KEYS) {
+        const simple = NODE_DEFS[type].simpleSections;
+        if (!simple) continue;
+        it(`${type}: every simpleSection is a real section, and the list is non-empty`, () => {
+            expect(simple.length, `${type}: an EMPTY simpleSections would hide the whole editor`).toBeGreaterThan(0);
+            for (const s of simple) {
+                expect(NODE_DEFS[type].sectionKeys, `${type}: simpleSections names '${s}' which sectionKeys does not declare`).toContain(s);
+            }
+        });
+    }
+
+    it('types without a per-type list fall through to the global advanced rule', async () => {
+        // approval / parallel are engine-only and deliberately unlisted —
+        // the fallback is the documented default, not an omission.
+        const { hiddenInSimple, isAdvancedSection } = await import('./settings/formDensity');
+        for (const type of ['approval', 'parallel']) {
+            expect(NODE_DEFS[type].simpleSections).toBeUndefined();
+            for (const key of ['config', 'advanced', 'options']) {
+                expect(hiddenInSimple(type, key)).toBe(isAdvancedSection(key));
+            }
+        }
+    });
+
+    it('per-type lists override the global rule in both directions', async () => {
+        const { hiddenInSimple } = await import('./settings/formDensity');
+        // http_request: 'headers' is globally advanced AND per-type hidden;
+        // 'body' is globally advanced but per-type SIMPLE (a POST without a
+        // body is not a simpler POST, it is a broken one).
+        expect(hiddenInSimple('http_request', 'headers')).toBe(true);
+        expect(hiddenInSimple('http_request', 'body')).toBe(false);
+        // ai_step hides its structured-output section in Simple even though
+        // nothing global says 'output' is advanced for every type.
+        expect(hiddenInSimple('ai_step', 'output')).toBe(true);
+        expect(hiddenInSimple('ai_step', 'inputs')).toBe(false);
+    });
+});

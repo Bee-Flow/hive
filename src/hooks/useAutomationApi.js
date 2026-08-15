@@ -93,15 +93,6 @@ export default function useAutomationApi() {
             await readEventStream(r.body, (evt, data) => onEvent?.(data?.type || evt, data), signal);
         },
         previewSchedule: (cron, tz, count = 3) => send('POST', '/_schedule/preview', { cron, tz, count }),
-        // Cross-route helper: read the user's Ticket Assistant connections
-        // so the trigger settings form can render a connection picker.
-        // Bypasses the /api/automation prefix because the TA route lives
-        // at /api/ticket-assistant.
-        listTicketAssistantConnections: async () => {
-            const r = await authFetch(`${API_BASE}/api/ticket-assistant/connections`);
-            if (!r.ok) throw new Error((await safeText(r)) || 'GET /ticket-assistant/connections failed');
-            return r.json();
-        },
         // Cross-route helpers: reusable HTTP credentials (org vault) for the
         // http_request step's Authentication picker. Live under
         // /api/integrations/connections; includeShared adds credentials lent

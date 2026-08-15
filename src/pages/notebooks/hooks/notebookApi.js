@@ -1,7 +1,7 @@
 /**
  * notebookApi.js — shared HTTP helpers for the Notebooks + Legal surfaces.
  *
- * Extracted from NotebooksPage so the page, LegalStudioPage and the V2 workspace
+ * Extracted from NotebooksPage so the page and the V2 workspace
  * hooks all hit the `/api/notebooks/*` endpoints through one definition instead
  * of copy-pasting the fetch+error-handling boilerplate. Both surfaces use the
  * notebook endpoints for sources / generation / export / document-save (Legal

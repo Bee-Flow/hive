@@ -120,7 +120,7 @@ export default function AppFileGallery({ node }) {
                         <button
                             key={row?.id || i}
                             type="button"
-                            onClick={() => runAction(node.onRowClick, { formValues: row })}
+                            onClick={() => runAction(node.onRowClick, { formValues: row, item: row })}
                             className="app-file-card flex items-center gap-2.5 rounded-lg border p-2.5 text-left min-w-0"
                             title={name}
                         >

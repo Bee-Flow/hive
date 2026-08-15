@@ -648,7 +648,14 @@ function MailboxFields({ connector, setOpt, disabled, appId, saved }) {
 }
 
 function ConnectorEditor({ connector, onChange, disabled, appId, tables, onCreateTable, saved, onSave, catalog }) {
-    const set = (p) => onChange({ ...connector, ...p });
+    // A patch value of `undefined` REMOVES the key rather than parking it as an
+    // own property — a leftover `chain: undefined` reads as absent over the
+    // wire but not to code that asks `'chain' in connector`.
+    const set = (p) => {
+        const next = { ...connector, ...p };
+        for (const [k, v] of Object.entries(p)) if (v === undefined) delete next[k];
+        onChange(next);
+    };
     // Nullable text: '' clears the field (dropped from the object).
     const setOpt = (k, v) => { const next = { ...connector }; if (v === '' || v == null) delete next[k]; else next[k] = v; onChange(next); };
     // Patch several keys at once; `undefined`/'' removes a key rather than
@@ -730,7 +737,16 @@ function ConnectorEditor({ connector, onChange, disabled, appId, tables, onCreat
                     <select
                         className={INPUT}
                         value={connector.kind}
-                        onChange={(e) => set({ kind: e.target.value })}
+                        // A `chain` is only legal on an app connector
+                        // (dataModel.js: "chain is only supported for app
+                        // connectors"), and the chain editor is only RENDERED
+                        // for one — so switching the kind away left the steps
+                        // behind, invisible, and the data model could never be
+                        // saved again. The error named a field the screen no
+                        // longer showed.
+                        onChange={(e) => set(e.target.value === 'integration_tool'
+                            ? { kind: e.target.value }
+                            : { kind: e.target.value, chain: undefined })}
                         disabled={disabled}
                         aria-label="Connector kind"
                     >

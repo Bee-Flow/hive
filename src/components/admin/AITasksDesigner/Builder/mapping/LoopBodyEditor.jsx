@@ -4,12 +4,17 @@ import {
     Pencil, Clock, Filter, ChevronsDown, Copy, Layers, Sigma, Code, Box, Globe,
     ClipboardList,
 } from 'lucide-react';
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import AddStepMenu from '../flow/AddStepMenu';
+import { FormDensityContext } from '../flow/settings/formDensity';
 import SettingsForm from '../flow/SettingsForm';
 import { VariablePickerProvider } from './VariablePickerContext';
 import { computeLoopBodyGroups } from './upstream';
 import { buildStepFromPayload } from '../DiagramPane';
+
+// The nested SettingsForm always renders every section — see the comment at
+// its mount. Module-level so the provider value is referentially stable.
+const FORCED_ADVANCED = { density: 'full', mode: 'advanced', onHiddenSection: null, onShownSection: null };
 
 const TYPE_ICON = {
     ai_step: Sparkles, integration_action: Zap, condition: GitBranch, switch: Split,
@@ -132,6 +137,11 @@ export default function LoopBodyEditor({
                             {expanded && (
                                 <div className="border-t border-[var(--border-default)] bg-[var(--bg-primary)]">
                                     <VariablePickerProvider groups={bodyGroups} previewSample={previewSample} stepLabelById={new Map(bodyGroups.map(g => [g.id, g.label]))}>
+                                        {/* Inner steps are FORCED to All options: they have
+                                            no mode toggle of their own, so inheriting
+                                            Simple from the outer editor would hide
+                                            sections with no way in. */}
+                                        <FormDensityContext.Provider value={FORCED_ADVANCED}>
                                         <div className="max-h-[420px] overflow-y-auto">
                                             <SettingsForm
                                                 step={step}
@@ -148,6 +158,7 @@ export default function LoopBodyEditor({
                                                 blocksCatalog={blocksCatalog}
                                             />
                                         </div>
+                                        </FormDensityContext.Provider>
                                     </VariablePickerProvider>
                                 </div>
                             )}

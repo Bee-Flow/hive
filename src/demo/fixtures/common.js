@@ -31,8 +31,6 @@ export const DEMO_CAPABILITIES = [
     'pii_tokenize', 'web_search_guard',
     // Support Studio is gated per organisation as well as per member.
     'support_inbox',
-    // Legal Studio is enterprise + beta opt-in.
-    'legal_studio',
     // The Compliance Center. The demo mounts ComplianceHub directly, so it
     // does not pass through the `RequireTier feature="compliance_hub_gdpr"`
     // wall in AdvancedSettings — but the capability is granted anyway so the

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, BellOff, Bot } from 'lucide-react';
+import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, BellOff, Bot, Handshake, MessageSquare } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useViewport } from '../hooks/useViewport';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -9,7 +9,15 @@ const CATEGORY_CONFIG = {
     heads_up: { icon: AlertTriangle, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', label: 'Heads Up' },
     urgent: { icon: AlertCircle, color: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)', label: 'Urgent' },
     ai_task: { icon: Bot, color: '#0f172a', bg: 'rgba(15, 23, 42, 0.06)', label: 'Routine' },
+    // Cowork results used to arrive under the 'ai_task' category and were
+    // therefore labelled "Routine" — the name of a different feature, in a
+    // different part of the app, that the user had never opened.
+    cowork: { icon: Handshake, color: '#0f172a', bg: 'rgba(15, 23, 42, 0.06)', label: 'Cowork' },
 };
+
+// Both kinds carry their whole output in `message` and get the same result
+// modal; only the wording around it differs.
+const RESULT_CATEGORIES = new Set(['ai_task', 'cowork']);
 
 function timeAgo(dateStr) {
     if (!dateStr) return '';
@@ -74,30 +82,51 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [notifications]);
 
+    /**
+     * Where a finished run should continue.
+     *
+     * A cowork item that ran as an agent belongs in that agent's chat, on the
+     * very thread it ran in; one without an agent has no thread, so it opens
+     * in direct chat. The lookup decides which — and until now it asked
+     * /api/ai-tasks/:id, a route that does not exist, so every result fell
+     * through to plain direct chat regardless of who produced it.
+     */
+    const resolveChatTarget = useCallback(async (n) => {
+        const taskId = n?.task_id || n?.taskId || null;
+        if (!taskId) return { agentId: null, conversationId: null };
+        const base = n?.category === 'cowork' ? '/api/cowork' : '/api/ai-tasks';
+        try {
+            const res = await authFetch(`${API_BASE}${base}/${taskId}`);
+            if (!res.ok) return { agentId: null, conversationId: null };
+            const item = await res.json();
+            return {
+                agentId: item?.agentId || item?.agent_id || null,
+                conversationId: item?.conversationId || item?.conversation_id || null,
+            };
+        } catch (_) {
+            return { agentId: null, conversationId: null };
+        }
+    }, []);
+
     const openInDirectChat = useCallback(async (title, content, notifId) => {
         setResultModal(null);
-        // If the source notification was an agent routine, look up the
-        // routine's agent + persisted conversation so the chat opens on the
-        // agent (not generic direct chat) and continues the same thread the
-        // routine ran in.
-        let agentId = null;
-        let conversationId = null;
-        try {
-            const n = notifId ? notifications.find(x => x.id === notifId) : null;
-            const taskId = n?.task_id || n?.taskId || null;
-            if (taskId) {
-                const res = await fetch(`/api/ai-tasks/${taskId}`, { credentials: 'include' });
-                if (res.ok) {
-                    const task = await res.json();
-                    agentId = task?.agentId || task?.agent_id || null;
-                    conversationId = task?.conversationId || task?.conversation_id || null;
-                }
-            }
-        } catch (_) { /* fall through to direct chat */ }
+        const n = notifId ? notifications.find(x => x.id === notifId) : null;
+        const { agentId, conversationId } = await resolveChatTarget(n);
         window.dispatchEvent(new CustomEvent('openDirectChatWithContext', {
-            detail: { title, content, agentId, conversationId },
+            detail: { title, content, agentId, conversationId, surface: n?.category === 'cowork' ? 'cowork' : 'routine' },
         }));
-    }, [notifications]);
+    }, [notifications, resolveChatTarget]);
+
+    /** The one action on a finished run: continue it in the right chat. */
+    const openResultInChat = useCallback(async (n, body) => {
+        if (!n.read) markRead(n.id);
+        setOpen(false);
+        const { agentId, conversationId } = await resolveChatTarget(n);
+        window.dispatchEvent(new CustomEvent('openDirectChatWithContext', {
+            detail: { title: n.title, content: body, agentId, conversationId, surface: n.category === 'cowork' ? 'cowork' : 'routine' },
+        }));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [resolveChatTarget]);
 
     // Routine credentials expired/revoked notifications carry a deep-link
     // token at the start of the body: `routine_reauth:<provider>\n\n…`. Parse
@@ -503,6 +532,9 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                                             background: cat.color, flexShrink: 0,
                                                         }} />
                                                     )}
+                                                    {/* A result's title is rendered inside the box, beside its
+                                                        button — repeating it here put the same words two lines
+                                                        apart. */}
                                                     <span style={{
                                                         fontSize: 13,
                                                         fontWeight: n.read ? 400 : 600,
@@ -514,7 +546,7 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                                         flex: 1,
                                                         lineHeight: 1.4,
                                                     }}>
-                                                        {n.title}
+                                                        {isExpanded && RESULT_CATEGORIES.has(n.category) ? '' : n.title}
                                                     </span>
                                                     <span style={{
                                                         fontSize: 10, color: 'var(--text-muted, #94a3b8)', flexShrink: 0,
@@ -563,7 +595,7 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                                     const { provider: reauthProvider, body: cleanedBody } = parseReauthToken(n.message);
                                                     return (
                                                         <>
-                                                            {n.link && (
+                                                            {n.link && !RESULT_CATEGORIES.has(n.category) && (
                                                                 <div style={{ marginBottom: 10 }}>
                                                                     <button
                                                                         onClick={(e) => { e.stopPropagation(); navigateToLink(n); }}
@@ -574,7 +606,7 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                                                             background: 'var(--text-primary, #0f172a)', color: 'var(--bg-primary, #fff)',
                                                                         }}
                                                                     >
-                                                                        Open chat
+                                                                        Open
                                                                     </button>
                                                                 </div>
                                                             )}
@@ -593,31 +625,52 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                                                     </button>
                                                                 </div>
                                                             )}
-                                                            {n.category === 'ai_task' && cleanedBody && !reauthProvider && (
-                                                                <div style={{ marginBottom: 10 }}>
+                                                            {/* One action, and the title beside it. A finished run
+                                                                already shows its whole result below; the only thing
+                                                                left to want is to talk about it, so that is the
+                                                                primary button rather than a second reader window. */}
+                                                            {RESULT_CATEGORIES.has(n.category) && cleanedBody && !reauthProvider && (
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
                                                                     <button
-                                                                        onClick={(e) => { e.stopPropagation(); openResultModal({ title: n.title, content: cleanedBody }, n.id); }}
+                                                                        onClick={(e) => { e.stopPropagation(); openResultInChat(n, cleanedBody); }}
+                                                                        data-testid="notif-open-in-chat"
                                                                         style={{
-                                                                            display: 'flex', alignItems: 'center', gap: 5,
-                                                                            padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                                                                            border: 'none', cursor: 'pointer',
-                                                                            background: 'var(--bg-secondary, rgba(0,0,0,0.04))', color: 'var(--text-primary, #0f172a)',
+                                                                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                                                                            padding: '8px 16px', borderRadius: 9, fontSize: 12.5, fontWeight: 600,
+                                                                            border: 'none', cursor: 'pointer', flexShrink: 0,
+                                                                            background: 'var(--text-primary, #0f172a)', color: 'var(--bg-primary, #fff)',
                                                                         }}
                                                                     >
-                                                                        View Full Result
+                                                                        <MessageSquare style={{ width: 14, height: 14 }} />
+                                                                        Open result in chat
                                                                     </button>
+                                                                    <span style={{
+                                                                        fontSize: 13, fontWeight: 600, minWidth: 0,
+                                                                        color: 'var(--text-primary, #0f172a)',
+                                                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                                    }}>
+                                                                        {n.title}
+                                                                    </span>
                                                                 </div>
                                                             )}
-                                                            {n.category === 'ai_task' && !cleanedBody && !reauthProvider && (
+                                                            {RESULT_CATEGORIES.has(n.category) && !cleanedBody && !reauthProvider && (
                                                                 <div style={{ marginBottom: 10 }}>
                                                                     <p style={{
                                                                         fontSize: 13, color: 'var(--text-secondary, #64748b)',
                                                                         margin: '0 0 8px 0', lineHeight: 1.6,
                                                                     }}>
-                                                                        De routine is uitgevoerd, maar er is geen tekstresultaat opgeslagen. Open de chat om de uitvoering te bekijken.
+                                                                        {n.category === 'cowork'
+                                                                            ? 'This ran, but produced no text to show. Open it to see the run.'
+                                                                            : 'This routine ran, but no text result was saved. Open the chat to see the run.'}
                                                                     </p>
                                                                     <button
-                                                                        onClick={(e) => { e.stopPropagation(); openInDirectChat(n.title, '', n.id); }}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            // A cowork run has no chat thread to continue —
+                                                                            // its history pane is where the run lives.
+                                                                            if (n.category === 'cowork' && n.link) navigateToLink(n);
+                                                                            else openInDirectChat(n.title, '', n.id);
+                                                                        }}
                                                                         style={{
                                                                             display: 'flex', alignItems: 'center', gap: 5,
                                                                             padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
@@ -625,7 +678,7 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                                                             background: 'var(--bg-secondary, rgba(0,0,0,0.04))', color: 'var(--text-primary, #0f172a)',
                                                                         }}
                                                                     >
-                                                                        Open chat
+                                                                        {n.category === 'cowork' ? 'Open in Cowork' : 'Open chat'}
                                                                     </button>
                                                                 </div>
                                                             )}
@@ -728,7 +781,7 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                     {resultModal.title}
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)', fontWeight: 500, marginTop: 2 }}>
-                                    Routine Result
+                                    {resultModal.category === 'cowork' ? 'Cowork result' : 'Routine result'}
                                 </div>
                             </div>
                             <button
