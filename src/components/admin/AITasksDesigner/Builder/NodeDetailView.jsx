@@ -509,6 +509,51 @@ export default function NodeDetailView({
                         />
                     </div>
 
+                    {/* Where am I, and how do I get to the next one (BFSF-332).
+                        Twice reopened over placement, so both corrections are
+                        deliberate:
+
+                        · BOTH densities. It used to be full-view only, on the
+                          reasoning that the quick dialog is a one-node glance.
+                          But paging through a routine is exactly what you do
+                          from a glance, and Alt+←/→ already worked here — so
+                          the shortcut worked while its buttons were absent,
+                          which is the worst of both.
+                        · NEXT TO THE STEP NAME, not in the icon cluster on the
+                          far right. Sat among minimise/panels/close it read as
+                          window chrome and the tester couldn't find it. Position
+                          in the flow is part of "which step am I looking at",
+                          so it belongs with the identity — bordered, so it
+                          reads as a control rather than a caption.
+
+                        Order is execution order (flowOrder.js topological sort),
+                        not authoring order. */}
+                    {canNavigate && (
+                        <div className="flex items-center gap-0.5 shrink-0 rounded-md border border-[var(--border-default)] bg-[var(--bg-tertiary)]/40 px-0.5">
+                            <button
+                                onClick={goPrev}
+                                disabled={!position.prevId}
+                                title="Previous step in the flow (Alt+←)"
+                                aria-label="Previous step"
+                                className={`${iconBtn} disabled:opacity-30 disabled:hover:bg-transparent`}
+                            >
+                                <ChevronLeft size={15} />
+                            </button>
+                            <span className="text-[11px] font-medium text-[var(--text-secondary)] tabular-nums whitespace-nowrap px-1">
+                                {quick ? `${position.index}/${position.total}` : `Step ${position.index} of ${position.total}`}
+                            </span>
+                            <button
+                                onClick={goNext}
+                                disabled={!position.nextId}
+                                title="Next step in the flow (Alt+→)"
+                                aria-label="Next step"
+                                className={`${iconBtn} disabled:opacity-30 disabled:hover:bg-transparent`}
+                            >
+                                <ChevronRight size={15} />
+                            </button>
+                        </div>
+                    )}
+
                     {!isTrigger && (
                         <div className="flex items-center gap-1 ml-2">
                             {typeof onExecuteStep === 'function' && (
@@ -601,34 +646,6 @@ export default function NodeDetailView({
                             <span className="mr-1">
                                 <FormModeToggle mode={effectiveMode} onChange={onModeChange} size="sm" />
                             </span>
-                        )}
-                        {/* Page through the flow in execution order, and say
-                            where you are while doing it (BFSF-332). Full view
-                            only — the quick dialog is a one-node glance. */}
-                        {!quick && canNavigate && (
-                            <div className="flex items-center gap-0.5 mr-1">
-                                <button
-                                    onClick={goPrev}
-                                    disabled={!position.prevId}
-                                    title="Previous step in the flow (Alt+←)"
-                                    aria-label="Previous step"
-                                    className={`${iconBtn} disabled:opacity-30 disabled:hover:bg-transparent`}
-                                >
-                                    <ChevronLeft size={15} />
-                                </button>
-                                <span className="text-[11px] text-[var(--text-tertiary)] tabular-nums whitespace-nowrap px-0.5">
-                                    Step {position.index} of {position.total}
-                                </span>
-                                <button
-                                    onClick={goNext}
-                                    disabled={!position.nextId}
-                                    title="Next step in the flow (Alt+→)"
-                                    aria-label="Next step"
-                                    className={`${iconBtn} disabled:opacity-30 disabled:hover:bg-transparent`}
-                                >
-                                    <ChevronRight size={15} />
-                                </button>
-                            </div>
                         )}
                         {quick ? (
                             <button onClick={goFull} title="Open the full view — input data and output side by side" aria-label="Expand to the full view" className={iconBtn}>

@@ -282,24 +282,35 @@ export function describeNode(node, definition, toolToOutput, triggerOutputs, sam
  * Re-shape an upstream group whose node iterates (`step.forEach`). The
  * runtime output is the aggregated `{ iterations, succeeded, failed, results }`
  * envelope, so:
- *   - every per-iteration ARRAY field becomes a flattened iterable at
+ *   - EVERY per-iteration field becomes a flattened iterable at
  *     `…output.results[*].output.<key>` (the `[*]` flatten is resolved by
  *     server/automation/bind.js walkPath), and
  *   - the run counters (iterations/succeeded/failed) are surfaced.
- * Per-iteration scalar fields are intentionally NOT surfaced flat — at
- * runtime they're arrays (one value per iteration), so auto-mapping a scalar
- * input to them would be wrong; bind them via the loop item instead.
+ *
+ * Scalars used to be dropped here, on the grounds that their sample is a
+ * scalar while the path resolves to an array, so auto-mapping one into a
+ * scalar tool param would be wrong. The reasoning was sound; the remedy was
+ * too blunt. It left a field like `output.count` with NO path at all, and the
+ * author looking at a picker that offered nothing of what the step itself had
+ * returned — the complaint in BFSF-369.
+ *
+ * So they are surfaced, and the mismatch is fixed at its source instead: the
+ * sample is wrapped to `[value]`, which is what the path ACTUALLY yields —
+ * one entry per iteration. That truthful shape earns the existing
+ * listShape.js "column" badge for free, and `perIteration` keeps auto-map and
+ * the loop-source guess off them (see autoMapInputs.js), which is what the old
+ * exclusion was really protecting. Hand-picking, which was never the risk,
+ * now works.
  */
 function wrapGroupForEach(group, node) {
     if (!group || !node?.forEach?.overRef) return group;
     const base = group.basePath; // steps.<id>.output
     const flat = group.sample || {};
-    const arrayFields = (group.fields || []).filter(f => Array.isArray(f.sample));
-    const flattened = arrayFields.map(f => ({
-        key: f.key,
-        path: `${base}.results[*].output.${f.key}`,
-        sample: f.sample,
-    }));
+    const flattened = (group.fields || [])
+        .filter(f => f && f.key)
+        .map(f => (Array.isArray(f.sample)
+            ? { key: f.key, path: `${base}.results[*].output.${f.key}`, sample: f.sample }
+            : { key: f.key, path: `${base}.results[*].output.${f.key}`, sample: [f.sample], perIteration: true }));
     const counters = [
         { key: 'iterations', path: `${base}.iterations`, sample: 0 },
         { key: 'succeeded', path: `${base}.succeeded`, sample: 0 },

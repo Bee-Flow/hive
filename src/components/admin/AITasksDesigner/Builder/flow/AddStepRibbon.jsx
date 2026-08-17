@@ -106,7 +106,13 @@ export default function AddStepRibbon({
         if (!controlledTab) scopedStorage.setItem('routinesRibbonTab', internalTab);
     }, [internalTab, controlledTab]);
 
-    const groups = useMemo(() => buildStepGroups(scope), [scope]);
+    // mode:'step' on purpose. The ribbon is a persistent BROWSE surface with no
+    // insertion target, and it owns a separate "+ Trigger" dropdown for the
+    // no-trigger state (below), so it wants the whole palette even on an empty
+    // canvas — unlike the positioned picker, which is narrowed to triggers
+    // there (BFSF-367). Without this the Home/Apps/Reusable tabs would empty
+    // out until a trigger existed.
+    const groups = useMemo(() => buildStepGroups({ ...scope, mode: 'step' }), [scope]);
     const add = (payload) => { onAddNode?.(payload); setOpenKey(null); };
     // Every command is also a drag source: dropping it on a connection splices
     // it in, dropping it on a node wires it from there, dropping it on empty
@@ -459,7 +465,9 @@ export default function AddStepRibbon({
  * the SAME availability logic the ribbon uses to pick which groups to show.
  */
 export function ribbonTabsForScope(scope = {}) {
-    const groups = buildStepGroups(scope);
+    // Same mode:'step' pin as the ribbon body — the tab strip must agree with
+    // the groups it labels, empty canvas included (BFSF-367).
+    const groups = buildStepGroups({ ...scope, mode: 'step' });
     const flowletGroup = groups.find(g => g.key === 'flowlets');
     const stepsGroup = groups.find(g => g.key === 'steps');
     const hasApps = orderedAppCategories(scope.catalog).length > 0;

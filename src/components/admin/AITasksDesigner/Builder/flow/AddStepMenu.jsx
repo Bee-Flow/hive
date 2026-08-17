@@ -50,8 +50,13 @@ export default function AddStepMenu({ scope = {}, group = null, showSearch, onAd
     //  · GATING (BFSF-348). These rows bypassed `gated()` entirely, so the
     //    "add a form step without a form trigger → guaranteed validation
     //    error" path was still fully reachable through them.
+    //
+    // Neither block belongs on the empty canvas (BFSF-367): with no trigger
+    // yet, a "next step" cannot be placed at all, so suggesting one — above the
+    // triggers, which is all the menu can accept — was noise the user had to
+    // scroll past on their very first action.
     const recoGroups = useMemo(() => {
-        if (group) return [];
+        if (group || scope.mode === 'trigger') return [];
         const out = [];
         const seen = new Set();
         const take = (items) => (Array.isArray(items) ? items : [])

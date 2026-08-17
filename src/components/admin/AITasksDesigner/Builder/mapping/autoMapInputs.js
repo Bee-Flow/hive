@@ -64,6 +64,11 @@ function flattenCandidates(groups) {
     (groups || []).forEach((g, gi) => {
         let fi = 0;
         for (const f of (g.fields || [])) {
+            // Same reason as the `[*]` children below: a per-iteration field
+            // (upstream.js wrapGroupForEach) resolves to ONE VALUE PER
+            // ITERATION, so auto-mapping it into a scalar param would be
+            // wrong. It stays pickable by hand (BFSF-369).
+            if (f.perIteration) { fi++; continue; }
             out.push({ key: f.key, path: f.path, type: sampleType(f.sample), groupIndex: gi, fieldIndex: fi++ });
             for (const c of (f.children || [])) {
                 // Element children (`items[*].<key>`) carry a SCALAR sample but
@@ -102,7 +107,10 @@ const ARRAY_NAME_RE = /items|results|rows|records|data|list|messages|emails|even
 /** Nearest upstream array-typed field path (for loop/filter overRef/arrayRef). */
 export function nearestArrayRef(groups) {
     for (let gi = (groups || []).length - 1; gi >= 0; gi--) {
-        const fields = groups[gi].fields || [];
+        // A per-iteration column is an array only because it has one entry per
+        // iteration — "loop over the counts an earlier loop produced" is never
+        // what the author meant, so it is not a candidate source (BFSF-369).
+        const fields = (groups[gi].fields || []).filter(f => !f.perIteration);
         const preferred = fields.find(f => sampleType(f.sample) === 'array' && ARRAY_NAME_RE.test(f.key));
         if (preferred) return preferred.path;
         const anyArr = fields.find(f => sampleType(f.sample) === 'array');

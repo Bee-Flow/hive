@@ -31,6 +31,22 @@ describe('stepPalette — buildStepGroups', () => {
         expect(keys).toEqual(['triggers', 'ai', 'action', 'flow', 'flowlets', 'steps']);
     });
 
+    it('offers ONLY triggers on the empty canvas (BFSF-367)', () => {
+        // "Choose a trigger" used to open the full menu, so the browse path
+        // disagreed with the search path — which has always answered a
+        // trigger-mode query with triggers alone.
+        const groups = buildStepGroups({ catalog, mode: 'trigger' });
+        expect(groups.map(g => g.key)).toEqual(['triggers']);
+        expect(groups[0].items.length).toBeGreaterThan(0);
+    });
+
+    it('does not say a first trigger "replaces" anything (BFSF-367)', () => {
+        // additionalTriggerItems() stamps that wording for the once-you-have-one
+        // case; on an empty canvas there is nothing to replace.
+        const descs = buildStepGroups({ catalog, mode: 'trigger' })[0].items.map(i => i.desc);
+        expect(descs).not.toContain('Replaces the current trigger');
+    });
+
     it('leaves triggers out of a flowlet or a loop body', () => {
         // A flowlet's trigger IS its input contract, and buildStepFromPayload
         // rejects trigger payloads in a loop body (BFSF-325).

@@ -412,8 +412,17 @@ export function orderedAppCategories(catalog) {
  * Flow control + Data & lists + Code are consolidated into the single "Flow"
  * group (as category sections) so the builder isn't hunting across several
  * overlapping menus. `opts`: { catalog, layers, inLayer, canAddLayerOutput, isBlockRoot }.
+ *
+ * `mode:'trigger'` is the empty canvas ("Choose a trigger"). Only a trigger can
+ * legally go first, so only triggers are offered — BROWSE now says what SEARCH
+ * has always said (buildSearchResults' identical branch below). Until BFSF-367
+ * this path fell through to the full menu, which put "Suggested next" (AI step,
+ * Edit data, Notification — none of them placeable yet) above the one section
+ * that could be used. Bare TRIGGERS, not additionalTriggerItems(): with no
+ * trigger to replace, "Replaces the current trigger" describes nothing.
  */
-export function buildStepGroups({ catalog = null, layers = [], inLayer = false, canAddLayerOutput = false, isBlockRoot = false, canCreateLayer = true, hasFormTrigger = null, t = null } = {}) {
+export function buildStepGroups({ catalog = null, mode = 'step', layers = [], inLayer = false, canAddLayerOutput = false, isBlockRoot = false, canCreateLayer = true, hasFormTrigger = null, t = null } = {}) {
+    if (mode === 'trigger') return [{ key: 'triggers', title: 'Trigger', items: TRIGGERS }];
     const blocks = isBlockRoot ? [] : (catalog?.steps || []).filter(s => s && s.available !== false);
     // canCreateLayer:false (loop-body editor, B8): "Create flowlet" is a
     // scope-spanning meta-action only BuildTab.handleAddNode can perform —

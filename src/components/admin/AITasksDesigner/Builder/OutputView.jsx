@@ -140,6 +140,44 @@ function FriendlyArray({ arr, map = null }) {
     );
 }
 
+/**
+ * Is this the "run once per item" envelope the runner emits — one row per
+ * iteration, shaped `{ index, item, output, status }` (see execForEachStep)?
+ *
+ * It matters because those rows carry two unrelated things side by side: the
+ * upstream item the step LOOPED OVER, and what the step ITSELF returned. Read
+ * as a flat grid they merge into one ambiguous blob and you cannot tell which
+ * column came from where — BFSF-369, where a file's url/name/path sat next to
+ * the rooms that step had fetched, under one undifferentiated header row.
+ */
+function isForEachEnvelope(rows, baseCols) {
+    if (!baseCols.includes('item') || !baseCols.includes('output')) return false;
+    if (!baseCols.includes('index') && !baseCols.includes('status')) return false;
+    const objs = rows.filter(isPlainObject);
+    return objs.length > 0 && objs.every(r => 'item' in r && 'output' in r);
+}
+
+/**
+ * Contiguous header spans for the envelope's two halves, so the grid says
+ * which side of the loop each column came from. Returns null when the columns
+ * aren't the envelope's (nothing to group) — never a row of empty headers.
+ */
+function envelopeSpans(cols) {
+    const labelFor = (c) => {
+        if (c === 'item' || c.startsWith('item.') || c.startsWith('item[')) return 'Looped over';
+        if (c === 'output' || c.startsWith('output.') || c.startsWith('output[')) return 'This step returned';
+        return null;
+    };
+    const spans = [];
+    for (const c of cols) {
+        const label = labelFor(c);
+        const last = spans[spans.length - 1];
+        if (last && last.label === label) last.span += 1;
+        else spans.push({ label, span: 1 });
+    }
+    return spans.some(s => s.label) ? spans : null;
+}
+
 function RecordTable({ rows, map = null }) {
     // Top-level columns (the object keys), discovered in first-seen order.
     const baseCols = useMemo(() => {
@@ -231,6 +269,10 @@ function RecordTable({ rows, map = null }) {
 
     const shown = rows.slice(0, MAX_ROWS);
     const peek = useCellPeek();
+    const groupSpans = useMemo(
+        () => (isForEachEnvelope(rows, baseCols) ? envelopeSpans(cols) : null),
+        [rows, baseCols, cols],
+    );
 
     // Fallback: no columns discovered — e.g. an array of empty objects (`[{}]`)
     // or of non-objects that slipped through. Render the rows directly as a
@@ -260,6 +302,26 @@ function RecordTable({ rows, map = null }) {
                     off screen instantly, and a table whose columns you can't
                     name is unreadable. */}
                 <thead className="sticky top-0 z-10 bg-[var(--bg-primary)]">
+                    {/* Which side of the loop am I looking at (BFSF-369). Only
+                        for the per-item envelope; every other table keeps its
+                        single header row. */}
+                    {groupSpans && (
+                        <tr>
+                            {groupSpans.map((g, i) => (
+                                <th
+                                    key={i}
+                                    colSpan={g.span}
+                                    className={`text-left text-[10px] uppercase tracking-wide font-semibold px-2 pt-1 pb-0.5 whitespace-nowrap ${
+                                        g.label
+                                            ? 'text-[var(--text-tertiary)] border-b border-[var(--border-default)]'
+                                            : ''}`}
+                                >
+                                    {g.label || ''}
+                                </th>
+                            ))}
+                            {droppedCols > 0 && <th />}
+                        </tr>
+                    )}
                     <tr>
                         {cols.map((c) => (
                             <ColHeader
