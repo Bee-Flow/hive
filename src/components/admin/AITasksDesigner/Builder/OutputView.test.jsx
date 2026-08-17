@@ -239,3 +239,42 @@ describe('OutputView — the table is the answer', () => {
         }
     });
 });
+
+// The runner's per-item envelope: one row per iteration, each carrying BOTH
+// the upstream item the step looped over and what the step itself returned.
+const PER_ITEM = {
+    iterations: 2,
+    results: [
+        { index: 0, item: { name: 'a.pdf', url: 'https://x/a' }, output: { count: 2, rooms: [{ token: 't1' }] }, status: 'success' },
+        { index: 1, item: { name: 'b.pdf', url: 'https://x/b' }, output: { count: 1, rooms: [{ token: 't2' }] }, status: 'success' },
+    ],
+};
+
+describe('OutputView — run-once-per-item envelope (BFSF-369)', () => {
+    beforeEach(() => cleanup());
+
+    it('says which columns were looped over and which the step returned', () => {
+        const { container } = render(<OutputView value={PER_ITEM} basePath={BASE} />);
+        // Two header rows: the grouping row, then the column names.
+        const rows = container.querySelectorAll('thead tr');
+        expect(rows).toHaveLength(2);
+        expect(screen.getByText('Looped over')).toBeTruthy();
+        expect(screen.getByText('This step returned')).toBeTruthy();
+    });
+
+    it('spans each half over its own columns, leaving index/status alone', () => {
+        const { container } = render(<OutputView value={PER_ITEM} basePath={BASE} />);
+        const groupRow = container.querySelectorAll('thead tr')[0];
+        const labelled = [...groupRow.querySelectorAll('th')]
+            .map(th => [th.textContent, th.getAttribute('colSpan') || th.colSpan]);
+        // index → ungrouped; item → "Looped over"; output → "This step
+        // returned"; status → ungrouped. Order follows the columns.
+        expect(labelled.map(([text]) => text)).toEqual(['', 'Looped over', 'This step returned', '']);
+    });
+
+    it('leaves an ordinary table with a single header row', () => {
+        // No item/output pair → nothing to disambiguate, so no extra chrome.
+        const { container } = render(<OutputView value={VALUE} basePath={BASE} />);
+        expect(container.querySelectorAll('thead tr')).toHaveLength(1);
+    });
+});

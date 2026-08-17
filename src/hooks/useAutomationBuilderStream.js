@@ -376,6 +376,22 @@ export default function useAutomationBuilderStream(initial = {}) {
     }, []);
 
     /**
+     * Dismiss the fatal-error banner, and nothing else (BFSF-370).
+     *
+     * BuilderShell shows `error || state.error` in one pill but could only
+     * clear its own local `error`, so the banner a FAILED STEP raises — which
+     * lands in `state.error`, see executeStep below — had a dismiss button that
+     * did nothing. The error then sat there until the next send or execute,
+     * which is what made one node's failure read as the whole workflow being
+     * stuck on it. Deliberately not `clearDryRun`: the step rows are the
+     * evidence of what went wrong and the user is dismissing the banner, not
+     * the run.
+     */
+    const clearError = useCallback(() => {
+        setState(s => (s.error ? { ...s, error: null } : s));
+    }, []);
+
+    /**
      * Release a 'running'/'queued' progress stub that will never reach a
      * terminal state — the run-start request itself threw, so no run record is
      * coming. Without this `liveRunInFlight` stays true for the rest of the
@@ -435,7 +451,7 @@ export default function useAutomationBuilderStream(initial = {}) {
         }));
     }, []);
 
-    return { state, send, reset, hydrate, hydrateLastRun, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft, executeStep, retryFromStep, stopRun, pollRunProgress, clearDryRun, settleRun, setRunResult, watchActiveRun };
+    return { state, send, reset, hydrate, hydrateLastRun, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft, executeStep, retryFromStep, stopRun, pollRunProgress, clearDryRun, clearError, settleRun, setRunResult, watchActiveRun };
 }
 
 // Mark any in-flight assistant message as no-longer-streaming and stamp the

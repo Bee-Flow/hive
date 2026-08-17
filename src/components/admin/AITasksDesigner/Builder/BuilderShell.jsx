@@ -67,7 +67,7 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
     const apiCreateOne = isStep ? api.createStep : api.createAutomation;
     const apiUpdateOne = isStep ? api.updateStep : api.updateAutomation;
     const unwrapRow = (r) => (r && (r.automation || r.step)) || r;
-    const { state, send, hydrate, hydrateLastRun, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft, executeStep, retryFromStep, stopRun, pollRunProgress, setRunResult, watchActiveRun, clearDryRun, settleRun } = useAutomationBuilderStream({ automationId });
+    const { state, send, hydrate, hydrateLastRun, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft, executeStep, retryFromStep, stopRun, pollRunProgress, setRunResult, watchActiveRun, clearDryRun, clearError, settleRun } = useAutomationBuilderStream({ automationId });
     const [serverAutomation, setServerAutomation] = useState(null);
     // One in-app confirm for the whole builder — published through
     // BuilderConfirmContext so panels and hooks alike can ask a question
@@ -106,6 +106,17 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
     // with a settings dialog buried exactly the thing being asked for. The
     // Execute buttons inside the editor still work; it is already open there.
     const handleExecuteStep = useCallback((stepId, opts) => executeStep(stepId, opts), [executeStep]);
+
+    /**
+     * Dismissing the fatal-error pill has to clear BOTH error sources, because
+     * the pill renders both (`error || state.error`). A failed Execute step
+     * raises `state.error` inside the stream hook, which the local `setError`
+     * cannot reach — so the dismiss button rendered, did nothing, and the
+     * error stayed until the next send or execute. That is a good part of why
+     * one node's failure felt like the whole workflow was stuck on it
+     * (BFSF-370).
+     */
+    const handleDismissFatal = useCallback(() => { setError(null); clearError(); }, [clearError]);
 
     // Tab navigation. Default to Build — the chat + diagram is what users
     // open the builder to do; the other tabs are jump-points for specific
@@ -1082,7 +1093,7 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
                         onStopRun={stopRun}
                         pollRunProgress={pollRunProgress}
                         fatalError={error || state.error}
-                        onDismissFatal={() => setError(null)}
+                        onDismissFatal={handleDismissFatal}
                         onDiagnose={onDiagnose}
                         acceptExternalDraft={acceptExternalDraft}
                         dismissExternalDraft={dismissExternalDraft}

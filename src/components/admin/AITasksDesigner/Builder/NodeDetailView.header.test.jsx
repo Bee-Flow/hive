@@ -138,9 +138,31 @@ describe('NodeDetailView — paging through the flow', () => {
         expect(p.onNavigate).toHaveBeenCalledWith('c');
     });
 
-    it('stays out of the quick view', async () => {
-        await act(async () => { render(<NodeDetailView {...lineProps('b')} density="quick" />); });
-        expect(screen.queryByLabelText('Next step')).toBeNull();
+    it('is in the quick view too, in a shorter form (BFSF-332 reopen)', async () => {
+        // It used to be withheld here — but Alt+←/→ has always worked at both
+        // densities, so the shortcut fired while its own buttons were absent.
+        // The tester found exactly that, and reopened.
+        const p = lineProps('b');
+        await act(async () => { render(<NodeDetailView {...p} density="quick" />); });
+        expect(screen.getByLabelText('Next step')).toBeTruthy();
+        // Compact wording — the small dialog has no room for "Step 3 of 4".
+        expect(screen.getByText('3/4')).toBeTruthy();
+        await act(async () => { fireEvent.click(screen.getByLabelText('Next step')); });
+        expect(p.onNavigate).toHaveBeenCalledWith('c');
+    });
+
+    it('sits with the step identity, not among the window controls (BFSF-332 reopen)', async () => {
+        // "hidden away in top right corner … not very explicit nor intuitive":
+        // wedged between the options toggle and minimise/panels/close it read
+        // as window chrome. Where you are in the flow is part of WHICH step
+        // this is, so it belongs beside the title.
+        await act(async () => { render(<NodeDetailView {...lineProps('b')} />); });
+        const nav = screen.getByLabelText('Next step').closest('div');
+        const title = screen.getByTestId('ndv-title');
+        // Ordered before the close button in the DOM, and after the title.
+        expect(title.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        const close = screen.getByLabelText(/close/i);
+        expect(nav.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 });
 

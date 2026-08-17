@@ -422,8 +422,18 @@ describe('iteration auto-detection (run once per item)', () => {
         // The read group exposes the flattened iterable, not the flat path.
         const groups = computeUpstreamGroups(def, 's3', cat);
         const readGroup = groups.find(g => g.id === 's2');
-        const arrField = (readGroup.fields || []).find(f => Array.isArray(f.sample));
+        // `!perIteration` is the discriminator, not Array.isArray: since
+        // BFSF-369 a per-iteration SCALAR is also carried as an array sample
+        // (one entry per iteration), so the shape alone no longer tells a real
+        // list apart from a column of scalars.
+        const arrField = (readGroup.fields || []).find(f => Array.isArray(f.sample) && !f.perIteration);
         expect(arrField.path).toBe('steps.s2.output.results[*].output.attachments');
+
+        // …and the scalars the step itself returned are reachable now, where
+        // they used to be dropped from the picker entirely (BFSF-369).
+        const subject = (readGroup.fields || []).find(f => f.key === 'subject');
+        expect(subject.path).toBe('steps.s2.output.results[*].output.subject');
+        expect(subject.perIteration).toBe(true);
 
         // inferLoopItemSample resolves that path to the attachment element.
         const el = inferLoopItemSample('steps.s2.output.results[*].output.attachments', def, buildToolOutputMap(cat));

@@ -251,6 +251,26 @@ describe('AddStepMenu — the two smart lists do not repeat each other', () => {
         expect(row('Send email')).toHaveLength(2);
     });
 
+    it('shows no reco blocks at all on the empty canvas (BFSF-367)', () => {
+        // With no trigger yet, a "next step" cannot be placed — so suggesting
+        // one, above the triggers that are the only legal pick, was pure noise
+        // at the very first action a new user takes.
+        render(<AddStepMenu
+            scope={{
+                catalog: { apps: [] },
+                mode: 'trigger',
+                suggested: [reco('set', 'Edit data', { kind: 'set', label: 'Edit data' })],
+                frequent: [reco('loop', 'Loop Over Items', { kind: 'loop', label: 'Loop Over Items' })],
+            }}
+            showSearch={false}
+            onAdd={() => {}}
+        />);
+        expect(screen.queryByText('Suggested next')).toBeNull();
+        expect(screen.queryByText('Frequently used')).toBeNull();
+        // …and the one section that IS usable is there.
+        expect(screen.getByText('Trigger')).toBeTruthy();
+    });
+
     it('drops the whole heading when everything in it was already suggested', () => {
         render(<AddStepMenu
             scope={{
